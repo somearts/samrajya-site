@@ -109,23 +109,27 @@ test("START is the bottom-left corner and index 0", () => {
 });
 
 test("the order runs up the left, across the top, down the right, back along the bottom", () => {
-  // The index and the coordinates are the same fact, so the walk can be
-  // checked by moving one step at a time and asking which way it went.
+  // Rows count from the top, so travelling up the left column decreases the row.
+  // The walk is four straight runs and nothing else, which is a sharper
+  // statement than counting directions: a cell moved anywhere would either
+  // break a run in two or make one of them the wrong length.
   const steps = [];
   for (let i = 1; i < CELLS.length; i++) {
-    const a = cellByIndex(i - 1);
-    const b = cellByIndex(i);
-    const d = `${b.col - a.col},${b.row - a.row}`;
-    steps.push(d);
+    steps.push(`${CELLS[i].col - CELLS[i - 1].col},${CELLS[i].row - CELLS[i - 1].row}`);
   }
-  const tally = steps.reduce((m, d) => ({ ...m, [d]: (m[d] || 0) + 1 }), {});
-  // nine steps up the left column, four across the top, nine down the right,
-  // five back along the bottom
-  assert.equal(tally["0,1"], 9, "up the left column");
-  assert.equal(tally["1,0"], 4, "across the top");
-  assert.equal(tally["0,-1"], 9, "down the right column");
-  assert.equal(tally["-1,0"], 5, "back along the bottom");
-  assert.equal(steps.length, 27, "a walk of twenty-eight cells is twenty-seven steps");
+  const runs = [];
+  for (const d of steps) {
+    const last = runs[runs.length - 1];
+    if (last && last[0] === d) last[1] += 1;
+    else runs.push([d, 1]);
+  }
+  // nine up the left column, five across the top, nine down the right, four back
+  assert.deepEqual(
+    runs,
+    [["0,-1", 9], ["1,0", 5], ["0,1", 9], ["-1,0", 4]],
+    "four straight runs, in that order",
+  );
+  assert.equal(steps.length, 27, "twenty-eight cells are twenty-seven steps");
 });
 
 test("the four corners are where the file says, and are the four named ones", () => {

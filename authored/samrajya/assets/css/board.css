@@ -41,6 +41,30 @@
 /* ------------------------------------------------------------------ sizing */
 
 .board-screen {
+  /* ------------------------------------------------------------------ colours
+
+     Every colour the board is drawn with, named once, here. They are the
+     reference layout's values and the design's, not the page's: a colour typed
+     into a rule is a colour that can drift away from the one the design says,
+     and the only way it drifts is by somebody typing it again somewhere else.
+
+     --board-ground   the dark ground the cell lines are made of. The board is
+                      this colour and the cells are laid on it, so every line -
+                      between two cells and around the outside - is the ground
+                      showing through, and none of them is drawn twice.
+     --cell-ground    an ordinary cell: the same warm paper the page is on.
+     --corner-ground  the four corners.
+     --centre-ground  the middle four by eight, a shade off the cells so the
+                      hole reads as a hole.
+     --chest-ground   the chest cells: the dark card colour the artwork uses.
+     --chest-ink      the name on a chest, which is the same cream. */
+  --board-ground: #2a2a2a;
+  --cell-ground: #f7f4ef;
+  --corner-ground: #121212;
+  --centre-ground: #fbf9f5;
+  --chest-ground: #26211c;
+  --chest-ink: #f0e9dc;
+
   /* The gap and frame between cells, and around the board. Every line on the
      board is this one value, and it is the board's own ground showing through
      the gap - so no cell carries a border that could be drawn twice where it
@@ -92,7 +116,7 @@
   padding: var(--hair);
 
   /* The dark ground the lines are made of. */
-  background: #2a2a2a;
+  background: var(--board-ground);
 
   /* Makes the board the container its descendants measure against, so a label is
      sized as a share of the board rather than of the viewport, and the drawing
@@ -111,7 +135,7 @@
   overflow: hidden;
 
   /* The cream every ordinary cell sits on. */
-  background: var(--paper);
+  background: var(--cell-ground);
 }
 
 /* ------------------------------------------------------------ a corner cell
@@ -121,8 +145,8 @@
    and the name's treatment are the ones the board has always had. */
 
 .board__cell--corner {
-  background: #121212;
-  color: var(--paper);
+  background: var(--corner-ground);
+  color: var(--cell-ground);
 
   grid-template-rows: minmax(0, 1fr) auto auto;
   align-content: center;
@@ -193,7 +217,7 @@
    lives in here gets the same box by default. */
 
 .board__centre {
-  background: #fbf9f5;
+  background: var(--centre-ground);
   display: grid;
   place-items: center;
 }

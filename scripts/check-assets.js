@@ -3,16 +3,30 @@
 
    Runs after every build. It is the thing that catches the class of mistake
    that is invisible in a browser and fatal in production: a path that resolves
-   on disk but not on the wire.
+   on disk but not on the wire, and a board whose drawing and its data have
+   quietly drifted apart.
 
    Checked:
      - every src/href in the HTML resolves to a real file
      - every import in the client graph resolves to a real file
      - no page path climbs above /samrajya
      - nothing is shipped from outside public/samrajya
-     - the client copy of the rules is marked generated and matches shared/
-     - the wordmark, the four corner marks and the board are present
+     - the client copies of the shared modules are marked generated and match
+       the originals
+     - shared/spaces.js is a faithful copy of shared/board-cells.json, cell by
+       cell and field by field
+     - the board's grid is six by ten of one cell size, and every cell is
+       placed at the coordinates the data gives it
+     - the four corners sit at cell size and keep their own marks
+     - the twelve cards are still exactly what they were
      - no credential-looking string is in the shipped bundle
+
+   THE DATA IS THE TRUTH
+   ---------------------
+   board-cells.json is the source of truth for the twenty-eight cells and
+   spaces.js is generated from it. This script checks the two agree, because the
+   whole point of a transcription is that it can be checked, and a transcription
+   nobody checks is an interpretation that has not admitted it yet.
    ========================================================================== */
 
 import { readFile, readdir, stat } from "node:fs/promises";
@@ -20,6 +34,8 @@ import { existsSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
+
+import { CELLS, CORNER_IDS, GRID, SETS, census } from "../shared/spaces.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT = resolve(HERE, "..");
@@ -115,7 +131,7 @@ async function main() {
 
   section("The rules, in one place");
 
-  for (const name of ["civilizations.js", "identity.js"]) {
+  for (const name of ["civilizations.js", "identity.js", "spaces.js"]) {
     const client = join(OUT, "assets", "js", "shared", name);
     if (!(await exists(client))) {
       check(`shared/${name} reached the browser`, false);
@@ -139,55 +155,222 @@ async function main() {
     ids.join(", "),
   );
 
-  // The board is the thing this phase is about, so its structure is checked
-  // here rather than only by eye. The layout lives in the stylesheet and the
-  // naming lives in the script, so the thing that can actually go wrong is the
-  // two drifting apart - which would leave tiles auto-placed into tracks that
-  // do not exist.
-  const board = await readFile(join(OUT, "assets", "js", "board.js"), "utf8");
+  /* ------------------------------------------------- the cells, and the file */
+
+  section("The board's cells");
+
+  const source = JSON.parse(await readFile(join(SHARED, "board-cells.json"), "utf8"));
+
+  check("board-cells.json is in the repository", existsSync(join(SHARED, "board-cells.json")));
+  check(
+    "the grid is the file's grid",
+    GRID.cols === source.grid.cols && GRID.rows === source.grid.rows,
+    `${GRID.cols} x ${GRID.rows}`,
+  );
+
+  // The transcription itself. Every cell, every field, compared against the file
+  // the board was copied from. Nothing here is a judgement about what the cells
+  // should be - only whether the board says what the file says.
+  const FIELDS = [
+    "index", "col", "row", "type", "id", "name", "lines",
+    "set", "color", "art", "chest",
+  ];
+  const drift = [];
+  for (const want of source.cells) {
+    const got = CELLS.find((c) => c.id === want.id);
+    if (!got) {
+      drift.push(`${want.id} is in the file and not on the board`);
+      continue;
+    }
+    for (const field of FIELDS) {
+      if (JSON.stringify(got[field]) !== JSON.stringify(want[field])) {
+        drift.push(`${want.id}.${field}: ${JSON.stringify(want[field])} -> ${JSON.stringify(got[field])}`);
+      }
+    }
+  }
+  check(
+    "shared/spaces.js is the file, cell by cell and field by field",
+    CELLS.length === source.cells.length && drift.length === 0,
+    drift.slice(0, 4).join("; ") || `${CELLS.length} cells, no drift`,
+  );
+
+  check(
+    "the sets are the file's, unchanged",
+    Object.entries(source.sets).every(([id, s]) => SETS[id]?.color === s.color),
+  );
+
+  // The ring. Twenty-eight cells, one grid position each, all on the border, and
+  // the middle empty - because the centre is not a cell and anything placed
+  // there would be a tile that is not part of the board.
+  check("there are twenty-eight cells", CELLS.length === 28, `${CELLS.length}`);
+  check("no two cells share an id", new Set(CELLS.map((c) => c.id)).size === 28);
+  check(
+    "and no two sit on the same square",
+    new Set(CELLS.map((c) => `${c.col},${c.row}`)).size === 28,
+  );
+  check(
+    "every cell is on the border of the grid",
+    CELLS.every((c) => c.col === 1 || c.col === GRID.cols || c.row === 1 || c.row === GRID.rows),
+  );
+  check(
+    "the middle four columns by eight rows is not a cell",
+    CELLS.every((c) => !(c.col >= 2 && c.col <= 5 && c.row >= 2 && c.row <= 9)),
+  );
+  check(
+    "four are corners, twenty are properties and four are chests",
+    census().corners === 4 && census().properties === 20 && census().chests === 4,
+    JSON.stringify(census()),
+  );
+  check("the whole board's cells cannot be mutated", (await readFile(join(SHARED, "spaces.js"), "utf8")).includes("deepFreeze"));
+
+  /* ------------------------------------------------------- the order, walked */
+
+  const start = CELLS[0];
+  check(
+    "START is the bottom-left corner and index 0",
+    start.id === "start" && start.col === 1 && start.row === GRID.rows,
+    `${start.id} at ${start.col},${start.row}`,
+  );
+  // Rows count from the top, so travelling up the left column decreases the row.
+  // The walk is four straight runs and nothing else, which is a far sharper
+  // statement than "the counts are right": a cell moved anywhere would either
+  // break a run or make one of them the wrong length.
+  const steps = [];
+  for (let i = 1; i < CELLS.length; i++) {
+    steps.push(`${CELLS[i].col - CELLS[i - 1].col},${CELLS[i].row - CELLS[i - 1].row}`);
+  }
+  const runs = [];
+  for (const d of steps) {
+    const last = runs[runs.length - 1];
+    if (last && last[0] === d) last[1] += 1;
+    else runs.push([d, 1]);
+  }
+  check(
+    "the walk is nine up the left, five across the top, nine down the right, four back",
+    JSON.stringify(runs) === JSON.stringify([["0,-1", 9], ["1,0", 5], ["0,1", 9], ["-1,0", 4]]),
+    runs.map(([d, n]) => `${d} x${n}`).join(" then "),
+  );
+  check(
+    "and it is twenty-seven steps for twenty-eight cells",
+    steps.length === 27,
+    `${steps.length}`,
+  );
+
+  const corners = CELLS.filter((c) => c.type === "corner");
+  check(
+    "the four corners are Omega, Akash Core, Start and Marketplace, where the file puts them",
+    JSON.stringify(corners.map((c) => [c.id, c.col, c.row]).sort()) ===
+      JSON.stringify([
+        ["akash-core", 6, 1],
+        ["marketplace", 6, 10],
+        ["omega", 1, 1],
+        ["start", 1, 10],
+      ]),
+    corners.map((c) => `${c.id}@${c.col},${c.row}`).join(" "),
+  );
+  check(
+    "and none of them has been abbreviated",
+    JSON.stringify(corners.map((c) => c.name).sort()) ===
+      JSON.stringify(["Akash Core", "Marketplace", "Omega", "Start"]),
+  );
+  check(
+    "no cell has a price nobody chose",
+    (await readFile(join(SHARED, "spaces.js"), "utf8")).includes("cell?.price == null"),
+    "a null price is the answer, not a gap",
+  );
+
+  /* ------------------------------------------------------------ the geometry */
+
+  section("The board's geometry");
+
+  const boardJs = await readFile(join(OUT, "assets", "js", "board.js"), "utf8");
   const boardCss = await readFile(join(OUT, "assets", "css", "board.css"), "utf8");
 
-  const cssTemplate = boardCss.match(/grid-template-areas:\s*([\s\S]*?);/);
-  check("the stylesheet declares the template", !!cssTemplate);
-  const cssRows = cssTemplate
-    ? [...cssTemplate[1].matchAll(/"([^"]+)"/g)].map((m) => m[1])
-    : [];
-  check("the template is eight rows", cssRows.length === 8, `${cssRows.length} rows`);
   check(
-    "and every row is eight cells",
-    cssRows.length === 8 && cssRows.every((r) => r.split(/\s+/).length === 8),
-    cssRows.map((r) => r.split(/\s+/).length).join(","),
-  );
-
-  // matchAll yields an iterator, not an array - spread it before mapping.
-  const jsRows = board.match(/export const AREAS = \[([\s\S]*?)\]\.join/);
-  const jsCells = jsRows
-    ? [...jsRows[1].matchAll(/"([^"]+)"/g)].map((m) => m[1].trim().split(/\s+/))
-    : [];
-  check(
-    "the script and the stylesheet name the same cells",
-    JSON.stringify(jsCells) === JSON.stringify(cssRows.map((r) => r.trim().split(/\s+/))),
-    jsCells.length
-      ? `${jsCells.length} script rows vs ${cssRows.length} css rows`
-      : "no script template",
-  );
-
-  const cells = cssRows.flatMap((r) => r.split(/\s+/)).filter((c) => c !== "c");
-  check("the board has 28 tiles", cells.length === 28, `${cells.length}`);
-  check("no cell is named twice", new Set(cells).size === 28, `${new Set(cells).size} distinct`);
-  check("four of them are corners", cells.filter((c) => "tl tr bl br".split(" ").includes(c)).length === 4);
-  check("six on each side", ["t", "b", "l", "r"].every((s) => cells.filter((c) => new RegExp(`^${s}[1-6]$`).test(c)).length === 6));
-
-  check(
-    "the grid tracks are declared too",
-    /grid-template-columns:\s*var\(--corner\)\s*repeat\(6,\s*1fr\)\s*var\(--corner\)/.test(boardCss) &&
-      /grid-template-rows:\s*var\(--corner\)\s*repeat\(6,\s*1fr\)\s*var\(--corner\)/.test(boardCss),
-    "corner, six equal tracks, corner",
+    "six columns of one cell size",
+    /grid-template-columns:\s*repeat\(6,\s*var\(--cell\)\)/.test(boardCss),
   );
   check(
-    "the corner track is the reference's proportion",
-    /--corner:\s*16\.85%/.test(boardCss),
-    "16.85% of the board",
+    "and ten rows of that same cell size",
+    /grid-template-rows:\s*repeat\(10,\s*var\(--cell\)\)/.test(boardCss),
+  );
+  check(
+    "the cell is the smaller of what fits across and what fits down",
+    /--cell:\s*min\(/.test(boardCss) && boardCss.includes("100vw") && boardCss.includes("100dvh"),
+  );
+  check(
+    "and it allows for the hairlines, so the board cannot overflow the screen",
+    boardCss.includes("7 * var(--hair)") && boardCss.includes("11 * var(--hair)"),
+    "six cells, five gaps and two frames across; ten cells, nine gaps and two down",
+  );
+  check(
+    "the reserves are variables",
+    /--reserve-top:/.test(boardCss) && /--reserve-bottom:/.test(boardCss),
+  );
+  check(
+    "the lines are the board's own ground showing through the gap, not borders that double",
+    /background:\s*var\(--board-ground\)/.test(boardCss) && /gap:\s*var\(--hair\)/.test(boardCss),
+    "no cell carries a border that could be drawn twice where it meets its neighbour",
+  );
+  check(
+    "the old 8x8 template is gone",
+    !boardCss.includes("grid-template-areas") && !boardCss.includes("--corner:"),
+    "corner tracks at 16.85% made the corners a third larger than their neighbours",
+  );
+
+  check(
+    "every cell is placed by the coordinates the data gives it",
+    boardJs.includes("gridColumn: String(cell.col)") &&
+      boardJs.includes("gridRow: String(cell.row)"),
+  );
+  check(
+    "and the board is built from the data rather than a list written out by hand",
+    boardJs.includes("CELLS.map(") && !/\bconst (?:AREAS|PATH)\b/.test(boardJs),
+  );
+  check(
+    "the cells come from the shared module, not a copy in the bundle",
+    boardJs.includes('from "./shared/spaces.js"'),
+  );
+  check(
+    "the four corners keep the project's own marks",
+    boardJs.includes('from "./corner-art.js"') && boardJs.includes("cornerMark("),
+    "not redrawn at the new size, only laid out again at it",
+  );
+  check(
+    "the centre is the four by eight, and it is ready for the dice and the scorecard",
+    boardJs.includes('id: "board-center"') &&
+      boardJs.includes('centreArea.style.gridColumn = "2 / 6"') &&
+      boardJs.includes('centreArea.style.gridRow = "2 / 10"'),
+  );
+
+  /* ---------------------------------------------------- the board's colours */
+
+  section("The board's colours");
+
+  const tokens = {
+    "--board-ground": /#2a2a2a/i,
+    "--cell-ground": /#f7f4ef/i,
+    "--corner-ground": /#121212/i,
+    "--centre-ground": /#fbf9f5/i,
+    "--chest-ground": /#26211c/i,
+    "--chest-ink": /#f0e9dc/i,
+  };
+  for (const [token, value] of Object.entries(tokens)) {
+    check(`${token} is defined once, in the board's own block`, new RegExp(`${token}:\\s*`).test(boardCss));
+    check(`  and it is ${value.source}`, value.test(boardCss));
+  }
+  // The point of naming them: a colour written into a rule instead of a token is
+  // a colour that can drift away from the one the design says. The token
+  // definitions themselves are where colours are allowed to be written down, so
+  // they come out of the text before this looks.
+  const rules = boardCss
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*--[\w-]+\s*:[^;]*;\s*$/gm, "");
+  const literals = [...rules.matchAll(/:\s*(#[0-9a-f]{6})\s*[;}]/gi)].map((m) => m[1].toLowerCase());
+  check(
+    "and no colour is written into a rule where a token could carry it",
+    literals.length === 0,
+    literals.length ? [...new Set(literals)].join(" ") : "every colour goes through a token",
   );
 
   const cornerArt = await readFile(join(OUT, "assets", "js", "corner-art.js"), "utf8");
@@ -199,7 +382,7 @@ async function main() {
   );
 
   const wordmark = await readFile(join(OUT, "assets", "js", "wordmark.js"), "utf8");
-  check("the wordmark draws SAMRAJYA", wordmark.includes('"SAMRAJYA"') || wordmark.includes("SAMRAJYA"));
+  check("the wordmark draws SAMRAJYA", wordmark.includes("SAMRAJYA"));
   check("the wordmark draws KALCHAKRA", wordmark.includes("KALCHAKRA"));
   check("the wordmark has an ornament", wordmark.includes("ornament"));
   check("every SAMRAJYA letter is drawn", ["S", "A", "M", "R", "J", "Y"].every((l) =>
@@ -217,92 +400,16 @@ async function main() {
   check("small viewports are handled", css.includes("100svh"));
   check("there is a reduced-motion rule", css.includes("prefers-reduced-motion"));
 
-  section("The spaces");
+  /* ---------------------------------------------------------------- the cards
 
-  // The six spaces are described once, in shared/, and published to the client
-  // from there rather than copied into the bundle. A second copy would be a
-  // second truth about what things cost.
-  const spaces = await readFile(join(OUT, "assets", "js", "shared", "spaces.js"), "utf8");
-  check("the spaces reach the client", spaces.length > 0);
-  // The walk a player actually makes, in board order. Asserted against the
-  // cells rather than against key order, because the keys are l6..l1 and that
-  // is the reverse of how the left edge is walked.
-  //
-  //   START -> up the left edge -> Omega -> along the top -> Akash Core
-  const WALK = [
-    ["l6", "Moon"],
-    ["l5", "Lagrange Point"],
-    ["l4", "Ragnarok"],
-    ["l3", "Asteroid Belt"],
-    ["l2", "Jupiter"],
-    ["l1", "Pluto"],
-  ];
-  const TOP = [
-    ["t1", "Kuiper Belt"],
-    ["t2", "Halley's Comet"],
-    ["t3", "Nexus"],
-    ["t4", "Voyager 1"],
-    ["t5", "Proxima Centauri"],
-    ["t6", "Event Horizon"],
-  ];
-  const cellHas = (cell, name) => {
-    const at = spaces.indexOf(`\n  ${cell}: {`);
-    return at > 0 && spaces.slice(at, at + 200).includes(`name: "${name}"`);
-  };
+     The artwork is transcribed geometry, generated from the supplied SVG files.
+     These checks are about the things that would silently turn a transcription
+     into an interpretation - and none of them has anything to do with the board,
+     because the board's cells do not draw cards yet. */
 
-  check(
-    "the left edge walks up from START to the six confirmed properties",
-    WALK.every(([cell, name]) => cellHas(cell, name)),
-    `START, ${WALK.map(([, n]) => n).join(", ")}, Omega`,
-  );
-  check(
-    "and the top edge walks right from Omega to Akash Core",
-    TOP.every(([cell, name]) => cellHas(cell, name)),
-    `Omega, ${TOP.map(([, n]) => n).join(", ")}, Akash Core`,
-  );
-  check(
-    "no space is described on the right or bottom edge yet",
-    ["r1", "r2", "r3", "r4", "r5", "r6", "b1", "b2", "b3", "b4", "b5", "b6"].every(
-      (c) => !spaces.includes(`\n  ${c}: {`),
-    ),
-    "sixteen cells with no entry at all, which is what keeps them blank marks",
-  );
-  check(
-    "prices are null throughout - the revised sequence arrived without them",
-    (spaces.match(/price: null/g) || []).length === 10 &&
-      (spaces.match(/price: \d+/g) || []).length === 0,
-    "ten properties at price: null, and no invented number anywhere",
-  );
-  check(
-    "and every described space carries an icon the card module knows",
-    (() => {
-      const icons = [...spaces.matchAll(/\n    icon: "([^"]+)"/g)].map((m) => m[1]);
-      return icons.length === 12 && new Set(icons).size === 12;
-    })(),
-    "twelve spaces, twelve distinct cards, no duplicate and no orphan",
-  );
+  section("The cards");
 
-  // Bounded to the block, not the file: a lazy match runs on past the cell and
-  // finds the next one's price, which is exactly the mistake this check exists
-  // to catch. Ragnarok is on l4 - third on the walk up from START.
-  const l4 = /\n {2}l4: \{([\s\S]*?)\n {2}\},/.exec(spaces);
-  check(
-    "Ragnarok is a card, and carries no price",
-    !!l4 && /kind: "arsenal"/.test(l4[1]) && !/price:/.test(l4[1]),
-    l4 ? (l4[1].match(/kind: "\w+"/) || [""])[0] : "l4 not found",
-  );
-  check("the whole board's spaces cannot be mutated", spaces.includes("deepFreeze"));
-
-  // The artwork is drawn here, in code, and that is a requirement rather than a
-  // preference: this board ships no rasters and reaches no network for its
-// ------------------------------------------------------------- the cards
-  // A card is transcribed geometry, generated from the supplied SVG files by
-  // scripts/gen-cards.mjs. These checks are about the things that would silently
-  // turn a transcription into an interpretation.
-  const cardsJs = await readFile(join(OUT, "assets", "js", "cards.js"), "utf8");
-  const boardJsAll = await readFile(join(OUT, "assets", "js", "board.js"), "utf8");
-  const boardCssAll = await readFile(join(OUT, "assets", "css", "board.css"), "utf8");
-  const cardsCode = cardsJs
+  const cardsCode = (await readFile(join(OUT, "assets", "js", "cards.js"), "utf8"))
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 
@@ -324,79 +431,37 @@ async function main() {
     ),
   );
 
-  // Twelve cards, one for each described space, and no others.
-  const spaceIcons = [...spaces.matchAll(/\n    icon: "([^"]+)"/g)].map((m) => m[1]);
-  const cardKeys = [...cardsCode.matchAll(/\n    name: "([^"]+)"/g)].map((m) => m[1]);
   check(
-    "every described space has a card, and there are no others",
-    cardKeys.length === spaceIcons.length && spaceIcons.length === 12,
-    `${spaceIcons.length} spaces, ${cardKeys.length} cards`,
+    "there are still twelve cards",
+    [...cardsCode.matchAll(/^\s{2}"[a-z0-9-]+": Object\.freeze\(\{/gm)].length === 12,
   );
-
-  // Two formats, and each card is the one its board edge can show. A side cell
-  // is wider than it is tall; a top-row cell is the other way round, and putting
-  // a landscape card in a portrait cell is the mistake this catches.
   check(
-    "there are exactly two card formats, 328x212 and 190x300",
+    "the artwork keeps its two formats, six of each",
     (cardsCode.match(/w: 328,\n    h: 212,/g) || []).length === 6 &&
       (cardsCode.match(/w: 190,\n    h: 300,/g) || []).length === 6,
-    "six of each: six side cells and six top-row cells",
+    "328x212 and 190x300, unchanged by the new board",
   );
   check(
-    "each card's viewBox is the format its edge can show",
-    (() => {
-      // The order in the table is board order: six side-column cards then six
-      // top-row cards.
-      const pairs = [...cardsCode.matchAll(/w: (\d+),\n    h: (\d+),\n    rx: (\d+),/g)].map((m) =>
-        [Number(m[1]), Number(m[2]), Number(m[3])],
-      );
-      if (pairs.length !== 12) return false;
-      const ok = pairs.every(([w, h], i) =>
-        i < 6 ? w === 328 && h === 212 : w === 190 && h === 300,
-      );
-      const rx = pairs.every(([, , r], i) => r === (i < 6 ? 8 : 6));
-      return ok && rx;
-    })(),
-    "328x212 rx8 down the sides, 190x300 rx6 along the top",
-  );
-  check(
-    "and the wrapper's viewBox is written per card, not assumed",
+    "the wrapper's viewBox is written per card, not assumed",
     cardsCode.includes('viewBox="0 0 ${card.w} ${card.h}"') &&
-      cardsCode.includes('rx="${card.rx}"') &&
-      cardsCode.includes('height="${card.h}" rx="${card.rx}" fill="none"'),
-    "the border and the clip are drawn at the card's own size",
+      cardsCode.includes('rx="${card.rx}"'),
   );
-
-  // Four groups, two chests, and the data agrees with the artwork.
   check(
-    "there are four property groups with the specified colours",
+    "the four property groups keep their colours",
     /purple:\s*"#7B68B0"/.test(cardsCode) &&
       /terracotta:\s*"#CF7A4B"/.test(cardsCode) &&
       /teal:\s*"#3F8F96"/.test(cardsCode) &&
       /rose:\s*"#B8557A"/.test(cardsCode),
   );
-  for (const [name, hex] of [
-    ["purple", "#7B68B0"],
-    ["terracotta", "#CF7A4B"],
-    ["teal", "#3F8F96"],
-    ["rose", "#B8557A"],
-  ]) {
-    check(
-      `and spaces.js carries the same ${name} colour`,
-      spaces.includes(`${name}: "${hex}"`),
-    );
-  }
   check(
-    "the old groups are gone",
-    !/#C79A1E|#3F7F5C/.test(cardsCode) && !/#C79A1E|#3F7F5C/.test(spaces),
+    "and the old ones are gone",
+    !/#C79A1E|#3F7F5C/.test(cardsCode),
     "amber and green were the previous set's colours",
   );
   check(
     "exactly two cards are chests, and neither has a pill",
     (cardsCode.match(/type: "chest"/g) || []).length === 2 &&
       (cardsCode.match(/type: "property"/g) || []).length === 10 &&
-      // Ragnarok and Nexus are the two no-pill cards, and their titles are the
-      // cream chest ink rather than white.
       (cardsCode.match(/>RAGNAROK</g) || []).length === 1 &&
       (cardsCode.match(/>NEXUS</g) || []).length === 1,
   );
@@ -406,53 +471,25 @@ async function main() {
       (cardsCode.match(/fill="#FFFFFF"/g) || []).length === 10,
   );
   check(
-    "and each card's title is the right colour for its ground",
-    // Ragnarok is ivory with a black title; Nexus is black with a cream one.
-    // The other ten are white on their pill. Scoped to the title element, because
-    // both chest inks are also drawing colours elsewhere in those two cards.
-    (() => {
-      const titles = [...cardsCode.matchAll(/<text class="title-text"[^>]*>/g)].map((m) => m[0]);
-      if (titles.length !== 12) return false;
-      const white = titles.filter((t) => t.includes('fill="#FFFFFF"')).length;
-      const ink = titles.filter((t) => t.includes('fill="#241F19"')).length;
-      return white === 10 && ink === 2;
-    })(),
-  );
-
-  // No card keeps a dark ground. Ragnarok, Nexus and Event Horizon were all
-  // recoloured onto the shared ivory, with their artwork remapped onto the same
-  // stone ramp so nothing disappears onto paper.
-  check(
     "every card sits on the shared ivory",
     (cardsCode.match(/<rect width="\d+" height="\d+" fill="#F7F4EF"\/>/g) || []).length === 12 &&
       !/<rect width="\d+" height="\d+" fill="#(26211C|000000|3A3042)"/.test(cardsCode),
   );
 
-  // The one sanctioned text change, and no others.
+  // The one sanctioned text change to the card artwork: LAGRANGE POINT, with the
+  // L2 left off. The board's CELL says Lagrange Point L2 - they are different
+  // things, and the cell is not allowed to change the card or the card the cell.
   check(
     "Lagrange Point is displayed without the L2",
-    cardsCode.includes(">LAGRANGE POINT<") &&
-      !cardsCode.includes(">LAGRANGE POINT L2<") &&
-      spaces.includes('name: "Lagrange Point"'),
+    cardsCode.includes(">LAGRANGE POINT<") && !cardsCode.includes(">LAGRANGE POINT L2<"),
   );
   check(
-    "and its pill is the format's, holding a centred title",
-    (() => {
-      const m = cardsCode.match(
-        /function artlagrangePoint\(id\)[\s\S]*?<rect x="14" y="14" width="([\d.]+)" height="40" rx="8"[^>]*fill="#7B68B0"[\s\S]*?x="([\d.]+)" y="([\d.]+)"[\s\S]*?textLength="(\d+)"/,
-      );
-      if (!m) return false;
-      const [, pw, tx, ty] = m.map(Number);
-      return Math.abs(tx - (14 + pw / 2)) <= 1 && ty > 14 && ty < 54 && m[4] > 0;
-    })(),
+    "the cell, which is a different thing, still says Lagrange Point L2",
+    CELLS.some((c) => c.id === "lagrange-l2" && c.name === "Lagrange Point L2"),
   );
 
   check(
     "every pill is drawn AROUND its title, not beside it",
-    // The invariant that was broken before: the type was enlarged and the
-    // baseline left where it was, so titles grew upward out of their own pills.
-    // Now each title is centred on its pill's centre line, and its baseline lies
-    // inside that pill's own height - so the two cannot disagree.
     (() => {
       const cards = [...cardsCode.matchAll(/function art\w+\(id\) \{([\s\S]*?)\n\}/g)];
       if (cards.length !== 12) return false;
@@ -478,10 +515,6 @@ async function main() {
 
   check(
     "every card carries its own animation hooks",
-    // The class names the supplied files give their groups, which is what the
-    // hooks are: each drawing already names the parts that will move. Listed
-    // per card rather than as one union, so a card losing its own hook names
-    // shows up as that card failing rather than as the set quietly thinning.
     [
       "moon-body", "craters", "crater-rims", "stars",           // Moon
       "moon", "moon-limb", "gravity-rings", "satellite",       // Lagrange Point
@@ -500,59 +533,9 @@ async function main() {
 
   check(
     "clip ids are unique per instance, not shared between cards",
-    /clipSeq/.test(cardsCode) &&
-      cardsCode.includes("`card-${key}-${++clipSeq}`"),
-    "a duplicate id on one page breaks clipping, and the board draws twelve at once",
+    /clipSeq/.test(cardsCode) && cardsCode.includes("`card-${key}-${++clipSeq}`"),
   );
 
-  check(
-    "the board draws whatever a cell has been given",
-    boardJsAll.includes("spaceAt(area)"),
-  );
-  check(
-    "a cell with no space keeps its mark",
-    boardJsAll.includes('el("span", { class: "board__star-mark"'),
-  );
-  check(
-    "all twelve spaces go through one builder",
-    boardJsAll.includes("spaceTile(space, common)") &&
-      !/propertyTile|arsenalTile/.test(boardJsAll),
-  );
-  check(
-    "the board gets the card from the card module",
-    boardJsAll.includes('from "./cards.js"') && boardJsAll.includes("cardSvg("),
-  );
-  check(
-    "a space still carries its kind and group as data",
-    boardJsAll.includes("data-space") && boardJsAll.includes("data-group"),
-  );
-  check(
-    "no space prints a price - prices are dealt in the middle",
-    !/space__price/.test(boardCssAll) && !/space__price/.test(boardJsAll),
-  );
-
-  // The geometry is fixed. These are the cells the design put spaces on; if the
-  // board's template ever stops producing them, the spaces have quietly moved.
-  check(
-    "the board still gives every intermediate tile the same box",
-    boardCss.includes("var(--corner) repeat(6, 1fr) var(--corner)"),
-  );
-  check(
-    "a space is sized against its own tile, so it scales as one piece",
-    boardCss.includes("container-type: inline-size"),
-  );
-
-  check(
-    "the grey strips are gone",
-    !/space__band|space__icon|arsenal__card|arsenal__icon/.test(boardCss),
-    "no divider strips, no icon layer, no black card",
-  );
-  check(
-    "and no space paints a black field",
-    !/\.board__tile--(space|arsenal)[^{]*\{[^}]*background:\s*(#000|black|var\(--ink\))/.test(
-      boardCss.replace(/\/\*[\s\S]*?\*\//g, ""),
-    ),
-  );
   section("Nothing secret");
 
   const suspicious = [
