@@ -1,0 +1,478 @@
+{
+ "grid": {
+  "cols": 6,
+  "rows": 10
+ },
+ "travel": "Start (bottom-left) up the left column, across the top, down the right column, back along the bottom to Start",
+ "sets": {
+  "s1": {
+   "color": "#7B68B0",
+   "name": "Crayon purple"
+  },
+  "s2": {
+   "color": "#CF7A4B",
+   "name": "Terracotta orange"
+  },
+  "s3": {
+   "color": "#3F8F96",
+   "name": "Teal"
+  },
+  "s4": {
+   "color": "#B8557A",
+   "name": "Rose"
+  },
+  "s5": {
+   "color": "#6F9A7B",
+   "name": "Sage"
+  },
+  "s6": {
+   "color": "#C9A24A",
+   "name": "Gold"
+  },
+  "s7": {
+   "color": "#5B6FA6",
+   "name": "Indigo"
+  },
+  "s8": {
+   "color": "#A8564C",
+   "name": "Brick"
+  }
+ },
+ "cells": [
+  {
+   "index": 0,
+   "col": 1,
+   "row": 10,
+   "type": "corner",
+   "id": "start",
+   "name": "Start",
+   "lines": [
+    "START"
+   ],
+   "set": null,
+   "color": null,
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 1,
+   "col": 1,
+   "row": 9,
+   "type": "property",
+   "id": "moon",
+   "name": "Moon",
+   "lines": [
+    "MOON"
+   ],
+   "set": "s1",
+   "color": "#7B68B0",
+   "art": "cards/horizontal/moon.svg",
+   "chest": null
+  },
+  {
+   "index": 2,
+   "col": 1,
+   "row": 8,
+   "type": "property",
+   "id": "lagrange-l2",
+   "name": "Lagrange Point L2",
+   "lines": [
+    "LAGRANGE",
+    "POINT L2"
+   ],
+   "set": "s1",
+   "color": "#7B68B0",
+   "art": "cards/horizontal/lagrange-l2.svg",
+   "chest": null
+  },
+  {
+   "index": 3,
+   "col": 1,
+   "row": 7,
+   "type": "chest",
+   "id": "ragnarok",
+   "name": "Ragnarok",
+   "lines": [
+    "RAGNAROK"
+   ],
+   "set": null,
+   "color": null,
+   "art": "cards/horizontal/ragnarok.svg",
+   "chest": "weapons"
+  },
+  {
+   "index": 4,
+   "col": 1,
+   "row": 6,
+   "type": "property",
+   "id": "asteroid-belt",
+   "name": "Asteroid Belt",
+   "lines": [
+    "ASTEROID",
+    "BELT"
+   ],
+   "set": "s2",
+   "color": "#CF7A4B",
+   "art": "cards/horizontal/asteroid-belt.svg",
+   "chest": null
+  },
+  {
+   "index": 5,
+   "col": 1,
+   "row": 5,
+   "type": "property",
+   "id": "jupiter",
+   "name": "Jupiter",
+   "lines": [
+    "JUPITER"
+   ],
+   "set": "s2",
+   "color": "#CF7A4B",
+   "art": "cards/horizontal/jupiter.svg",
+   "chest": null
+  },
+  {
+   "index": 6,
+   "col": 1,
+   "row": 4,
+   "type": "property",
+   "id": "pluto",
+   "name": "Pluto",
+   "lines": [
+    "PLUTO"
+   ],
+   "set": "s2",
+   "color": "#CF7A4B",
+   "art": "cards/horizontal/pluto.svg",
+   "chest": null
+  },
+  {
+   "index": 7,
+   "col": 1,
+   "row": 3,
+   "type": "property",
+   "id": "kuiper-belt",
+   "name": "Kuiper Belt",
+   "lines": [
+    "KUIPER",
+    "BELT"
+   ],
+   "set": "s3",
+   "color": "#3F8F96",
+   "art": "cards/vertical/kuiper-belt.svg",
+   "chest": null
+  },
+  {
+   "index": 8,
+   "col": 1,
+   "row": 2,
+   "type": "property",
+   "id": "halleys-comet",
+   "name": "Halley's Comet",
+   "lines": [
+    "HALLEY'S",
+    "COMET"
+   ],
+   "set": "s3",
+   "color": "#3F8F96",
+   "art": "cards/vertical/halleys-comet.svg",
+   "chest": null
+  },
+  {
+   "index": 9,
+   "col": 1,
+   "row": 1,
+   "type": "corner",
+   "id": "omega",
+   "name": "Omega",
+   "lines": [
+    "OMEGA"
+   ],
+   "set": null,
+   "color": null,
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 10,
+   "col": 2,
+   "row": 1,
+   "type": "chest",
+   "id": "nexus",
+   "name": "Nexus",
+   "lines": [
+    "NEXUS"
+   ],
+   "set": null,
+   "color": null,
+   "art": "cards/vertical/nexus.svg",
+   "chest": "currency"
+  },
+  {
+   "index": 11,
+   "col": 3,
+   "row": 1,
+   "type": "property",
+   "id": "voyager-1",
+   "name": "Voyager 1",
+   "lines": [
+    "VOYAGER",
+    "1"
+   ],
+   "set": "s4",
+   "color": "#B8557A",
+   "art": "cards/vertical/voyager-1.svg",
+   "chest": null
+  },
+  {
+   "index": 12,
+   "col": 4,
+   "row": 1,
+   "type": "property",
+   "id": "proxima-centauri",
+   "name": "Proxima Centauri",
+   "lines": [
+    "PROXIMA",
+    "CENTAURI"
+   ],
+   "set": "s4",
+   "color": "#B8557A",
+   "art": "cards/vertical/proxima-centauri.svg",
+   "chest": null
+  },
+  {
+   "index": 13,
+   "col": 5,
+   "row": 1,
+   "type": "property",
+   "id": "event-horizon",
+   "name": "Event Horizon",
+   "lines": [
+    "EVENT",
+    "HORIZON"
+   ],
+   "set": "s4",
+   "color": "#B8557A",
+   "art": "cards/vertical/event-horizon.svg",
+   "chest": null
+  },
+  {
+   "index": 14,
+   "col": 6,
+   "row": 1,
+   "type": "corner",
+   "id": "akash-core",
+   "name": "Akash Core",
+   "lines": [
+    "AKASH",
+    "CORE"
+   ],
+   "set": null,
+   "color": null,
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 15,
+   "col": 6,
+   "row": 2,
+   "type": "property",
+   "id": "earth-137",
+   "name": "Earth 137",
+   "lines": [
+    "EARTH",
+    "137"
+   ],
+   "set": "s5",
+   "color": "#6F9A7B",
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 16,
+   "col": 6,
+   "row": 3,
+   "type": "property",
+   "id": "orions-belt",
+   "name": "Orion's Belt",
+   "lines": [
+    "ORION'S",
+    "BELT"
+   ],
+   "set": "s5",
+   "color": "#6F9A7B",
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 17,
+   "col": 6,
+   "row": 4,
+   "type": "chest",
+   "id": "epoch",
+   "name": "Epoch",
+   "lines": [
+    "EPOCH"
+   ],
+   "set": null,
+   "color": null,
+   "art": null,
+   "chest": "undecided"
+  },
+  {
+   "index": 18,
+   "col": 6,
+   "row": 5,
+   "type": "property",
+   "id": "wow-signal",
+   "name": "Wow! Signal",
+   "lines": [
+    "WOW!",
+    "SIGNAL"
+   ],
+   "set": "s6",
+   "color": "#C9A24A",
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 19,
+   "col": 6,
+   "row": 6,
+   "type": "property",
+   "id": "dyson-sphere",
+   "name": "Dyson Sphere",
+   "lines": [
+    "DYSON",
+    "SPHERE"
+   ],
+   "set": "s6",
+   "color": "#C9A24A",
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 20,
+   "col": 6,
+   "row": 7,
+   "type": "property",
+   "id": "wormhole",
+   "name": "Wormhole",
+   "lines": [
+    "WORMHOLE"
+   ],
+   "set": "s6",
+   "color": "#C9A24A",
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 21,
+   "col": 6,
+   "row": 8,
+   "type": "property",
+   "id": "milky-way",
+   "name": "Milky Way",
+   "lines": [
+    "MILKY",
+    "WAY"
+   ],
+   "set": "s7",
+   "color": "#5B6FA6",
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 22,
+   "col": 6,
+   "row": 9,
+   "type": "property",
+   "id": "rama",
+   "name": "Rama",
+   "lines": [
+    "RAMA"
+   ],
+   "set": "s7",
+   "color": "#5B6FA6",
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 23,
+   "col": 6,
+   "row": 10,
+   "type": "corner",
+   "id": "marketplace",
+   "name": "Marketplace",
+   "lines": [
+    "MARKET-",
+    "PLACE"
+   ],
+   "set": null,
+   "color": null,
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 24,
+   "col": 5,
+   "row": 10,
+   "type": "chest",
+   "id": "kronos",
+   "name": "Kronos",
+   "lines": [
+    "KRONOS"
+   ],
+   "set": null,
+   "color": null,
+   "art": null,
+   "chest": "undecided"
+  },
+  {
+   "index": 25,
+   "col": 4,
+   "row": 10,
+   "type": "property",
+   "id": "supernova",
+   "name": "Supernova",
+   "lines": [
+    "SUPER-",
+    "NOVA"
+   ],
+   "set": "s8",
+   "color": "#A8564C",
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 26,
+   "col": 3,
+   "row": 10,
+   "type": "property",
+   "id": "quasar",
+   "name": "Quasar",
+   "lines": [
+    "QUASAR"
+   ],
+   "set": "s8",
+   "color": "#A8564C",
+   "art": null,
+   "chest": null
+  },
+  {
+   "index": 27,
+   "col": 2,
+   "row": 10,
+   "type": "property",
+   "id": "sagittarius-a-star",
+   "name": "Sagittarius A*",
+   "lines": [
+    "SGR A*"
+   ],
+   "set": "s8",
+   "color": "#A8564C",
+   "art": null,
+   "chest": null
+  }
+ ]
+}

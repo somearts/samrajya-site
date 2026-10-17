@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Samrajya Kalchakra — Empires rise. Time turns.</title>
+<meta name="description" content="Samrajya Kalchakra. A two-player strategy game. Empires rise. Time turns.">
+<meta name="theme-color" content="#f7f4ef">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="index, follow">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Samrajya Kalchakra">
+<meta property="og:description" content="A two-player strategy game. Empires rise. Time turns.">
+
+<link rel="icon" href="assets/img/mark.svg" type="image/svg+xml">
+<link rel="preload" href="assets/fonts/jost-300.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/jost-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="assets/css/kalchakra.css">
+<link rel="stylesheet" href="assets/css/board.css">
+</head>
+<body>
+
+<a class="skip-link" href="#stage-body">Skip to content</a>
+
+<div class="stage" id="stage">
+  <main class="stage__body" id="stage-body" tabindex="-1">
+    <!-- The welcome screen is drawn by the client so the wordmark and the
+         token glyphs come from one place. The fallback below is what a
+         browser without scripting shows, and it is the composition itself:
+         the page is never blank. -->
+    <div class="composition">
+      <h1 class="visually-hidden">Samrajya Kalchakra</h1>
+      <noscript>
+        <p class="tagline">Samrajya Kalchakra. Empires rise. Time turns.</p>
+        <p class="panel__lede">This game needs JavaScript. Please enable it and reload.</p>
+      </noscript>
+    </div>
+  </main>
+  <div class="stage__foot" id="stage-foot"></div>
+</div>
+
+<script type="module" src="assets/js/app.js"></script>
+</body>
+</html>

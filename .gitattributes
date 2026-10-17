@@ -1,0 +1,15 @@
+# Line endings.
+#
+# Git on Windows defaults to rewriting LF to CRLF in the working tree, which
+# means every file shows as modified after a checkout for no reason and every
+# diff is harder to read. Normalising here keeps the repository's contents
+# stable regardless of who clones it and on what.
+* text=auto eol=lf
+
+# The fonts and the artwork are bytes, not text. Never let git try to normalise
+# a line ending inside a woff2 or an SVG path.
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary

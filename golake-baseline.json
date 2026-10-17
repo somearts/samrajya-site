@@ -1,0 +1,40 @@
+{
+  "takenAt": "2026-10-16T11:38:14.010Z",
+  "status": 200,
+  "title": "The Lake Foundation",
+  "hash": "A90931524FE119C8D2952FD1E3D7AAAE9FFBFC486A960C5AC64F5E6B84A58683",
+  "hashWithChange": "0DA8D7B37034A7693F16DD69EE9A3E67D59350B949D86C3983E3641F37D7F4DE",
+  "bytes": 6295,
+  "assets": [
+    "assets/css/site.css",
+    "assets/favicon.svg",
+    "assets/fonts/barlow-cond-800.woff2",
+    "assets/fonts/ibm-plex-mono-400.woff2"
+  ],
+  "cards": [
+    {
+      "num": "01",
+      "title": "Strand",
+      "href": "/strand/",
+      "desc": "A quieter way to stay close."
+    },
+    {
+      "num": "02",
+      "title": "Water",
+      "href": null,
+      "desc": "Stories and systems for a water-secure future."
+    },
+    {
+      "num": "03",
+      "title": "Samrajya",
+      "href": "/samrajya/",
+      "desc": "A strategy game about building worlds and empires."
+    },
+    {
+      "num": "04",
+      "title": "The Zero Theorem",
+      "href": null,
+      "desc": "An exploration of certainty, probability and the unknown."
+    }
+  ]
+}

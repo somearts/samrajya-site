@@ -1,0 +1,21 @@
+{
+  "name": "samrajya-site",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Samrajya: Kalchakra - a two-player strategy game, published as its own Cloudflare Worker on golake.app/samrajya",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "check": "npm run build && node scripts/check-assets.js",
+    "dev": "npm run build && wrangler dev",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:dry": "npm run build && wrangler deploy --dry-run",
+    "test": "node --test \"test/*.test.js\"",
+    "test:e2e": "node scripts/e2e.js",
+    "verify": "node scripts/verify-live.js",
+    "verify:welcome": "node scripts/welcome-baseline.js check"
+  },
+  "devDependencies": {
+    "wrangler": "^4.147.0"
+  }
+}

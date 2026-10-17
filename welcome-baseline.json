@@ -1,0 +1,6 @@
+{
+  "what": "The approved welcome screen, as the author's own markup.",
+  "method": "SHA-256 of index.html after authorContent(), which strips what Cloudflare injects per request.",
+  "approved": "C6856847BE1149E17B29E6CBABB25D7CBAA74086AA66E2E472CDB05237E034E8",
+  "deployed": "C6856847BE1149E17B29E6CBABB25D7CBAA74086AA66E2E472CDB05237E034E8"
+}

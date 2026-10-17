@@ -1,0 +1,13 @@
+# Build output. Rebuilt from authored/ by scripts/build.js on every deploy.
+public/
+
+# Local state from `wrangler dev` - local Durable Object storage, caches.
+.wrangler/
+
+node_modules/
+
+# Editors and operating systems.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,282 @@
+/* ==========================================================================
+   SAMRAJYA - THE BOARD
+
+   A six-by-ten grid of twenty-eight identical square cells, and a hole in the
+   middle four columns by eight rows.
+
+   SIZING
+   ------
+   One variable decides the size of everything:
+
+       --cell   the side of one cell
+
+   and it is the smaller of two limits. The first is what six cells fit across
+   the screen; the second is what ten rows fit between the header and the footer
+   on a short phone. Whichever is smaller wins, so the board is always whole and
+   never needs a scrollbar.
+
+   Both limits allow for the hairlines between the cells. The board is a grid
+   with a one-pixel gap and a one-pixel frame, so it occupies six cells, five
+   gaps and two frames across - and a --cell that ignored those seven lines
+   would push the board past the edge of the screen by exactly the width of the
+   frame. That arithmetic is why the reserves below are not simply the width and
+   height of the screen.
+
+   Every distance inside a cell is a fraction of --cell, so a phone and a large
+   screen show the same drawing at two sizes and nothing is ever measured in
+   pixels.
+
+   ON WHY ALL TWENTY-EIGHT ARE THE SAME SQUARE
+   ------------------------------------------
+   The previous board was 8x8 with corner tracks at 16.85% and six 1fr tracks
+   beside them, which made each corner a third larger than the cells next to it.
+   Worse, a side cell and a top cell were then transposes of one another, so on a
+   square board exactly one of the two orientations was always wrong - the board
+   carried twelve horizontal cards and twelve vertical ones because a square
+   cannot do otherwise. Six columns by ten rows removes both problems at once:
+   every track is --cell, so every cell is a square, and the centre is four by
+   eight rather than six by six.
+   ========================================================================== */
+
+/* ------------------------------------------------------------------ sizing */
+
+.board-screen {
+  /* The gap and frame between cells, and around the board. Every line on the
+     board is this one value, and it is the board's own ground showing through
+     the gap - so no cell carries a border that could be drawn twice where it
+     meets its neighbour, and no shared edge is ever two hairlines deep. */
+  --hair: 0.5px;
+
+  /* How much of the screen the board is asked to leave alone, measured on a
+     360x640 phone rather than guessed.
+
+     Above it, 72px: the page's own top padding, the two player identities
+     (29px), and the gap this screen keeps below them. Below it, 60px: the link
+     off the board (44px) and the screen it leaves under itself.
+
+     These are the two numbers most easily got wrong, and getting them wrong
+     fails quietly. Under-reserve and the page gains a scrollbar a few pixels
+     tall - the board is whole, but the screen says otherwise. Over-reserve and
+     the board is simply smaller than it needs to be on a short phone. They
+     stay variables because the header is not a fixed height. */
+  --reserve-top: 72px;
+  --reserve-bottom: 60px;
+  --margin: 8px;
+
+  --cell: min(
+    calc((100vw - 2 * var(--margin) - 7 * var(--hair)) / 6),
+    calc((100dvh - var(--reserve-top) - var(--reserve-bottom) - 11 * var(--hair)) / 10)
+  );
+
+  display: grid;
+  grid-template-rows: auto min-content;
+  justify-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+/* --------------------------------------------------------------- the board */
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(6, var(--cell));
+  grid-template-rows: repeat(10, var(--cell));
+
+  /* Six cells, five gaps and two frames across; ten cells, nine gaps and two
+     frames down. Stated as the board's own box rather than left to the tracks,
+     so the arithmetic that keeps it inside the screen is visible here. */
+  width: calc(var(--cell) * 6 + var(--hair) * 7);
+  height: calc(var(--cell) * 10 + var(--hair) * 11);
+
+  gap: var(--hair);
+  padding: var(--hair);
+
+  /* The dark ground the lines are made of. */
+  background: #2a2a2a;
+
+  /* Makes the board the container its descendants measure against, so a label is
+     sized as a share of the board rather than of the viewport, and the drawing
+     is identical at two scales. */
+  container-type: inline-size;
+}
+
+/* ------------------------------------------------------------------ a cell */
+
+.board__cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+
+  /* The cream every ordinary cell sits on. */
+  background: var(--paper);
+}
+
+/* ------------------------------------------------------------ a corner cell
+
+   The project's own corner: black, the hairline mark, the name, and the rule
+   beneath it. Only the size and the position have changed - the mark, the rule
+   and the name's treatment are the ones the board has always had. */
+
+.board__cell--corner {
+  background: #121212;
+  color: var(--paper);
+
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  align-content: center;
+  justify-items: center;
+  gap: 0;
+  padding: 7% 3%;
+
+  /* Its own container, so the name below is sized against the cell rather than
+     the board. Eleven characters - AKASH CORE, MARKETPLACE - have to fit
+     whatever the cell is, and on a 360px phone they only just do. */
+  container-type: inline-size;
+}
+
+/* The mark is given the row's whole height and the cell's width, and the SVG
+   inside is told to fit whichever of the two is smaller. A two-line corner name
+   - AKASH CORE, MARKETPLACE - leaves less room than a one-line one, and a mark
+   sized only by its width spills out of its row and lands on top of the name.
+   Letting the SVG fit the space it is given means it shrinks instead. */
+.board__mark--corner {
+  display: block;
+  width: 54%;
+  height: 100%;
+  min-height: 0;
+  align-self: stretch;
+}
+
+.board__mark--corner svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The name. Sized from --cell like every other label on the board, with a floor
+   under it so it stays a word on a phone. The tracking is in em for the same
+   reason: the longest name has to fit whatever the cell is. */
+.board__corner-name {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: max(8px, calc(var(--cell) * 0.14));
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 1.15;
+  max-width: 100%;
+  align-self: end;
+}
+
+.board__corner-name span {
+  white-space: nowrap;
+}
+
+/* The rule under the name. In the reference it is about a quarter of the cell's
+   width, and it is the only thing on the cell that is not a mark or a word. */
+.board__corner-rule {
+  display: block;
+  width: 26%;
+  height: 1px;
+  background: currentColor;
+  align-self: end;
+  margin-top: 0.7em;
+}
+
+/* ------------------------------------------------------------------ centre
+
+   Columns 2 to 5 and rows 2 to 9 - the four by eight that is not part of the
+   ring. Given six tracks of the grid and nothing else, so whatever eventually
+   lives in here gets the same box by default. */
+
+.board__centre {
+  background: #fbf9f5;
+  display: grid;
+  place-items: center;
+}
+
+/* A wide, flat drawing - a star and two tapering horizons - sized against the
+   centre it was drawn for. */
+.board__centre-mark {
+  display: block;
+  width: 43cqw;
+  height: auto;
+}
+
+/* The horizon lines either side of the star. Drawn as wedges, not rules: a
+   constant-weight line reads as a divider and a taper reads as a distance. */
+.board__line,
+.board__star {
+  fill: var(--ink);
+}
+
+/* --------------------------------------------------------- the card, for later
+
+   The board's cells do not draw card artwork yet - the reference layout puts a
+   set-colour pill and a name in each tile, and the artwork belongs behind that.
+   These rules are the host the card SVG drops into when it arrives, and the one
+   thing that must be true of it from the start: the cell decides the size and
+   the card keeps its own proportion inside it. */
+
+.space__card {
+  width: 100%;
+  display: block;
+  line-height: 0;
+}
+
+.space__card .title-text {
+  font-family: "Jost", "Helvetica Neue", Arial, sans-serif;
+  line-height: normal;
+}
+
+/* ------------------------------------------------------- who is at the board
+
+   Above the board, not on it. The board in the reference is a finished drawing
+   and the two player identities are not part of it, so they sit outside and the
+   reference stays reference. */
+
+.board-who {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.who {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4em;
+  padding: 0.3em 0.7em;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  max-width: 100%;
+}
+
+.who--me {
+  border-color: var(--ink);
+}
+
+.who__name {
+  font-weight: 300;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.who__civ {
+  font-size: 0.68rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.who--me .who__civ {
+  color: var(--ink);
+}

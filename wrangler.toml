@@ -1,0 +1,78 @@
+#:schema node_modules/wrangler/config-schema.json
+#
+# Samrajya: Kalchakra - published as its own Cloudflare Worker, serving static
+# assets and one Durable Object per game room.
+#
+# This is a SEPARATE project from GoLake (Worker odd-snow-0a72, which holds
+# golake.app as a custom domain) and from Strand (Worker golake-strand).
+# Neither is referenced, redeployed or modified by anything in this file.
+#
+# ---------------------------------------------------------------------------
+# ROUTING
+# ---------------------------------------------------------------------------
+#   golake.app/samrajya      -> the bare prefix, redirected by the asset store
+#   golake.app/samrajya/*    -> the site and its API
+#
+# Cloudflare matches the most specific route first, and neither pattern can
+# match a path that is not ours. Adding them cannot reach GoLake or Strand.
+#
+# NOTE: TOML table order matters. Every top-level key must precede the [assets]
+# table, or TOML reads it as a field of that table and Wrangler rejects the
+# config with "Unexpected fields found in assets field".
+
+name = "golake-samrajya"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+routes = [
+  { pattern = "golake.app/samrajya", zone_name = "golake.app" },
+  { pattern = "golake.app/samrajya/*", zone_name = "golake.app" }
+]
+
+[assets]
+directory = "./public"
+
+# `run_worker_first` needs a named binding, so the asset store is env.ASSETS
+# rather than an implicit one.
+binding = "ASSETS"
+
+# Stated explicitly because it is load-bearing: this is what sends /samrajya to
+# /samrajya/ and resolves /samrajya/ to index.html. The site is authored with
+# relative asset paths so it stays portable, exactly as Strand is.
+html_handling = "auto-trailing-slash"
+
+# Every request reaches the Worker first, so a missing file under /samrajya is
+# answered here as a real 404 rather than falling through to GoLake.
+run_worker_first = true
+
+not_found_handling = "none"
+
+[observability]
+enabled = true
+
+# ---------------------------------------------------------------------------
+# ROOMS
+# ---------------------------------------------------------------------------
+# One Durable Object per game. A single object handling a room at a time is what
+# makes a move atomic: the two players can never act on the same room in the
+# same instant, because the object will not run two requests at once.
+#
+# SQLite-backed, so a room survives a redeploy. The board game's state joins
+# this record later; nothing about the room's shape has to change for that.
+[[durable_objects.bindings]]
+name = "GAME_ROOM"
+class_name = "GameRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom"]
+
+# ---------------------------------------------------------------------------
+# NOT WIRED IN, ON PURPOSE
+# ---------------------------------------------------------------------------
+# - No D1, KV or R2. A game lives entirely inside its own Durable Object, so
+#   there is nothing to cross-reference and nothing another project can reach.
+# - No secrets. A seat is held by a secret kept in the player's own browser,
+#   and there is no key to leak and no admin token to misconfigure.
+# - Cache headers are at Cloudflare's defaults. The first deploy should not
+#   also be the deploy that changes how the live site behaves.
