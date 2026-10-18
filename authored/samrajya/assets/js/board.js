@@ -26,15 +26,14 @@
    the same fact, and both come from the same record in shared/spaces.js, so
    they cannot drift apart.
 
-   WHAT IS IN A CELL RIGHT NOW
-   --------------------------
-   The four corners carry their mark, their name and the rule beneath it. Every
-   other cell is a plain square. The reference layout this is built to puts a
-   set-colour pill and a name in each tile; that is the next piece of work, and
-   the card artwork that belongs behind it the one after, so neither is drawn
-   here. The cells are real elements with their own ids and indices from the
-   first commit, so filling them in later is adding a child rather than
-   rebuilding the board.
+   WHAT IS IN A CELL NOW
+   --------------------
+   The four corners carry their mark, their name and the rule beneath it. A
+   property carries a pill in its set's colour and its name. A chest carries
+   its name in cream on the dark ground and no pill. The card artwork that
+   belongs behind the pill is the next piece of work and is not drawn here; the
+   cells have their ids, indices and art paths on them from the start, so
+   putting artwork in is adding a child rather than rebuilding the board.
    ========================================================================== */
 
 import { el } from "./dom.js";
@@ -105,11 +104,36 @@ function cornerCell(cell) {
 }
 
 /**
- * Any other cell. A square with its own coordinates on it and nothing else in
- * it yet.
+ * The name, set on the lines the data gives.
+ *
+ * "Proxima Centauri" becomes PROXIMA / CENTAURI and "Lagrange Point L2" becomes
+ * LAGRANGE / POINT L2 - the breaks are in the data, not guessed here, so the
+ * drawing and board-cells.json cannot disagree about where a name wraps.
+ */
+function nameLines(cell) {
+  return el("span", {
+    class: "board__label",
+    html: cell.lines.map((line) => `<span>${line}</span>`).join(""),
+  });
+}
+
+/**
+ * Any cell that is not a corner.
+ *
+ * A property carries a pill in its set's colour above its name. A chest carries
+ * only its name, in cream on the dark ground, because a chest belongs to no set
+ * and a pill in no set's colour would be saying something false about it.
+ *
+ * Properties are real buttons, so a property is reachable by keyboard and
+ * announces itself as one; the cells have no handler yet and that is deliberate -
+ * a button that does nothing is still a button the reader can find, and it is
+ * the same element that will take the tap when there is one. Chests are
+ * ordinary cells for now and become buttons the same way when they do.
  */
 function plainCell(cell) {
-  return el("div", {
+  const isChest = cell.type === "chest";
+
+  const props = {
     class: `board__cell board__cell--${cell.type}`,
     style: { gridColumn: String(cell.col), gridRow: String(cell.row) },
     "data-id": cell.id,
@@ -117,7 +141,26 @@ function plainCell(cell) {
     "data-cell": cell.type,
     ...(cell.set ? { "data-set": cell.set } : {}),
     ...(cell.chest ? { "data-chest": cell.chest } : {}),
-  });
+    ...(cell.art ? { "data-art": cell.art } : {}),
+  };
+
+  if (isChest) {
+    return el("div", props, [nameLines(cell)]);
+  }
+
+  return el(
+    "button",
+    { ...props, type: "button", "aria-label": cell.name },
+    [
+      el("span", {
+        class: "board__pill",
+        // The set's own colour, from the record, not from a lookup table here.
+        style: { backgroundColor: cell.color },
+        "aria-hidden": "true",
+      }),
+      nameLines(cell),
+    ],
+  );
 }
 
 /**

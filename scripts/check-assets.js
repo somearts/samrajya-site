@@ -365,6 +365,41 @@ async function main() {
     "the reference draws the middle as one field, so the lines stop at the ring",
   );
 
+  check(
+    "every property is a real button, addressed by its own id and index",
+    boardJs.includes('el(\n    "button"') &&
+      boardJs.includes('"data-id": cell.id') &&
+      boardJs.includes('"data-index": String(cell.index)') &&
+      boardJs.includes('"data-art": cell.art'),
+    "reachable by keyboard, and carrying the artwork path for later",
+  );
+  check(
+    "and each one's label is set on the breaks in the data, not on a guess",
+    boardJs.includes("cell.lines.map((line) => `<span>${line}</span>`)"),
+  );
+  check(
+    "a chest has no pill, because a chest belongs to no set",
+    /\.board__cell--chest \.board__label/.test(boardCss) &&
+      /--chest-ground/.test(boardCss) &&
+      boardJs.includes("const isChest = cell.type === \"chest\""),
+  );
+  check(
+    "the pill is where the layout brief puts it",
+    /top:\s*13\.3%/.test(boardCss) &&
+      /left:\s*26\.7%/.test(boardCss) &&
+      /width:\s*46\.7%/.test(boardCss) &&
+      /height:\s*10%/.test(boardCss) &&
+      /border-radius:\s*999px/.test(boardCss),
+  );
+  check(
+    "the label is sized from the cell alone, with a floor under it",
+    /font-size:\s*max\(8px, calc\(var\(--cell\) \* 0\.14\)\)/.test(boardCss) &&
+      /text-transform:\s*uppercase/.test(boardCss) &&
+      /letter-spacing:\s*0\.05em/.test(boardCss) &&
+      /\.board__label > span \{\s*white-space:\s*nowrap/.test(boardCss),
+    "never from the artwork, so a card cannot change a name's size",
+  );
+
   /* ---------------------------------------------------- the board's colours */
 
   section("The board's colours");

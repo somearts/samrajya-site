@@ -123,6 +123,63 @@ async function main() {
           ))],
           scrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
           scrollY: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+
+          // Does any name overflow the cell it is in? A label is a nowrap span
+          // per line, so its width is its longest line and its height is the
+          // stack. A name is safe when the widest line fits the cell's content
+          // box and the stack fits its height; a name that does not fit is
+          // clipped by overflow:hidden, which is worse than overflowing -
+          // it looks like the word is simply cut off.
+          labels: cells.map((c) => {
+            const label = c.querySelector(".board__label");
+            if (!label) return null;
+            const cs = getComputedStyle(c);
+            const cb = c.getBoundingClientRect();
+            const lb = label.getBoundingClientRect();
+            const spans = [...label.querySelectorAll("span")];
+            const rects = spans.map((s) => s.getBoundingClientRect());
+            const widest = Math.max(...rects.map((s) => s.width));
+            const innerW =
+              cb.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+            const innerH =
+              cb.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+            return {
+              id: c.dataset.id,
+              text: spans.map((s) => s.textContent.trim()).join(" "),
+              lines: spans.length,
+              widest,
+              innerW,
+              innerH,
+              stackH: lb.height,
+              // How much too wide the widest line is, or negative if it fits.
+              overW: widest - innerW,
+              overH: lb.height - innerH,
+              // How far the label sits outside the cell's own border box.
+              outside: Math.max(
+                0,
+                cb.left - lb.left,
+                lb.right - cb.right,
+                cb.top - lb.top,
+                lb.bottom - cb.bottom,
+              ),
+            };
+          }).filter(Boolean),
+
+          pills: cells.map((c) => {
+            const pill = c.querySelector(".board__pill");
+            if (!pill) return null;
+            const cb = c.getBoundingClientRect();
+            const pb = pill.getBoundingClientRect();
+            return {
+              id: c.dataset.id,
+              color: getComputedStyle(pill).backgroundColor,
+              // The four numbers the layout brief fixes, read back off the page.
+              top: +((pb.top - cb.top) / cb.height * 100).toFixed(1),
+              left: +((pb.left - cb.left) / cb.width * 100).toFixed(1),
+              width: +(pb.width / cb.width * 100).toFixed(1),
+              height: +(pb.height / cb.height * 100).toFixed(1),
+            };
+          }).filter(Boolean),
         };
       `);
 
@@ -206,6 +263,13 @@ for (let j = 0; j < 11; j++) {
         geometry.rows.length === 10 &&
         geometry.cols.every((v) => v === cell) &&
         geometry.rows.every((v) => v === cell);
+      const tooWide = geometry.labels.filter((l) => l.overW > 0);
+      const tooTall = geometry.labels.filter((l) => l.overH > 0);
+      const outside = geometry.labels.filter((l) => l.outside > 0.5);
+      const tightest = [...geometry.labels]
+        .sort((a, b) => b.widest / b.innerW - a.widest / a.innerW)
+        .slice(0, 4);
+
       const ok =
         cleanLines.length === all.length &&
         all.every((l) => l.total > 0) &&
@@ -213,7 +277,11 @@ for (let j = 0; j < 11; j++) {
         tracksEven &&
         geometry.cellCount === 28 &&
         geometry.scrollX === 0 &&
-        geometry.scrollY === 0;
+        geometry.scrollY === 0 &&
+        tooWide.length === 0 &&
+        tooTall.length === 0 &&
+        outside.length === 0 &&
+        geometry.labels.length === 24;
 
       console.log(`${width} x ${height}   ${ok ? "OK" : "PROBLEM"}`);
       console.log(`  cell ${cell}px ${cellWhole ? "(whole)" : "(FRACTIONAL)"}  tracks ${tracksEven ? "six and ten, all equal" : "NOT equal"}  gap ${geometry.gapX}/${geometry.gapY}px  frame ${geometry.padTop}px`);
@@ -221,6 +289,22 @@ for (let j = 0; j < 11; j++) {
       console.log(`  cells ${geometry.cellCount}, sizes ${geometry.sizes.join(" | ")}`);
       console.log(`  centre ${geometry.centre?.pos} box ${geometry.centre?.x.toFixed(2)},${geometry.centre?.y.toFixed(2)} ${geometry.centre?.w.toFixed(2)}x${geometry.centre?.h.toFixed(2)}`);
       console.log(`  scroll x ${geometry.scrollX}  y ${geometry.scrollY}`);
+      console.log(`  labels         ${geometry.labels.length} named cells, ` +
+        `${tooWide.length} too wide, ${tooTall.length} too tall, ${outside.length} outside the cell`);
+      console.log(`    tightest four, widest line as a share of the cell's content box:`);
+      for (const l of tightest) {
+        console.log(`      ${(l.widest / l.innerW * 100).toFixed(1).padStart(5)}%  ${l.text.padEnd(18)} ${l.widest.toFixed(1)} of ${l.innerW.toFixed(1)}px  ${l.lines} line${l.lines > 1 ? "s" : ""}`);
+      }
+      for (const id of ["proxima-centauri", "lagrange-l2", "wormhole"]) {
+        const l = geometry.labels.find((x) => x.id === id);
+        if (l) {
+          console.log(`    asked about ${l.text.padEnd(18)} ${(l.widest / l.innerW * 100).toFixed(1)}% of the box, overflow ${l.overW > 0 ? "YES " + l.overW.toFixed(1) + "px" : "none"}`);
+        }
+      }
+      const pill = geometry.pills[0];
+      if (pill) {
+        console.log(`    pill ${pill.width}% wide, ${pill.height}% tall, at ${pill.left}%,${pill.top}% of its cell  (brief: 46.7 / 10 / 26.7 / 13.3)`);
+      }
       console.log(`  vertical lines   ${cleanLines.filter((l) => l.i !== undefined).length}/7 clean` +
         (verticals.some((l) => l.clean !== l.total)
           ? `   offenders: ${verticals.filter((l) => l.clean !== l.total).map((l) => `#${l.i} (${l.clean}/${l.total}, off by ${l.worst}, first bad at ${l.firstBad})`).join(", ")}`

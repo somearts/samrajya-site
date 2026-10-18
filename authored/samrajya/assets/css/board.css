@@ -257,7 +257,103 @@
   fill: var(--ink);
 }
 
-/* --------------------------------------------------------- the card, for later
+/* ------------------------------------------------------- a property or a chest
+
+   Two kinds of cell, and the reference draws them differently.
+
+   A PROPERTY has a pill in its set's colour near the top and its name below it.
+   The pill is placed by percentages of the cell rather than by a grid, because it
+   is not a track and not a share of anything - it is a mark at a fixed spot, and
+   the spot has to be the same spot on a 55px cell as on a 67px one:
+
+       top    13.3%     a seventh of the way down
+       left   26.7%     centred, a quarter of the cell wide either side
+       width  46.7%
+       height 10%
+
+   A CHEST belongs to no set, so it has no pill - a pill in no set's colour would
+   be saying something untrue about it. It is the dark ground the card artwork
+   uses, with the name in the same cream, centred.
+
+   Both take their name from `lines` in the data, which is where the line breaks
+   come from: LAGRANGE / POINT L2 is the data's break, not a guess made here. */
+
+.board__cell--property,
+.board__cell--chest {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  /* Four per cent, not six. WORMHOLE is the longest name on the board and at
+     six per cent it fit inside a 55px cell by one tenth of a pixel - which is
+     not fitting, it is a coincidence that a different font or a hinting
+     difference would end. The brief fixes the pill's position and the label's
+     size and tracking; the padding was this board's choice, so the choice is
+     made to leave the longest name some air. */
+  padding: 0 4%;
+  overflow: hidden;
+}
+
+/* The button is the cell. Everything about the default button is a decision
+   this board has to make explicitly, because the defaults are somebody else's
+   page: a grey background, a focus ring in the browser's colour, and a border. */
+.board__cell--property {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 0;
+  background: var(--cell-ground);
+}
+
+.board__cell--property:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+.board__pill {
+  position: absolute;
+  top: 13.3%;
+  left: 26.7%;
+  width: 46.7%;
+  height: 10%;
+  border-radius: 999px;
+}
+
+.board__label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  font-size: max(8px, calc(var(--cell) * 0.14));
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: center;
+}
+
+.board__label > span {
+  white-space: nowrap;
+}
+
+/* The name sits below the pill rather than in the middle of the cell, which is
+   what the reference draws. A chest has no pill, so its name is centred. */
+.board__cell--property .board__label {
+  margin-top: 12%;
+}
+
+.board__cell--chest {
+  background: var(--chest-ground);
+}
+
+.board__cell--chest .board__label {
+  color: var(--chest-ink);
+}
+
+   /* --------------------------------------------------------- the card, for later
 
    The board's cells do not draw card artwork yet - the reference layout puts a
    set-colour pill and a name in each tile, and the artwork belongs behind that.
