@@ -445,7 +445,7 @@ try {
 
     const specials = await page.json(`
       const board = document.querySelector(".board");
-      const IDS = ["start", "omega", "akash-core", "marketplace",
+      const IDS = ["start", "outer-space", "black-hole", "fight",
                    "ragnarok", "nexus", "epoch", "kronos"];
       for (const id of IDS) board.querySelector('.board__cell[data-id="' + id + '"]').click();
       return {

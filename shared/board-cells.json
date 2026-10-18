@@ -183,7 +183,7 @@
    "col": 1,
    "row": 1,
    "type": "corner",
-   "id": "omega",
+   "id": "outer-space",
    "name": "Outer Space",
    "lines": [
     "OUTER",
@@ -262,7 +262,7 @@
    "col": 6,
    "row": 1,
    "type": "corner",
-   "id": "akash-core",
+   "id": "black-hole",
    "name": "Black Hole",
    "lines": [
     "BLACK",
@@ -403,7 +403,7 @@
    "col": 6,
    "row": 10,
    "type": "corner",
-   "id": "marketplace",
+   "id": "fight",
    "name": "Fight",
    "lines": [
     "FIGHT"

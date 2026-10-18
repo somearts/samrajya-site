@@ -165,13 +165,13 @@ test("the four corners are where the file says, and are the four named ones", ()
   assert.deepEqual(
     corners.map((c) => [c.id, c.col, c.row]).sort(),
     [
-      ["akash-core", 6, 1],
-      ["marketplace", 6, 10],
-      ["omega", 1, 1],
+      ["black-hole", 6, 1],
+      ["fight", 6, 10],
+      ["outer-space", 1, 1],
       ["start", 1, 10],
     ],
   );
-  assert.deepEqual([...CORNER_IDS].sort(), ["akash-core", "marketplace", "omega", "start"]);
+  assert.deepEqual([...CORNER_IDS].sort(), ["black-hole", "fight", "outer-space", "start"]);
   // and the names are not abbreviated anywhere
   assert.deepEqual(
     corners.map((c) => c.name).sort(),

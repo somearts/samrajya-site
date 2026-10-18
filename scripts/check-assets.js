@@ -265,12 +265,12 @@ async function main() {
 
   const corners = CELLS.filter((c) => c.type === "corner");
   check(
-    "the four corners are Omega, Akash Core, Start and Marketplace, where the file puts them",
+    "the four corners are Start, Outer Space, Black Hole and Fight, where the file puts them",
     JSON.stringify(corners.map((c) => [c.id, c.col, c.row]).sort()) ===
       JSON.stringify([
-        ["akash-core", 6, 1],
-        ["marketplace", 6, 10],
-        ["omega", 1, 1],
+        ["black-hole", 6, 1],
+        ["fight", 6, 10],
+        ["outer-space", 1, 1],
         ["start", 1, 10],
       ]),
     corners.map((c) => `${c.id}@${c.col},${c.row}`).join(" "),
@@ -279,6 +279,11 @@ async function main() {
     "and none of them has been abbreviated",
     JSON.stringify(corners.map((c) => c.name).sort()) ===
       JSON.stringify(["Black Hole", "Fight", "Outer Space", "Start"]),
+  );
+  check(
+    "and every cell's id is the same word as the corner it names",
+    corners.every((c) => c.id === c.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")),
+    "an id that names one board and a label that names another is a trap for whoever reads the file next",
   );
   check(
     "no cell has a price nobody chose",
@@ -543,11 +548,11 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
   );
   check(
     "and the board draws a mark for each of the four ids",
-    /omega: "space"/.test(boardJs) &&
-      /"akash-core": "hole"/.test(boardJs) &&
-      /marketplace: "fight"/.test(boardJs) &&
+    /"outer-space": "space"/.test(boardJs) &&
+      /"black-hole": "hole"/.test(boardJs) &&
+      /fight: "fight"/.test(boardJs) &&
       /start: "start"/.test(boardJs),
-    "the ids have not moved with the names",
+    "keyed by the same word the corner is called",
   );
 
   const wordmark = await readFile(join(OUT, "assets", "js", "wordmark.js"), "utf8");

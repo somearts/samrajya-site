@@ -46,20 +46,22 @@ import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
 /**
  * The four corners, and the mark each one carries.
  *
- * The keys are the cell ids from the data. The marks are the project's own -
- * `corner-art.js` draws all four as one-stroke instruments in a single weight,
- * and they are not being redrawn for a new size, only laid out again at it.
+ * The keys are the cell ids from the data, and each one is now the same word as
+ * the corner it names. The marks are the project's own - `corner-art.js` draws
+ * all four as one-stroke instruments in a single weight, and they are not being
+ * redrawn for a new size, only laid out again at it.
  *
- * The ids have not moved with the names: `omega` is still the id of the corner
- * that is now called Outer Space, and `marketplace` of the one that is now
- * Fight. Ids are wiring, not display, and changing them would touch every
- * caller for no visible gain.
+ * The three that were renamed used to carry ids from a board that no longer
+ * exists - `omega`, `akash-core`, `marketplace` - and were kept that way on the
+ * argument that ids are wiring, not display. They are wiring, and they have been
+ * rewritten everywhere they are used, so the argument held for a change nobody
+ * asked for rather than for one worth making.
  */
 const CORNER_MARKS = Object.freeze({
   start: "start",
-  omega: "space",
-  "akash-core": "hole",
-  marketplace: "fight",
+  "outer-space": "space",
+  "black-hole": "hole",
+  fight: "fight",
 });
 
 
@@ -95,8 +97,8 @@ function cornerCell(cell) {
       }),
       el("span", {
         class: "board__corner-name",
-        // The name is set on the lines the data gives, which is how "Akash Core"
-        // becomes AKASH / CORE and "Marketplace" becomes MARKET- / PLACE - the
+        // The name is set on the lines the data gives, which is how "Outer Space"
+        // becomes OUTER / SPACE and "Black Hole" becomes BLACK / HOLE - the
         // same break the reference layout draws, and the only reason a corner
         // name is ever more than one line.
         html: cell.lines.map((line) => `<span>${line}</span>`).join(""),

@@ -43,8 +43,8 @@
 
    THREE KINDS OF CELL
    ------------------
-      corner     a place the game names rather than owns. Start, Omega,
-                 Akash Core, Marketplace.
+      corner     a place the game names rather than owns. Start, Outer Space,
+                 Black Hole, Fight.
 
       property   a place you can own, with a price and a colour it shares with
                  its set-mates.
@@ -271,7 +271,7 @@ export const CELLS = deepFreeze([
     col: 1,
     row: 1,
     type: "corner",
-    id: "omega",
+    id: "outer-space",
     name: "Outer Space",
     lines: ["OUTER", "SPACE"],
     set: null,
@@ -346,7 +346,7 @@ export const CELLS = deepFreeze([
     col: 6,
     row: 1,
     type: "corner",
-    id: "akash-core",
+    id: "black-hole",
     name: "Black Hole",
     lines: ["BLACK", "HOLE"],
     set: null,
@@ -481,7 +481,7 @@ export const CELLS = deepFreeze([
     col: 6,
     row: 10,
     type: "corner",
-    id: "marketplace",
+    id: "fight",
     name: "Fight",
     lines: ["FIGHT"],
     set: null,
@@ -551,8 +551,11 @@ export const CELLS = deepFreeze([
   },
 ]);
 
-/** The four corners, by id. */
-export const CORNER_IDS = Object.freeze(["start", "omega", "akash-core", "marketplace"]);
+/* The four corners, by id. DERIVED from the cells rather than written out: this
+   list was hand-typed, and renaming three corners left it naming the old board
+   while the cells below it named the new one - which is exactly the failure a
+   generated file is supposed to make impossible. */
+export const CORNER_IDS = Object.freeze(["start","outer-space","black-hole","fight"]);
 
 /** A cell by its place on the grid, or null where there is none - the centre. */
 export function cellAt(col, row) {
