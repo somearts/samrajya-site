@@ -232,12 +232,15 @@ async function main() {
     `${start.id} at ${start.col},${start.row}`,
   );
   // Rows count from the top, so travelling up the left column decreases the row.
-  // The walk is four straight runs and nothing else, which is a far sharper
-  // statement than "the counts are right": a cell moved anywhere would either
+  // A lap is twenty-eight moves, not twenty-seven: the move from the last cell
+  // back onto Start is a move, and it is the one that makes this a ring. The
+  // walk is four straight runs and nothing else, which is a far sharper
+  // statement than "the counts are right" - a cell moved anywhere would either
   // break a run or make one of them the wrong length.
+  const at = (i) => CELLS[i % CELLS.length];
   const steps = [];
-  for (let i = 1; i < CELLS.length; i++) {
-    steps.push(`${CELLS[i].col - CELLS[i - 1].col},${CELLS[i].row - CELLS[i - 1].row}`);
+  for (let i = 1; i <= CELLS.length; i++) {
+    steps.push(`${at(i).col - at(i - 1).col},${at(i).row - at(i - 1).row}`);
   }
   const runs = [];
   for (const d of steps) {
@@ -246,14 +249,18 @@ async function main() {
     else runs.push([d, 1]);
   }
   check(
-    "the walk is nine up the left, five across the top, nine down the right, four back",
-    JSON.stringify(runs) === JSON.stringify([["0,-1", 9], ["1,0", 5], ["0,1", 9], ["-1,0", 4]]),
+    "one lap is nine up the left, five across the top, nine down the right, five back",
+    JSON.stringify(runs) === JSON.stringify([["0,-1", 9], ["1,0", 5], ["0,1", 9], ["-1,0", 5]]),
     runs.map(([d, n]) => `${d} x${n}`).join(" then "),
   );
   check(
-    "and it is twenty-seven steps for twenty-eight cells",
-    steps.length === 27,
-    `${steps.length}`,
+    "and the lap is twenty-eight moves and it closes",
+    steps.length === 28 &&
+      runs.reduce((n, [, k]) => n + k, 0) === 28 &&
+      at(CELLS.length - 1).row === at(0).row &&
+      at(CELLS.length - 1).col - at(0).col === 1 &&
+      steps[27] === "-1,0",
+    "the cell before Start is on Start's row, one cell to its right, so the last move is a step left",
   );
 
   const corners = CELLS.filter((c) => c.type === "corner");

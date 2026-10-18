@@ -108,28 +108,56 @@ test("START is the bottom-left corner and index 0", () => {
   assert.equal(start.row, 10);
 });
 
-test("the order runs up the left, across the top, down the right, back along the bottom", () => {
-  // Rows count from the top, so travelling up the left column decreases the row.
-  // The walk is four straight runs and nothing else, which is a sharper
-  // statement than counting directions: a cell moved anywhere would either
-  // break a run in two or make one of them the wrong length.
+test("one lap is twenty-eight moves, and it closes", () => {
+  // A lap is twenty-eight moves, not twenty-seven. The move from the last cell
+  // back onto Start is a move like any other, and it is the one that makes this
+  // a ring rather than a path - so the walk has to include it. Rows count from
+  // the top, so travelling up the left column decreases the row.
+  const at = (i) => CELLS[i % CELLS.length];
+
   const steps = [];
-  for (let i = 1; i < CELLS.length; i++) {
-    steps.push(`${CELLS[i].col - CELLS[i - 1].col},${CELLS[i].row - CELLS[i - 1].row}`);
+  for (let i = 1; i <= CELLS.length; i++) {
+    steps.push(`${at(i).col - at(i - 1).col},${at(i).row - at(i - 1).row}`);
   }
+
+  // Nine up the left column, five across the top, nine down the right column,
+  // and five back along the bottom - the fifth of those five is the move that
+  // closes the ring, landing on Start from the cell beside it.
   const runs = [];
   for (const d of steps) {
     const last = runs[runs.length - 1];
     if (last && last[0] === d) last[1] += 1;
     else runs.push([d, 1]);
   }
-  // nine up the left column, five across the top, nine down the right, four back
   assert.deepEqual(
     runs,
-    [["0,-1", 9], ["1,0", 5], ["0,1", 9], ["-1,0", 4]],
-    "four straight runs, in that order",
+    [
+      ["0,-1", 9],
+      ["1,0", 5],
+      ["0,1", 9],
+      ["-1,0", 5],
+    ],
+    "four straight runs, nine, five, nine, five, in that order",
   );
-  assert.equal(steps.length, 27, "twenty-eight cells are twenty-seven steps");
+
+  assert.equal(steps.length, 28, "a lap of twenty-eight cells is twenty-eight moves");
+  assert.equal(runs.reduce((n, [, k]) => n + k, 0), 28, "and every move belongs to a run");
+
+  // The closure, stated on its own so the ring cannot be broken quietly: the
+  // cell before Start is the one to Start's right, on the same row, and the
+  // last move of the lap is a step left.
+  const beforeStart = at(CELLS.length - 1);
+  assert.equal(beforeStart.row, at(0).row, "the cell before Start is on Start's row");
+  assert.equal(
+    beforeStart.col - at(0).col,
+    1,
+    "and it is exactly one cell to Start's right",
+  );
+  assert.equal(steps[27], "-1,0", "so the lap's last move is a step left, into Start");
+  assert.ok(
+    steps.every((d) => d === "0,-1" || d === "1,0" || d === "0,1" || d === "-1,0"),
+    "every move is one cell in a single direction",
+  );
 });
 
 test("the four corners are where the file says, and are the four named ones", () => {
