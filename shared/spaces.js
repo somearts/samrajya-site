@@ -265,15 +265,15 @@ export const CELLS = deepFreeze([
     chest: null,
   },
 
-  /*  9  col 1, row  1  corner   OMEGA */
+  /*  9  col 1, row  1  corner   OUTER / SPACE */
   {
     index: 9,
     col: 1,
     row: 1,
     type: "corner",
     id: "omega",
-    name: "Omega",
-    lines: ["OMEGA"],
+    name: "Outer Space",
+    lines: ["OUTER", "SPACE"],
     set: null,
     color: null,
     art: null,
@@ -340,15 +340,15 @@ export const CELLS = deepFreeze([
     chest: null,
   },
 
-  /* 14  col 6, row  1  corner   AKASH / CORE */
+  /* 14  col 6, row  1  corner   BLACK / HOLE */
   {
     index: 14,
     col: 6,
     row: 1,
     type: "corner",
     id: "akash-core",
-    name: "Akash Core",
-    lines: ["AKASH", "CORE"],
+    name: "Black Hole",
+    lines: ["BLACK", "HOLE"],
     set: null,
     color: null,
     art: null,
@@ -475,15 +475,15 @@ export const CELLS = deepFreeze([
     chest: null,
   },
 
-  /* 23  col 6, row 10  corner   MARKET- / PLACE */
+  /* 23  col 6, row 10  corner   FIGHT */
   {
     index: 23,
     col: 6,
     row: 10,
     type: "corner",
     id: "marketplace",
-    name: "Marketplace",
-    lines: ["MARKET-", "PLACE"],
+    name: "Fight",
+    lines: ["FIGHT"],
     set: null,
     color: null,
     art: null,

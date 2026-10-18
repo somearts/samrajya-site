@@ -184,9 +184,10 @@
    "row": 1,
    "type": "corner",
    "id": "omega",
-   "name": "Omega",
+   "name": "Outer Space",
    "lines": [
-    "OMEGA"
+    "OUTER",
+    "SPACE"
    ],
    "set": null,
    "color": null,
@@ -262,10 +263,10 @@
    "row": 1,
    "type": "corner",
    "id": "akash-core",
-   "name": "Akash Core",
+   "name": "Black Hole",
    "lines": [
-    "AKASH",
-    "CORE"
+    "BLACK",
+    "HOLE"
    ],
    "set": null,
    "color": null,
@@ -403,10 +404,9 @@
    "row": 10,
    "type": "corner",
    "id": "marketplace",
-   "name": "Marketplace",
+   "name": "Fight",
    "lines": [
-    "MARKET-",
-    "PLACE"
+    "FIGHT"
    ],
    "set": null,
    "color": null,

@@ -252,7 +252,10 @@
    Columns 2 to 5 and rows 2 to 9 - the four by eight that is not part of the
    ring. One unbroken field, as the reference has it: the grid's lines stop
    where the ring stops rather than crossing the middle, so the centre covers
-   the gaps inside its own span and that is the drawing, not an accident. */
+   the gaps inside its own span and that is the drawing, not an accident.
+
+   The centre no longer centres anything itself. The die is placed by the board,
+   not by this box, because it is not in the middle of the middle - see below. */
 
 .board__centre {
   background: var(--centre-ground);
@@ -260,19 +263,93 @@
   place-items: center;
 }
 
-/* A wide, flat drawing - a star and two tapering horizons - sized against the
-   centre it was drawn for. */
-.board__centre-mark {
-  display: block;
-  width: 43cqw;
+/* ------------------------------------------------------------------- the die
+
+   WHERE IT SITS
+
+   Not in the middle of the board. The die is centred on the rectangle that
+   MOON, LAGRANGE POINT L2, MILKY WAY and RAMA describe - that is, rows 8 and 9,
+   full width - which puts it well below the board's own centre and to no side
+   at all. It is the only place on this board that is specified by naming four
+   tiles rather than by a fraction, so the position is written as the distance
+   from the frame down to the middle of row 9, in cells and lines:
+
+       8 cells and 7.5 lines down from the top of the padding box
+
+   which is the shared edge between rows 8 and 9. Anything less deliberate than
+   this would drift the moment --cell changed, and a die that sits in the middle
+   of the middle would be in a different place from the one that was agreed.
+
+   HOW BIG
+
+   A shade over one cell, so it sits in the two rows it lives in with more
+   clear space above and below it than there is die. At 1.4 cells it filled
+   seventy per cent of the band and left a thin margin; the board's middle is
+   supposed to be room, not a second board. One and a bit is a die that reads at
+   a glance and has air round it on a 55px cell and on a 67px one alike. */
+
+.board__dice {
+  position: absolute;
+  left: 50%;
+  top: calc(8 * var(--cell) + 7.5 * var(--hair));
+  width: calc(var(--cell) * 1.15);
   height: auto;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  color: var(--ink);
+  overflow: visible;
 }
 
-/* The horizon lines either side of the star. Drawn as wedges, not rules: a
-   constant-weight line reads as a divider and a taper reads as a distance. */
-.board__line,
-.board__star {
-  fill: var(--ink);
+/* The die's own drawing: an outline and filled pips. Two weights of the same
+   colour, nothing else - no gradient, no shadow, no filter, so it sits in the
+   same flat vocabulary as the corner marks and the pills. */
+.dice__body {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 4;
+}
+
+.dice__pip {
+  fill: currentColor;
+}
+
+/* Only one face is ever shown; the rest carry `hidden`, which is why the roll
+   can change the number without touching the structure of the drawing. */
+.dice__face[hidden] {
+  display: none;
+}
+
+/* THE THROW
+
+   A small, quick wobble, and nothing else. No continuous movement and no loop:
+   `data-rolling` is true only while the die is in the air, so the moment it
+   lands the animation stops existing. The motion is a few degrees of tilt and a
+   couple of pixels of lift, which is what reads as a die touching down rather
+   than as an icon animating. */
+
+.board__dice[data-rolling="true"] {
+  animation: dice-throw 260ms ease-in-out infinite;
+}
+
+@keyframes dice-throw {
+  0% {
+    transform: translate(-50%, -50%) rotate(-3deg);
+  }
+  50% {
+    transform: translate(-50%, calc(-50% - 2px)) rotate(3deg);
+  }
+  100% {
+    transform: translate(-50%, -50%) rotate(-3deg);
+  }
+}
+
+/* A reader who has asked for less motion gets the number and no throw. The
+   roll itself already checks this before it starts; this is the stylesheet
+   half, so that anything else that ever animates the die obeys it too. */
+@media (prefers-reduced-motion: reduce) {
+  .board__dice[data-rolling="true"] {
+    animation: none;
+  }
 }
 
 /* ------------------------------------------------------- a property or a chest

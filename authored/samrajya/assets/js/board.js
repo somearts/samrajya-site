@@ -38,39 +38,38 @@
 
 import { el } from "./dom.js";
 import { cornerMark } from "./corner-art.js";
+import { dice, roll } from "./dice.js";
 import { CELLS, CORNER_IDS } from "./shared/spaces.js";
 
 /**
  * The four corners, and the mark each one carries.
  *
- * The ids are the cell ids from the data. The marks are the project's own -
+ * The keys are the cell ids from the data. The marks are the project's own -
  * `corner-art.js` draws all four as one-stroke instruments in a single weight,
  * and they are not being redrawn for a new size, only laid out again at it.
+ *
+ * The ids have not moved with the names: `omega` is still the id of the corner
+ * that is now called Outer Space, and `marketplace` of the one that is now
+ * Fight. Ids are wiring, not display, and changing them would touch every
+ * caller for no visible gain.
  */
 const CORNER_MARKS = Object.freeze({
   start: "start",
-  omega: "omega",
-  "akash-core": "core",
-  marketplace: "market",
+  omega: "space",
+  "akash-core": "hole",
+  marketplace: "fight",
 });
 
 
 /**
- * The centre: a black star on a line that runs out to either side.
+ * The middle: a die.
  *
- * The lines taper. They are drawn as wedges rather than rules because a rule of
- * constant weight reads as a divider and a taper reads as a horizon, which is
- * the whole point of putting a mark in the middle of an empty field.
+ * The star and its two horizons used to be here. The die is its own module so
+ * that the rules can pick it up and throw it later without the board having to
+ * know anything about how a throw works.
  */
 function centre() {
-  return `
-    <svg viewBox="0 0 240 60" class="board__centre-mark" aria-hidden="true" focusable="false">
-      <path class="board__line" d="M4 30 L99 26.4 L99 33.6 Z"/>
-      <path class="board__line" d="M236 30 L141 26.4 L141 33.6 Z"/>
-      <path class="board__star"
-            d="M120 8 C126 22 131 26 148.5 30 C131 34 126 38 120 52
-               C114 38 109 34 91.5 30 C109 26 114 22 120 8 Z"/>
-    </svg>`;
+  return dice();
 }
 
 /** One corner: its mark, its name, and a rule beneath. */
@@ -205,10 +204,13 @@ export function board() {
   // do not cross it - they stop where the ring stops. Lines 2 to 4 across and
   // lines 2 to 8 down are drawn only in the two side columns and the two end
   // rows, which is what the reference draws.
+  //
+  // No longer aria-hidden: it used to hold only decoration, but it now holds the
+  // die, and a die that says which number it came up is the one thing in here
+  // worth reading out.
   const centreArea = el("div", {
     id: "board-center",
     class: "board__centre",
-    "aria-hidden": "true",
     html: centre(),
   });
   centreArea.style.gridColumn = "2 / 6";
@@ -219,7 +221,20 @@ export function board() {
   );
 
   frame.append(centreArea, ...cells);
+
+  // Thrown once, on arrival, and never again on its own. Whoever gets the rules
+  // for a throw will call roll() from the game; until then the board does it
+  // once so the die is not sitting there on a fixed number, and it stops there
+  // because a die that keeps moving on its own is decoration, not a game.
+  const die = centreArea.querySelector(".board__dice");
+  if (die) roll(die);
+
   return frame;
+}
+
+/** The die on this board, or null. A handle for whoever throws it next. */
+export function theDice(root) {
+  return (root || document).querySelector(".board__dice");
 }
 
 /** Whether a cell is one of the four corners. */

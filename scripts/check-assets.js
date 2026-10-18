@@ -278,7 +278,7 @@ async function main() {
   check(
     "and none of them has been abbreviated",
     JSON.stringify(corners.map((c) => c.name).sort()) ===
-      JSON.stringify(["Akash Core", "Marketplace", "Omega", "Start"]),
+      JSON.stringify(["Black Hole", "Fight", "Outer Space", "Start"]),
   );
   check(
     "no cell has a price nobody chose",
@@ -292,6 +292,7 @@ async function main() {
 
   const boardJs = await readFile(join(OUT, "assets", "js", "board.js"), "utf8");
   const boardCss = await readFile(join(OUT, "assets", "css", "board.css"), "utf8");
+  const diceCode = await readFile(join(OUT, "assets", "js", "dice.js"), "utf8");
 
   check(
     "six columns of one cell size",
@@ -358,11 +359,49 @@ async function main() {
     "not redrawn at the new size, only laid out again at it",
   );
   check(
-    "the centre is the four by eight, and it is ready for the dice and the scorecard",
+    "the centre is the four by eight, and it holds the die rather than the old ornament",
     boardJs.includes('id: "board-center"') &&
       boardJs.includes('centreArea.style.gridColumn = "2 / 6"') &&
       boardJs.includes('centreArea.style.gridRow = "2 / 10"'),
     "the reference draws the middle as one field, so the lines stop at the ring",
+  );
+  check(
+    "the diamond and its horizon lines are gone",
+    !/board__star|board__line\b|board__centre-mark/.test(boardCss) &&
+      !/board__star|board__line\b|board__centre-mark/.test(boardJs),
+    "nothing left of the ornament the die replaced",
+  );
+  check(
+    "the die is placed by the board, centred on rows 8 and 9",
+    /\.board__dice \{[\s\S]*?position:\s*absolute/.test(boardCss) &&
+      /top:\s*calc\(8 \* var\(--cell\) \+ 7\.5 \* var\(--hair\)\)/.test(boardCss) &&
+      /transform:\s*translate\(-50%, -50%\)/.test(boardCss),
+    "the rectangle MOON, LAGRANGE POINT L2, MILKY WAY and RAMA describe",
+  );
+  check(
+    "and it is thrown once on arrival, not left to move on its own",
+    /if \(die\) roll\(die\)/.test(boardJs) &&
+      /animation: dice-throw/.test(boardCss) &&
+      /\[data-rolling="true"\]/.test(boardCss),
+    "infinite only while data-rolling is true, and the die settles",
+  );
+  check(
+    "six faces, all in the markup, one shown",
+    diceCode.includes("DICE_FACES = Object.freeze([1, 2, 3, 4, 5, 6])") &&
+      /data-face="\$\{n\}"/.test(diceCode) &&
+      /group\.toggleAttribute\("hidden"/.test(diceCode),
+  );
+  check(
+    "the result is drawn before the animation starts, from a single draw",
+    /const drawn = random\(\);/.test(diceCode) &&
+      diceCode.indexOf("const drawn = random();") <
+        diceCode.indexOf('root.dataset.rolling = "true"'),
+    "a roll that searched for its face as it landed could be interrupted",
+  );
+  check(
+    "and a reader who wants less motion gets the number without the throw",
+    diceCode.includes('"(prefers-reduced-motion: reduce)"') &&
+      /@media \(prefers-reduced-motion: reduce\)/.test(boardCss),
   );
 
   check(
@@ -456,9 +495,18 @@ async function main() {
   const cornerArt = await readFile(join(OUT, "assets", "js", "corner-art.js"), "utf8");
   check(
     "all four corner marks are drawn",
-    ["omega", "core", "start", "market"].every((m) =>
+    ["space", "hole", "start", "fight"].every((m) =>
       new RegExp(`${m}: \`<svg`).test(cornerArt),
     ),
+    "Outer Space, Black Hole, Start, Fight",
+  );
+  check(
+    "and the board draws a mark for each of the four ids",
+    /omega: "space"/.test(boardJs) &&
+      /"akash-core": "hole"/.test(boardJs) &&
+      /marketplace: "fight"/.test(boardJs) &&
+      /start: "start"/.test(boardJs),
+    "the ids have not moved with the names",
   );
 
   const wordmark = await readFile(join(OUT, "assets", "js", "wordmark.js"), "utf8");

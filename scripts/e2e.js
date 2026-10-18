@@ -245,6 +245,48 @@ function boardReport(page) {
         : null,
       centreBox: centre ? box(centre) : null,
 
+      /* The die, and the rectangle it is meant to be centred in.
+
+         Rows 8 and 9, full width - which is the box that MOON, LAGRANGE POINT
+         L2, MILKY WAY and RAMA describe. Stated here as the union of those four
+         cells' own measured rectangles, so the check below is asking whether
+         the die sits in the middle of THAT, rather than asking whether it sits
+         where a hand-written offset happens to put it. */
+      diceBox: (() => {
+        const d = board.querySelector(".board__dice");
+        return d ? box(d) : null;
+      })(),
+      rectangle: ["moon", "lagrange-l2", "milky-way", "rama"].reduce((acc, id) => {
+        const c = board.querySelector('.board__cell[data-id="' + id + '"]');
+        if (!c) return acc;
+        const r = c.getBoundingClientRect();
+        return acc === null
+          ? { x0: r.left, y0: r.top, x1: r.right, y1: r.bottom }
+          : {
+              x0: Math.min(acc.x0, r.left),
+              y0: Math.min(acc.y0, r.top),
+              x1: Math.max(acc.x1, r.right),
+              y1: Math.max(acc.y1, r.bottom),
+            };
+      }, null),
+      diceFace: (() => {
+        const d = board.querySelector(".board__dice");
+        return d ? d.dataset.face : null;
+      })(),
+      diceAria: (() => {
+        const d = board.querySelector(".board__dice");
+        return d ? d.getAttribute("aria-label") : null;
+      })(),
+      diceVisibleFaces: [...board.querySelectorAll(".dice__face")].filter(
+        (f) => !f.hasAttribute("hidden"),
+      ).length,
+      dicePips: board.querySelectorAll(".dice__pip").length,
+      diceSettled: (() => {
+        const d = board.querySelector(".board__dice");
+        return d ? d.dataset.rolling : null;
+      })(),
+      ornamentGone: board.querySelectorAll(".board__star, .board__line, .board__centre-mark").length,
+
       board: box(board),
       screen: { w: innerWidth, h: innerHeight },
       scrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -438,8 +480,8 @@ try {
     // that the four corners are the four they are supposed to be, so the
     // spacing and the break are taken out of the comparison.
     note(
-      `${name} the four corners are Start, Omega, Akash Core and Marketplace`,
-      ["START", "OMEGA", "AKASHCORE", "MARKETPLACE"].every((n) =>
+      `${name} the four corners are Start, Outer Space, Black Hole and Fight`,
+      ["START", "OUTERSPACE", "BLACKHOLE", "FIGHT"].every((n) =>
         b.cornerNames.some((c) => c.name.toUpperCase().replace(/[\s-]/g, "") === n),
       ),
       b.cornerNames.map((c) => c.name).join(" | "),
@@ -459,6 +501,47 @@ try {
     note(`${name} no name overflows its cell`, b.overflow.length === 0, b.overflow.join(" ") || "none of the 28");
     note(`${name} and the board draws no card artwork yet`, b.cardsOnBoard === 0, `${b.cardsOnBoard} found`);
     note(`${name} the centre is columns 2 to 5 and rows 2 to 9`, b.centreSpan === "2/6 2/10", b.centreSpan);
+
+    // The die, and the only question that matters about it: is it in the middle
+    // of the rectangle those four tiles describe, and nowhere else.
+    note(`${name} there is one die`, !!b.diceBox && b.diceVisibleFaces === 1 && b.dicePips === 21,
+      b.diceBox ? `${b.dicePips} pips, ${b.diceVisibleFaces} face showing` : "no die on the board");
+    note(`${name} and the old diamond and its lines are gone`, b.ornamentGone === 0,
+      `${b.ornamentGone} pieces of the old ornament left`);
+    note(`${name} the die has settled on a face from one to six`,
+      /^[1-6]$/.test(b.diceFace || "") && b.diceSettled === "false",
+      `face ${b.diceFace}, rolling=${b.diceSettled}, says "${b.diceAria}"`);
+    if (b.diceBox && b.rectangle) {
+      const r = b.rectangle;
+      const targetX = (r.x0 + r.x1) / 2;
+      const targetY = (r.y0 + r.y1) / 2;
+      const offX = b.diceBox.left + b.diceBox.w / 2 - targetX;
+      const offY = b.diceBox.top + b.diceBox.h / 2 - targetY;
+      note(
+        `${name} and it is centred in the rectangle MOON, LAGRANGE, MILKY WAY and RAMA describe`,
+        Math.abs(offX) <= 1 && Math.abs(offY) <= 1,
+        `${offX.toFixed(2)}px across, ${offY.toFixed(2)}px down from the middle of a ` +
+          `${(r.x1 - r.x0).toFixed(0)}x${(r.y1 - r.y0).toFixed(0)} rectangle`,
+      );
+      // Whitespace, asked for rather than assumed, and asked of the SHORTER side
+      // of the rectangle - which is the two rows the die lives in, so that is
+      // the side that can actually crowd it. The die may take at most 62% of it,
+      // which leaves better than a sixth of the band clear on every side.
+      const short = Math.min(r.x1 - r.x0, r.y1 - r.y0);
+      const gap = Math.min(
+        b.diceBox.left - r.x0, r.x1 - b.diceBox.right,
+        b.diceBox.top - r.y0, r.y1 - b.diceBox.bottom,
+      );
+      const take = b.diceBox.w / short;
+      note(`${name} with room round it`, take <= 0.62 && gap >= short * 0.12,
+        `die takes ${(take * 100).toFixed(0)}% of the ${short.toFixed(0)}px band, ` +
+          `${gap.toFixed(1)}px clear at the tightest side`);
+      // And it must not be sitting in the middle of the middle either.
+      const boardMidY = b.board.top + b.board.h / 2;
+      note(`${name} and it is NOT in the middle of the board`,
+        Math.abs(b.diceBox.top + b.diceBox.h / 2 - boardMidY) > 20,
+        `${(b.diceBox.top + b.diceBox.h / 2 - boardMidY).toFixed(1)}px below the board's centre`);
+    }
     note(`${name} both players are named above the board`,
       b.who.length === 2 && b.who.includes(HOST_NAME) && b.who.includes(GUEST_NAME),
       b.who.join(" | "));

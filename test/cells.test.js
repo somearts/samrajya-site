@@ -175,7 +175,7 @@ test("the four corners are where the file says, and are the four named ones", ()
   // and the names are not abbreviated anywhere
   assert.deepEqual(
     corners.map((c) => c.name).sort(),
-    ["Akash Core", "Marketplace", "Omega", "Start"],
+    ["Black Hole", "Fight", "Outer Space", "Start"],
   );
 });
 
