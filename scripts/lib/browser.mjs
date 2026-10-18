@@ -197,11 +197,53 @@ export async function launch({ port = 9777 } = {}) {
     throw new Error("Chrome did not open a debugging port");
   }
 
+  // The browser's own connection, for the calls a page's connection refuses.
+  const rootWs = new WebSocket(
+    (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()).webSocketDebuggerUrl,
+  );
+  await new Promise((resolve, reject) => {
+    rootWs.addEventListener("open", resolve);
+    rootWs.addEventListener("error", () => reject(new Error("could not attach to Chrome")));
+  });
+  const root = new Page(rootWs);
+
   return {
-    async newPage() {
-      const target = await (
-        await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })
-      ).json();
+    /**
+     * A fresh, isolated storage context. Two players in the same game have to
+     * be two separate browsers - each holds its own identity and its own room
+     * code - and this is how one Chrome is asked for two of them. Some CDP calls
+     * are only allowed on the browser's own connection and never on a page's,
+     * which is why there is a root session here and not one per tab.
+     */
+    async newContext() {
+      const { browserContextId } = await root.send("Target.createBrowserContext", {});
+      return browserContextId;
+    },
+
+    async newPage(browserContextId) {
+      let target;
+
+      if (browserContextId) {
+        const created = await root.send("Target.createTarget", {
+          url: "about:blank",
+          browserContextId,
+        });
+        for (let attempt = 0; attempt < 40; attempt++) {
+          const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+          const found = list.find((t) => t.id === created.targetId);
+          if (found?.webSocketDebuggerUrl) {
+            target = found;
+            break;
+          }
+          await sleep(150);
+        }
+        if (!target) throw new Error("could not open a page in that context");
+      } else {
+        target = await (
+          await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })
+        ).json();
+      }
+
       const ws = new WebSocket(target.webSocketDebuggerUrl);
       await new Promise((resolve, reject) => {
         ws.addEventListener("open", resolve);

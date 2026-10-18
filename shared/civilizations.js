@@ -12,12 +12,23 @@
    civilisation can never be offered on screen and then refused at the other end.
    ========================================================================== */
 
-export const CIVILIZATIONS = Object.freeze([
-  { id: "indus-valley", name: "Indus Valley" },
-  { id: "mesopotamian", name: "Mesopotamian" },
-  { id: "ancient-egyptian", name: "Ancient Egyptian" },
-  { id: "aztec", name: "Aztec" },
-]);
+/**
+ * Frozen all the way down, not just the array.
+ *
+ * `Object.freeze` on the list alone leaves the records inside it mutable, and
+ * `choices()` is a shallow copy - so a caller that renamed a civilisation would
+ * have renamed it for the picker, for the server and for everyone else. That is
+ * the one thing this file exists to make impossible: a civilisation cannot be
+ * offered on screen and then be something else at the other end.
+ */
+export const CIVILIZATIONS = Object.freeze(
+  [
+    { id: "indus-valley", name: "Indus Valley" },
+    { id: "mesopotamian", name: "Mesopotamian" },
+    { id: "ancient-egyptian", name: "Ancient Egyptian" },
+    { id: "aztec", name: "Aztec" },
+  ].map((civilization) => Object.freeze(civilization)),
+);
 
 const BY_ID = new Map(CIVILIZATIONS.map((c) => [c.id, c]));
 
