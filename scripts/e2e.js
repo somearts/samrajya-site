@@ -179,19 +179,52 @@ function boardReport(page) {
         (c) => c.tagName === "BUTTON" && c.type === "button" &&
                c.dataset.id && c.dataset.index !== undefined,
       ),
+
+      /* The wash, asked of the page rather than calculated here.
+
+         The strength and the paper are read off the board's own computed style,
+         and the expected colour is produced by asking the browser to run the
+         same color-mix() the stylesheet runs. Nothing in this file knows what
+         7% of #3F8F96 over #F7F4EF comes out as - the browser does the
+         arithmetic, so this check cannot drift away from the CSS it is
+         checking, and cannot be wrong about rounding. */
+      wash: (() => {
+        const s = getComputedStyle(document.querySelector(".board-screen"));
+        const strength = s.getPropertyValue("--wash-strength").trim();
+        const paper = s.getPropertyValue("--cell-ground").trim();
+        const mix = (wash) => {
+          const probe = document.createElement("div");
+          probe.style.background = \`color-mix(in srgb, \${wash} \${strength}, \${paper})\`;
+          document.body.appendChild(probe);
+          const got = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return got;
+        };
+        return {
+          strength,
+          paper,
+          chestWash: s.getPropertyValue("--chest-wash").trim(),
+          cornerGround: s.getPropertyValue("--corner-ground").trim(),
+          washedChest: mix(s.getPropertyValue("--chest-wash").trim()),
+        };
+      })(),
+
       propertyNames: properties.map((c) => ({
         id: c.dataset.id,
         label: (c.querySelector(".board__label")?.textContent || "").trim(),
-        pill: getComputedStyle(c.querySelector(".board__pill") || document.body).backgroundColor,
         pillExists: !!c.querySelector(".board__pill"),
+        pill: getComputedStyle(c.querySelector(".board__pill") || document.body).backgroundColor,
+        ground: getComputedStyle(c).backgroundColor,
         set: c.dataset.set || null,
-        label: (c.querySelector(".board__label")?.textContent || "").trim(),
       })),
       chestNames: chests.map((c) => ({
         id: c.dataset.id,
         label: (c.querySelector(".board__label")?.textContent || "").trim(),
         pillExists: !!c.querySelector(".board__pill"),
+        ground: getComputedStyle(c).backgroundColor,
         ink: getComputedStyle(c.querySelector(".board__label")).color,
+        // A chest's name must read the same as a property's name.
+        propertyInk: getComputedStyle(properties[0].querySelector(".board__label")).color,
       })),
 
       // Does any name stick out of its cell?
@@ -383,9 +416,21 @@ try {
       `board ${b.board.w.toFixed(1)}x${b.board.h.toFixed(1)}, screen ${b.screen.w}x${b.screen.h}`);
     note(`${name} and nothing scrolls`, b.scrollX === 0 && b.scrollY === 0, `x ${b.scrollX}, y ${b.scrollY}`);
 
-    note(`${name} the corners are black`, b.grounds.corner.every((g) => g === "rgb(18, 18, 18)"), b.grounds.corner.join(" "));
-    note(`${name} the chests are the dark card colour`, b.grounds.chest.every((g) => g === "rgb(38, 33, 28)"), b.grounds.chest.join(" "));
-    note(`${name} the properties are the paper`, b.grounds.property.every((g) => g === "rgb(247, 244, 239)"), b.grounds.property.join(" "));
+    note(`${name} the corners are solid black, unwashed`, b.grounds.corner.every((g) => g === "rgb(18, 18, 18)"), b.grounds.corner.join(" "));
+    note(`${name} the four chests are the black wash over the paper`,
+      b.chestNames.every((c) => c.ground === b.wash.washedChest),
+      `${b.wash.chestWash} at ${b.wash.strength} over ${b.wash.paper} = ${b.wash.washedChest}; got ${[...new Set(b.chestNames.map((c) => c.ground))].join(" ")}`);
+    note(`${name} and a chest's name reads exactly as a property's does`,
+      b.chestNames.every((c) => c.ink === c.propertyInk),
+      `${[...new Set(b.chestNames.map((c) => c.ink))].join(" ")}`);
+    note(`${name} every property is washed in its own pill's colour`,
+      b.propertyNames.every((p) => p.ground !== b.wash.paper),
+      [...new Set(b.propertyNames.map((p) => `${p.set}:${p.ground}`))].join(" "));
+    note(`${name} and no two properties that share a set differ`,
+      b.propertyNames.every((p) => {
+        const same = b.propertyNames.filter((q) => q.set === p.set);
+        return same.every((q) => q.ground === p.ground && q.pill === p.pill);
+      }));
 
     // textContent joins the two lines with nothing between them, so AKASH CORE
     // reads "AKASHCORE" and MARKET- / PLACE reads "MARKET-PLACE". The break is
@@ -411,8 +456,6 @@ try {
       b.propertyNames.every((p) => /^rgb\(\d+, \d+, \d+\)$/.test(p.pill) && p.pill !== "rgb(0, 0, 0)"),
       [...new Set(b.propertyNames.map((p) => `${p.set}:${p.pill}`))].join(" "));
     note(`${name} no chest has a pill`, b.chestNames.every((c) => !c.pillExists));
-    note(`${name} and each chest's name is cream`, b.chestNames.every((c) => c.ink === "rgb(240, 233, 220)"),
-      b.chestNames.map((c) => `${c.id}:${c.ink}`).join(" "));
     note(`${name} no name overflows its cell`, b.overflow.length === 0, b.overflow.join(" ") || "none of the 28");
     note(`${name} and the board draws no card artwork yet`, b.cardsOnBoard === 0, `${b.cardsOnBoard} found`);
     note(`${name} the centre is columns 2 to 5 and rows 2 to 9`, b.centreSpan === "2/6 2/10", b.centreSpan);

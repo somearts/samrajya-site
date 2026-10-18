@@ -379,8 +379,8 @@ async function main() {
   );
   check(
     "a chest has no pill, because a chest belongs to no set",
-    /\.board__cell--chest \.board__label/.test(boardCss) &&
-      /--chest-ground/.test(boardCss) &&
+    /--chest-wash:\s*#000000/.test(boardCss) &&
+      /--wash:\s*var\(--chest-wash\)/.test(boardCss) &&
       boardJs.includes("const isChest = cell.type === \"chest\""),
   );
   check(
@@ -409,13 +409,36 @@ async function main() {
     "--cell-ground": /#f7f4ef/i,
     "--corner-ground": /#121212/i,
     "--centre-ground": /#fbf9f5/i,
-    "--chest-ground": /#26211c/i,
-    "--chest-ink": /#f0e9dc/i,
+    "--chest-wash": /#000000/i,
+    "--wash-strength": /7%/,
   };
   for (const [token, value] of Object.entries(tokens)) {
     check(`${token} is defined once, in the board's own block`, new RegExp(`${token}:\\s*`).test(boardCss));
     check(`  and it is ${value.source}`, value.test(boardCss));
   }
+  check(
+    "a cell's wash is its own pill's colour, and only that",
+    /"--wash":\s*cell\.color/.test(boardJs) &&
+      /backgroundColor:\s*cell\.color/.test(boardJs),
+    "one value from one field of one record, used for both",
+  );
+  check(
+    "and the cell's grid position is assembled in the same style object as the wash",
+    /const style = \{\s*gridColumn: String\(cell\.col\),\s*gridRow: String\(cell\.row\),/.test(boardJs) &&
+      !/\.\.\.props,\s*\n\s*type: "button",\s*\n\s*"aria-label": cell\.name,\s*\n\s*style:/.test(boardJs),
+    "a style key written after the spread silently replaces gridColumn and " +
+      "gridRow, and the grid then auto-places every property in the wrong square",
+  );
+  check(
+    "and it is laid on by color-mix, so the cell is one flat colour",
+    /background:\s*color-mix\(in srgb, var\(--wash\) var\(--wash-strength\), var\(--cell-ground\)\)/.test(boardCss),
+    "the paper tinted by the wash, with no second layer to clip",
+  );
+  check(
+    "the four corners are not washed, because a corner is not a set",
+    !/\.board__cell--corner[^{]*\{[^}]*--wash/.test(boardCss) &&
+      !/\.board__cell--corner[^{]*\{[^}]*color-mix/.test(boardCss),
+  );
   // The point of naming them: a colour written into a rule instead of a token is
   // a colour that can drift away from the one the design says. The token
   // definitions themselves are where colours are allowed to be written down, so

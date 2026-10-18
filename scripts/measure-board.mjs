@@ -21,6 +21,7 @@ import { join } from "node:path";
 import { launch, sleep } from "./lib/browser.mjs";
 import { joinToBoard } from "./lib/room.mjs";
 import { decodePng, pixel, rgb, distance } from "./lib/png.mjs";
+import { CELLS } from "../shared/spaces.js";
 
 const BASE = process.argv[2] || "http://127.0.0.1:8791/samrajya/";
 const OUT = process.argv[3] || join(process.env.TEMP || ".", "opencode", "board");
@@ -116,6 +117,24 @@ async function main() {
             const s = getComputedStyle(c);
             return { x: r.left, y: r.top, w: r.width, h: r.height, pos: s.position, inset: s.inset };
           })(),
+
+          /* Is every cell on the square the data says it is?
+
+             This exists because a version of this board put all twenty
+             properties in the wrong places and every other check passed. The
+             cells lost their gridColumn/gridRow, the grid auto-placed them, and
+             auto-placement fills a grid correctly - 28 squares on 28 board
+             positions, all the same size, all inside a cell, no scrollbar. It
+             simply was not the right 28 squares. So the count is not evidence
+             of the layout, and the layout has to be asked for by name. */
+          placement: cells.map((c) => {
+            const s = getComputedStyle(c);
+            return {
+              id: c.dataset.id,
+              col: s.gridColumnStart,
+              row: s.gridRowStart,
+            };
+          }),
           cellCount: cells.length,
           sizes: [...new Set(cells.map(
             (c) => c.getBoundingClientRect().width.toFixed(3) + " x " +
@@ -270,12 +289,21 @@ for (let j = 0; j < 11; j++) {
         .sort((a, b) => b.widest / b.innerW - a.widest / a.innerW)
         .slice(0, 4);
 
+      const misPlaced = CELLS.filter((c) => {
+        const at = geometry.placement.find((p) => p.id === c.id);
+        return !at || at.col !== String(c.col) || at.row !== String(c.row);
+      }).map((c) => {
+        const at = geometry.placement.find((p) => p.id === c.id);
+        return `${c.id} should be ${c.col},${c.row} and is ${at ? at.col + "," + at.row : "nowhere"}`;
+      });
+
       const ok =
         cleanLines.length === all.length &&
         all.every((l) => l.total > 0) &&
         cellWhole &&
         tracksEven &&
         geometry.cellCount === 28 &&
+        misPlaced.length === 0 &&
         geometry.scrollX === 0 &&
         geometry.scrollY === 0 &&
         tooWide.length === 0 &&
@@ -287,6 +315,9 @@ for (let j = 0; j < 11; j++) {
       console.log(`  cell ${cell}px ${cellWhole ? "(whole)" : "(FRACTIONAL)"}  tracks ${tracksEven ? "six and ten, all equal" : "NOT equal"}  gap ${geometry.gapX}/${geometry.gapY}px  frame ${geometry.padTop}px`);
       console.log(`  board ${w.toFixed(2)} x ${h.toFixed(2)} at ${x.toFixed(2)}, ${y.toFixed(2)}  ${boardSnap ? "on whole pixels" : "at a half pixel (Chrome snaps it)"}`);
       console.log(`  cells ${geometry.cellCount}, sizes ${geometry.sizes.join(" | ")}`);
+      console.log(`  placement ${misPlaced.length === 0
+        ? `all 28 cells on the column and row the data gives them`
+        : `${misPlaced.length} MISPLACED: ${misPlaced.slice(0, 6).join("; ")}`}`);
       console.log(`  centre ${geometry.centre?.pos} box ${geometry.centre?.x.toFixed(2)},${geometry.centre?.y.toFixed(2)} ${geometry.centre?.w.toFixed(2)}x${geometry.centre?.h.toFixed(2)}`);
       console.log(`  scroll x ${geometry.scrollX}  y ${geometry.scrollY}`);
       console.log(`  labels         ${geometry.labels.length} named cells, ` +

@@ -56,14 +56,32 @@
      --corner-ground  the four corners.
      --centre-ground  the middle four by eight, a shade off the cells so the
                       hole reads as a hole.
-     --chest-ground   the chest cells: the dark card colour the artwork uses.
-     --chest-ink      the name on a chest, which is the same cream. */
+
+     THE WASH
+     --------
+     Every non-corner cell is tinted very slightly, in the colour of its own
+     pill, over the paper. It is the only thing about a cell that says which set
+     it belongs to when you cannot see the pill, and at seven per cent it is a
+     tint rather than a colour - the cell still reads as paper.
+
+     --wash           the tint, set per cell from the set's own colour in the
+                      data. A chest belongs to no set, so its wash is black.
+     --wash-strength  how hard the wash is laid on. One number for the whole
+                      board: the twenty properties and the four chests are
+                      tinted by the same amount, or the difference between a
+                      tinted cell and an untiled one becomes the thing your eye
+                      notices.
+
+     color-mix() rather than an alpha channel on the cell's own background,
+     because it computes the colour the paper turns into when the tint is laid
+     over it - the same result, with no second layer to stack and nothing for a
+     border-radius or a background-image to clip. */
   --board-ground: #2a2a2a;
   --cell-ground: #f7f4ef;
   --corner-ground: #121212;
   --centre-ground: #fbf9f5;
-  --chest-ground: #26211c;
-  --chest-ink: #f0e9dc;
+  --chest-wash: #000000;
+  --wash-strength: 7%;
 
   /* The gap and frame between cells, and around the board. Every line on the
      board is this one value, and it is the board's own ground showing through
@@ -293,6 +311,20 @@
   overflow: hidden;
 }
 
+/* The wash, and only the wash. A property is tinted in its own set's colour;
+   a chest belongs to no set, so its wash is black and it comes out as a warm
+   pale grey rather than as a colour of its own. The four corners are not in
+   this rule - they stay solid black, because a corner is not a set and has no
+   pill to agree with. */
+.board__cell--property,
+.board__cell--chest {
+  background: color-mix(in srgb, var(--wash) var(--wash-strength), var(--cell-ground));
+}
+
+.board__cell--chest {
+  --wash: var(--chest-wash);
+}
+
 /* The button is the cell. Everything about the default button is a decision
    this board has to make explicitly, because the defaults are somebody else's
    page: a grey background, a focus ring in the browser's colour, and a border. */
@@ -304,7 +336,7 @@
   color: inherit;
   cursor: pointer;
   border: 0;
-  background: var(--cell-ground);
+  background: color-mix(in srgb, var(--wash) var(--wash-strength), var(--cell-ground));
 }
 
 .board__cell--property:focus-visible {
@@ -345,12 +377,14 @@
   margin-top: 12%;
 }
 
-.board__cell--chest {
-  background: var(--chest-ground);
-}
-
+/* A chest's name is left to inherit, exactly as a property's is. When the four
+   chests were solid black the name had to be cream to stay readable; now that
+   they are washed pale like the rest, the name takes the board's own ink, which
+   is the same ink, the same weight and the same position a property's name has.
+   Overriding it here would be the only way for a chest's name to differ from a
+   property's, and there is no reason for it to. */
 .board__cell--chest .board__label {
-  color: var(--chest-ink);
+  color: inherit;
 }
 
    /* --------------------------------------------------------- the card, for later

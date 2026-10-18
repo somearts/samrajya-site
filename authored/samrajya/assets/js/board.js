@@ -133,9 +133,27 @@ function nameLines(cell) {
 function plainCell(cell) {
   const isChest = cell.type === "chest";
 
+  // One style object, built once. It was two, and the second replaced the first:
+  // a `style` key written after the spread overwrites the gridColumn and
+  // gridRow that came with it, every property button lost its coordinates and
+  // the grid auto-placed them - which still puts 28 squares on 28 board
+  // positions, and still passes a count, and still leaves every pixel inside a
+  // cell. The cells were simply in the wrong places. A cell's position is not
+  // optional, so it is assembled alongside everything else the cell needs and
+  // handed over once.
+  const style = {
+    gridColumn: String(cell.col),
+    gridRow: String(cell.row),
+    // The wash is the same colour as the pill, from the same field in the same
+    // record, so the tint on the ground and the pill above it cannot disagree.
+    // A chest has no colour of its own to wash with and is left to the
+    // stylesheet, which gives it black.
+    ...(isChest ? {} : { "--wash": cell.color }),
+  };
+
   const props = {
     class: `board__cell board__cell--${cell.type}`,
-    style: { gridColumn: String(cell.col), gridRow: String(cell.row) },
+    style,
     "data-id": cell.id,
     "data-index": String(cell.index),
     "data-cell": cell.type,
@@ -145,6 +163,8 @@ function plainCell(cell) {
   };
 
   if (isChest) {
+    // A chest's wash is black, set by the stylesheet, because a chest belongs
+    // to no set and has no colour of its own to tint with.
     return el("div", props, [nameLines(cell)]);
   }
 
@@ -154,7 +174,6 @@ function plainCell(cell) {
     [
       el("span", {
         class: "board__pill",
-        // The set's own colour, from the record, not from a lookup table here.
         style: { backgroundColor: cell.color },
         "aria-hidden": "true",
       }),
