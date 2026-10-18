@@ -40,6 +40,7 @@ import { el } from "./dom.js";
 import { cornerMark } from "./corner-art.js";
 import { dice, makeThrowable } from "./dice.js";
 import { showCard } from "./property-card.js";
+import { turnPill } from "./turn.js";
 import { isPurchasable } from "./shared/properties.js";
 import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
 
@@ -200,8 +201,12 @@ function plainCell(cell) {
  * Returns the element. It is built in one go rather than patched, because the
  * board does not change while it is on screen and there is nothing to
  * reconcile.
+ *
+ * `players` is the roster, and is only read for the turn pill: a board built
+ * without one still renders, and the pill simply stays hidden rather than
+ * naming a turn nobody has.
  */
-export function board() {
+export function board({ players = [] } = {}) {
   const frame = el("div", {
     class: "board",
     role: "group",
@@ -245,7 +250,16 @@ export function board() {
   // own - a die that rolls by itself is a decoration, and the number on it has
   // to mean something a player asked for.
   const die = centreArea.querySelector(".board__dice");
-  if (die) makeThrowable(die);
+
+  // The turn pill, under the die. It is put in the middle rather than over the
+  // board so that it lands in the same two rows the die is in and can be
+  // positioned from the die's own edge. It advances when the die has LANDED,
+  // not when it is touched, so the pill never names a player who is still
+  // mid-throw.
+  const turn = turnPill(players);
+  centreArea.append(turn.node);
+
+  if (die) makeThrowable(die, () => turn.next());
 
   // One handler for every property, on the board rather than twenty times on
   // the cells. The cells that are not purchasable are not buttons at all, so

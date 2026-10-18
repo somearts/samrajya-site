@@ -697,6 +697,140 @@ try {
     note(`${label}: and the results are not stuck on one number`,
       new Set(repeats).size >= 2, `${new Set(repeats).size} distinct in six`);
 
+    // The turn pill, the die's outline, and the matchup. Asked together because
+    // they are the three refinements, and because each one is a claim about the
+    // same middle of the same board.
+
+    const trio = await page.json(`
+      const board = document.querySelector(".board");
+      const centre = document.querySelector("#board-center");
+      const die = board.querySelector(".board__dice");
+      const pill = board.querySelector(".board__turn");
+      const box = (el) => { const r = el.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height }; };
+
+      /* The pill, thrown three times, so the alternation is seen rather than
+         assumed. Each press is given time to land - the turn moves on landing,
+         not on the tap, which is the whole difference between this and a
+         counter that counts touches. */
+      const turns = [];
+      for (let i = 0; i < 4; i++) {
+        turns.push({ text: pill.textContent, seat: pill.dataset.turn, name: pill.dataset.name });
+        die.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        for (let n = 0; n < 60; n++) {
+          if (die.dataset.rolling === "false") break;
+          await new Promise((r) => setTimeout(r, 40));
+        }
+      }
+      turns.push({ text: pill.textContent, seat: pill.dataset.turn, name: pill.dataset.name });
+
+      /* The die's own styles after being pressed, focused and left focused -
+         read from the computed style, because an outline is exactly the sort of
+         thing that is written once and overridden by a later rule. */
+      die.focus();
+      const focus = getComputedStyle(die);
+      const outline = { width: focus.outlineWidth, style: focus.outlineStyle };
+      die.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      die.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      const held = getComputedStyle(die).outlineStyle;
+      die.blur();
+
+      /* What can be pressed in the middle. The die, and only the die. */
+      const pressable = [...centre.querySelectorAll("button, a, input, [tabindex]")]
+        .map((e) => e.className.baseVal ?? e.className);
+
+      /* The matchup. Two blocks and a VS between them, all on one line. */
+      const roster = document.querySelector(".board-who");
+      const blocks = [...roster.querySelectorAll(".who")].map(box);
+      const vsEl = roster.querySelector(".who__vs");
+      const vs = vsEl ? box(vsEl) : null;
+
+      const pillBox = box(pill);
+      const dieBox = box(die);
+      // The floor of the die's own two rows: the bottom of the LAGRANGE POINT
+      // L2 / MILKY WAY row and the MOON / RAMA row, which is the same four cells
+      // the die is placed against. Not the board's bottom edge - there is one
+      // more row of tiles below the die, and the pill belongs above it.
+      const bandBottom = Math.max(
+        ...["moon", "lagrange-l2", "milky-way", "rama"]
+          .map((id) => board.querySelector('.board__cell[data-id="' + id + '"]')
+            .getBoundingClientRect().bottom),
+      );
+
+      return {
+        turns,
+        pill: { ...pillBox, hidden: pill.hidden, text: pill.textContent,
+                pointer: getComputedStyle(pill).pointerEvents,
+                font: getComputedStyle(pill).fontSize,
+                background: getComputedStyle(pill).backgroundColor,
+                radius: getComputedStyle(pill).borderTopLeftRadius },
+        die: dieBox,
+        bandBottom,
+        outline, held,
+        pressable,
+        roster: { height: roster.getBoundingClientRect().height, blocks, vs,
+                  vsText: vsEl ? vsEl.textContent : null,
+                  clipped: [...roster.querySelectorAll(".who__name, .who__civ")]
+                    .filter((e) => e.scrollWidth > e.clientWidth + 1).length },
+      };
+    `);
+
+    // --- the die's outline, which is the thing that was wrong ---
+    note(`${label}: the die draws no outline when focused`,
+      trio.outline.style === "none" || parseFloat(trio.outline.width) === 0,
+      `outline-style ${trio.outline.style}, width ${trio.outline.width}`);
+    note(`${label}: and none while it is held either`, trio.held === "none", trio.held);
+    note(`${label}: the die is still the only thing in the middle you can press`,
+      trio.pressable.length === 1 && String(trio.pressable[0]).includes("board__dice"),
+      trio.pressable.join(", ") || "nothing pressable");
+
+    // --- the turn pill ---
+    note(`${label}: a turn pill is shown under the die`,
+      !trio.pill.hidden && /\u2019s turn$/.test(trio.pill.text), trio.pill.text);
+    note(`${label}: it is transparent, pill-shaped and readably sized`,
+      /rgba\(0, 0, 0, 0\)|transparent/.test(trio.pill.background) &&
+      parseFloat(trio.pill.radius) >= parseFloat(trio.pill.h) / 2 &&
+      parseFloat(trio.pill.font) >= 11,
+      `${trio.pill.font}, radius ${trio.pill.radius}, height ${trio.pill.h.toFixed(1)}px`);
+    note(`${label}: it sits between the die and the bottom of its two rows`,
+      trio.pill.top >= trio.die.bottom - 0.5 && trio.pill.bottom <= trio.bandBottom + 0.5,
+      `die ends ${trio.die.bottom.toFixed(0)}, pill ${trio.pill.top.toFixed(0)}..${trio.pill.bottom.toFixed(0)}, floor ${trio.bandBottom.toFixed(0)}`);
+    const gapAbove = trio.pill.top - trio.die.bottom;
+    const gapBelow = trio.bandBottom - trio.pill.bottom;
+    note(`${label}: balanced in that space`,
+      gapAbove >= 2 && Math.abs(gapAbove - gapBelow) <= 3,
+      `${gapAbove.toFixed(1)}px above, ${gapBelow.toFixed(1)}px below`);
+    note(`${label}: and it is not a control`,
+      trio.pill.pointer === "none", trio.pill.pointer);
+    // Asserted as a CYCLE, not as a sequence starting at zero: the earlier checks
+    // in this run have already thrown the die several times, so by now the turn
+    // is wherever those throws left it. What has to be true is that every throw
+    // moves it on and it wraps - not which player it happened to land on.
+    const seats = trio.turns.map((t) => Number(t.seat));
+    const alternates = seats.every((s, i) =>
+      i === 0 || s === (seats[i - 1] + 1) % 2);
+    note(`${label}: four throws, four turns, alternating and wrapping`,
+      alternates && new Set(trio.turns.map((t) => t.name)).size === 2 &&
+      new Set(trio.turns.map((t) => t.text)).size === 2,
+      trio.turns.map((t) => t.text).join(" \u2192 "));
+
+    // --- the matchup ---
+    note(`${label}: the header says VS between the two players`,
+      trio.roster.vsText === "VS" && trio.roster.blocks.length === 2,
+      `${trio.roster.blocks.length} blocks, VS: ${trio.roster.vsText}`);
+    note(`${label}: sitting between them, not outside either`,
+      trio.roster.vs.left >= trio.roster.blocks[0].right - 0.5 &&
+      trio.roster.vs.right <= trio.roster.blocks[1].left + 0.5,
+      `${trio.roster.blocks[0].right.toFixed(0)} | VS ${trio.roster.vs.left.toFixed(0)}..${trio.roster.vs.right.toFixed(0)} | ${trio.roster.blocks[1].left.toFixed(0)}`);
+    const sameLine = Math.min(trio.roster.vs.bottom, trio.roster.blocks[1].bottom) -
+      Math.max(trio.roster.vs.top, trio.roster.blocks[1].top);
+    note(`${label}: aligned with them, and not clipped or wrapped`,
+      sameLine > 0 && trio.roster.clipped === 0,
+      `overlap ${sameLine.toFixed(0)}px, ${trio.roster.clipped} clipped`);
+    note(`${label}: the whole matchup on one line`,
+      trio.roster.height < trio.roster.blocks[0].h * 2.2,
+      `${trio.roster.height.toFixed(0)}px tall`);
+
     // Put it back to blank so the shots show the board as it is found.
     await page.eval(`document.querySelector(".board__card").hidden = true`);
     await sleep(200);

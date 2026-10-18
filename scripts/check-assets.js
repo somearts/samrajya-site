@@ -299,6 +299,8 @@ async function main() {
   const boardCss = await readFile(join(OUT, "assets", "css", "board.css"), "utf8");
   const diceCode = await readFile(join(OUT, "assets", "js", "dice.js"), "utf8");
 const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "utf8");
+const turnCode = await readFile(join(OUT, "assets", "js", "turn.js"), "utf8");
+const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
 
   check(
     "six columns of one cell size",
@@ -386,7 +388,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
   );
   check(
     "and it is thrown by pressing it, never on its own",
-    /makeThrowable\(die\)/.test(boardJs) &&
+    /makeThrowable\(die,/.test(boardJs) &&
       /data-face="0"/.test(diceCode) &&
       /root\.addEventListener\("click"/.test(diceCode) &&
       /animation: dice-throw/.test(boardCss),
@@ -394,8 +396,52 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
   );
   check(
     "the die is about half the size it was",
-    /width:\s*calc\(var\(--cell\) \* 0\.62\)/.test(boardCss),
-    "it was 1.15 cells; it is an object rather than a feature",
+    /--die-size:\s*calc\(var\(--cell\) \* 0\.62\)/.test(boardCss) &&
+      /\.board__dice \{[^}]*width:\s*var\(--die-size\)/.test(boardCss),
+    "it was 1.15 cells; it is an object rather than a feature, and the size is written once so the turn pill cannot drift from it",
+  );
+  check(
+    "the die carries no outline in any state",
+    /\.board__dice:focus,\s*\n\.board__dice:focus-visible,\s*\n\.board__dice:active \{\s*\n\s*outline:\s*none;/.test(boardCss) &&
+      !/\.board__dice[^{]*\{[^}]*outline:(?!\s*none)/.test(boardCss) &&
+      /-webkit-tap-highlight-color:\s*transparent/.test(boardCss),
+    "an outline on an SVG is drawn round its rectangular box, not round the die, and a tap is enough to call it focus",
+  );
+  check(
+    "and the turn pill is placed from the die's own edge and the band's own floor",
+    /\.board__turn \{[\s\S]*?8 \* var\(--cell\) \+ 7\.5 \* var\(--hair\) \+ var\(--die-half\)/.test(boardCss) &&
+      /\.board__turn \{[\s\S]*?pointer-events:\s*none/.test(boardCss),
+    "so the gap above and below it stays equal at every board size, and the die is the only thing in the middle that can be pressed",
+  );
+  check(
+    "the turn pill is transparent, and says who is playing",
+    /\.board__turn \{[\s\S]*?background:\s*none/.test(boardCss) &&
+      /\.board__turn \{[\s\S]*?border:\s*0/.test(boardCss) &&
+      /\.board__turn \{[\s\S]*?border-radius:\s*999px/.test(boardCss) &&
+      /font-size:\s*max\(11px,/.test(boardCss) &&
+      turnCode.includes("s turn"),
+    "readably sized rather than merely visible",
+  );
+  check(
+    "and it says plainly that the turn it names is local",
+    /LOCAL turn/.test(turnCode) && /board: null/.test(turnCode) &&
+      /different pills/.test(turnCode),
+    "the server has no turn, so two players in one room will not agree on it - which the file says rather than hides",
+  );
+  check(
+    "the card's type is thirty per cent larger, floors included",
+    /font-size:\s*max\(11\.05px, calc\(var\(--cell\) \* 0\.1625\)\)/.test(boardCss) &&
+      /font-size:\s*max\(12\.35px, calc\(var\(--cell\) \* 0\.208\)\)/.test(boardCss) &&
+      /font-size:\s*max\(9\.1px, calc\(var\(--cell\) \* 0\.1235\)\)/.test(boardCss) &&
+      /font-size:\s*max\(7\.8px, calc\(var\(--cell\) \* 0\.104\)\)/.test(boardCss) &&
+      (boardCss.match(/max\(9\.1px, calc\(var\(--cell\) \* 0\.1235\)\)/g) || []).length === 2,
+    "the floors bind at the smallest cell, so raising only the multiplier would have changed nothing there",
+  );
+  check(
+    "and the matchup is drawn between the two identities",
+    /class: "who__vs", text: "VS"/.test(viewsCode) &&
+      /i > 0 \? el\("span"/.test(viewsCode),
+    "a pseudo-element would belong to one block and sit outside the pair, reading as a suffix on the first name",
   );
   check(
     "the die takes its six face colours from the board's own sets",

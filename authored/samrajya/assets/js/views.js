@@ -503,16 +503,25 @@ export function boardView(state, actions) {
   const room = state.room;
   const players = (room?.players || []).filter((p) => p.name);
 
+  // The two identities with the matchup between them. The VS goes in as a real
+  // child rather than as a ::before on one of the blocks, because it has to sit
+  // BETWEEN them and a pseudo-element belongs to one block - which would put it
+  // on the outside, reading as a suffix on the first name. With one player there
+  // is no matchup and no VS is drawn.
   const roster = el("div", { class: "board-who" },
-    players.map((p) =>
-      el("div", { class: `who${room.seat === players.indexOf(p) ? " who--me" : ""}` }, [
-        el("span", { class: "who__name", text: p.name }),
-        el("span", { class: "who__civ", text: `${civById(p.civ)?.name ?? "Unchosen"}` }),
-      ]),
-    ),
+    players
+      .map((p, i) => [
+        i > 0 ? el("span", { class: "who__vs", text: "VS" }) : null,
+        el("div", { class: `who${room.seat === players.indexOf(p) ? " who--me" : ""}` }, [
+          el("span", { class: "who__name", text: p.name }),
+          el("span", { class: "who__civ", text: `${civById(p.civ)?.name ?? "Unchosen"}` }),
+        ]),
+      ])
+      .flat()
+      .filter(Boolean),
   );
 
-  const theBoard = board();
+  const theBoard = board({ players });
   // The room is on the board itself, which is what lets a test - and anyone
   // with a screen reader - tell one game from another.
   theBoard.dataset.room = state.room?.roomId || "";

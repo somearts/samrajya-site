@@ -177,6 +177,52 @@ async function main() {
             };
           })(),
 
+          /* EVERY property's card, at this size.
+
+             The probe above opens Moon, which is one property with one
+             description. The typography on these cards was raised thirty per
+             cent, and the thing a raise like that breaks is a long line - so
+             all twenty are opened and asked, including the ones written to be
+             the longest.
+
+             It runs AFTER the geometry probe, and the order is the point. The
+             geometry probe needs the card at rest: a turning card's rect is its
+             PROJECTED box, and 213px turned eighty-eight degrees measures 7.4px.
+             Its first click is the card's first appearance, so finishing that
+             animation leaves it at zero degrees and its rect is its own. If this
+             sweep ran first, Moon would already be on the board there, that
+             click would be a change rather than an appearance, and finishing it
+             would leave the card turned away.
+
+             No geometry is measured here, so the transform left on the card at
+             the end does not matter: an element is clipped when its SCROLL size
+             exceeds its client size, and neither is changed by a transform. */
+          cardSweep: (() => {
+            const board = document.querySelector(".board");
+            const holder = board.querySelector(".board__card");
+            const bad = [];
+            const ids = [...board.querySelectorAll(".board__cell[data-cell='property']")]
+              .map((c) => c.dataset.id);
+            const over = (s) => s.scrollWidth > s.clientWidth + 1;
+            for (const id of ids) {
+              board.querySelector('.board__cell[data-id="' + id + '"]').click();
+              const card = holder.querySelector(".property-card");
+              if (!card) { bad.push(id + ": no card"); continue; }
+              const name = [...card.querySelectorAll(".property-card__name span")].filter(over);
+              const desc = [...card.querySelectorAll(".property-card__description span")].filter(over);
+              const adv = card.querySelector(".property-card__advantage-text");
+              const advantage = adv && adv.scrollHeight > adv.clientHeight + 1;
+              if (name.length || desc.length || advantage) {
+                bad.push(id + ": " + [
+                  name.length ? "name" : "",
+                  desc.length ? "description" : "",
+                  advantage ? "advantage" : "",
+                ].filter(Boolean).join("+"));
+              }
+            }
+            return { opened: ids.length, bad };
+          })(),
+
           /* Is every cell on the square the data says it is?
 
              This exists because a version of this board put all twenty
@@ -377,7 +423,9 @@ for (let j = 0; j < 11; j++) {
         geometry.card.dieBelow &&
         geometry.card.clipped === 0 &&
         geometry.card.minGap >= 1.5 &&
-        geometry.card.spread <= 2.5;
+        geometry.card.spread <= 2.5 &&
+        geometry.cardSweep.opened === 20 &&
+        geometry.cardSweep.bad.length === 0;
 
       console.log(`${width} x ${height}   ${ok ? "OK" : "PROBLEM"}`);
       console.log(`  cell ${cell}px ${cellWhole ? "(whole)" : "(FRACTIONAL)"}  tracks ${tracksEven ? "six and ten, all equal" : "NOT equal"}  gap ${geometry.gapX}/${geometry.gapY}px  frame ${geometry.padTop}px`);
@@ -410,7 +458,11 @@ for (let j = 0; j < 11; j++) {
       if (!c || !c.open) {
         console.log(`  card      PROBLEM: pressing Moon opened no card`);
       } else {
-        console.log(`  card      ${c.inside ? "inside the rectangle the six tiles bound" : "OUTSIDE ITS RECTANGLE"}` +
+        const sweep = geometry.cardSweep;
+      console.log(`  all cards ${sweep.opened} opened, ${sweep.bad.length === 0
+        ? "not one of them clips a word"
+        : sweep.bad.length + " CLIPPING: " + sweep.bad.join(", ")}`);
+      console.log(`  card      ${c.inside ? "inside the rectangle the six tiles bound" : "OUTSIDE ITS RECTANGLE"}` +
           `  margins ${c.gaps.map((g) => g.toFixed(1)).join(" / ")}` +
           `  tightest ${c.minGap.toFixed(1)}px, spread ${c.spread.toFixed(1)}px`);
         console.log(`            ${c.clearsLowerRows ? "clear of" : "INTO"} the lower rows` +

@@ -200,16 +200,34 @@ function defaultWait(ms) {
 /** Fast, then slower, then slower again: about 660ms. */
 const TICKS = Object.freeze([...Array(6).fill(55), ...Array(4).fill(95), ...Array(2).fill(150)]);
 
-/** Make the die throwable by pointer and by keyboard, once. */
-export function makeThrowable(root) {
+/**
+ * Make the die throwable by pointer and by keyboard, once.
+ *
+ * `onThrown` is called with the face once the die has LANDED, not when it is
+ * touched - so whatever is waiting on the result hears about it when the answer
+ * is on the die rather than when it starts moving.
+ */
+export function makeThrowable(root, onThrown) {
   if (!root || root.dataset.throwable === "true") return root;
   root.dataset.throwable = "true";
   reset(root);
-  root.addEventListener("click", () => roll(root));
+
+  const throwIt = () => {
+    const landed = roll(root);
+    if (typeof onThrown !== "function") return landed;
+    // A throw that was cancelled by a second one resolves null; there is no
+    // result to report and nothing should be told there is.
+    return landed.then((face) => {
+      if (face) onThrown(face);
+      return face;
+    });
+  };
+
+  root.addEventListener("click", throwIt);
   root.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
-    roll(root);
+    throwIt();
   });
   return root;
 }
