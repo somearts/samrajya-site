@@ -134,15 +134,21 @@ export function board() {
     "aria-label": "The board of Samrajya",
   });
 
+  // Columns 2 to 5, rows 2 to 9 - the four by eight that is not part of the
+  // ring. Placed on lines rather than on a named area, because the grid's cells
+  // are placed individually now and there is no template for a name to sit in.
+  //
+  // It covers the gaps inside its own span on purpose. In the reference the
+  // middle is one unbroken field with a line of text on it, so the grid's lines
+  // do not cross it - they stop where the ring stops. Lines 2 to 4 across and
+  // lines 2 to 8 down are drawn only in the two side columns and the two end
+  // rows, which is what the reference draws.
   const centreArea = el("div", {
     id: "board-center",
     class: "board__centre",
     "aria-hidden": "true",
     html: centre(),
   });
-  // Columns 2 to 5, rows 2 to 9 - the four by eight that is not part of the
-  // ring. Placed on lines rather than on a named area, because the grid's cells
-  // are placed individually now and there is no template for a name to sit in.
   centreArea.style.gridColumn = "2 / 6";
   centreArea.style.gridRow = "2 / 10";
 

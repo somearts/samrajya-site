@@ -11,6 +11,7 @@
     "deploy": "npm run build && wrangler deploy",
     "deploy:dry": "npm run build && wrangler deploy --dry-run",
     "test": "node --test \"test/*.test.js\"",
+    "test:board": "node scripts/measure-board.mjs",
     "test:e2e": "node scripts/e2e.js",
     "verify": "node scripts/verify-live.js",
     "verify:welcome": "node scripts/welcome-baseline.js check"

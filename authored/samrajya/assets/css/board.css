@@ -68,8 +68,14 @@
   /* The gap and frame between cells, and around the board. Every line on the
      board is this one value, and it is the board's own ground showing through
      the gap - so no cell carries a border that could be drawn twice where it
-     meets its neighbour, and no shared edge is ever two hairlines deep. */
-  --hair: 0.5px;
+     meets its neighbour, and no shared edge is ever two lines deep.
+
+     This was a half pixel, and that was the bug. A half-pixel line does not
+     draw: it lands between two device pixels and the renderer antialiases it
+     across both, so every line on the board came out at roughly half strength
+     and read as a faint, broken grid. One pixel is the smallest thing a line
+     can be and still be a line. */
+  --hair: 1px;
 
   /* How much of the screen the board is asked to leave alone, measured on a
      360x640 phone rather than guessed.
@@ -87,10 +93,22 @@
   --reserve-bottom: 60px;
   --margin: 8px;
 
-  --cell: min(
+  /* What would fit if a cell were allowed to be any size at all. */
+  --cell-fit: min(
     calc((100vw - 2 * var(--margin) - 7 * var(--hair)) / 6),
     calc((100dvh - var(--reserve-top) - var(--reserve-bottom) - 11 * var(--hair)) / 10)
   );
+
+  /* ...and the cell is that, rounded DOWN to a whole pixel.
+
+     A whole pixel is what makes the lines land on one device pixel each
+     instead of straddling two, which is the whole reason --hair is 1px and
+     not less. A fractional cell puts the first cell's edge at a fractional
+     coordinate, and every line after it inherits that fraction, so all
+     eighteen lines are antialiased. Rounding down keeps the board inside the
+     screen; rounding to nearest or up would not, because the fit already
+     assumes a cell exactly as large as it computed. */
+  --cell: round(down, var(--cell-fit), 1px);
 
   display: grid;
   grid-template-rows: auto min-content;
@@ -102,6 +120,7 @@
 /* --------------------------------------------------------------- the board */
 
 .board {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(6, var(--cell));
   grid-template-rows: repeat(10, var(--cell));
@@ -213,8 +232,9 @@
 /* ------------------------------------------------------------------ centre
 
    Columns 2 to 5 and rows 2 to 9 - the four by eight that is not part of the
-   ring. Given six tracks of the grid and nothing else, so whatever eventually
-   lives in here gets the same box by default. */
+   ring. One unbroken field, as the reference has it: the grid's lines stop
+   where the ring stops rather than crossing the middle, so the centre covers
+   the gaps inside its own span and that is the drawing, not an accident. */
 
 .board__centre {
   background: var(--centre-ground);

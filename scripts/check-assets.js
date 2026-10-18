@@ -303,7 +303,15 @@ async function main() {
   );
   check(
     "the cell is the smaller of what fits across and what fits down",
-    /--cell:\s*min\(/.test(boardCss) && boardCss.includes("100vw") && boardCss.includes("100dvh"),
+    /--cell-fit:\s*min\(/.test(boardCss) &&
+      boardCss.includes("100vw") &&
+      boardCss.includes("100dvh"),
+  );
+  check(
+    "and it is rounded down to a whole pixel, never nearest or up",
+    /--cell:\s*round\(down,\s*var\(--cell-fit\),\s*1px\)/.test(boardCss),
+    "a fractional cell puts the first line on a fractional coordinate and every " +
+      "line after it inherits that; rounding up would overflow the fit it came from",
   );
   check(
     "and it allows for the hairlines, so the board cannot overflow the screen",
@@ -318,6 +326,12 @@ async function main() {
     "the lines are the board's own ground showing through the gap, not borders that double",
     /background:\s*var\(--board-ground\)/.test(boardCss) && /gap:\s*var\(--hair\)/.test(boardCss),
     "no cell carries a border that could be drawn twice where it meets its neighbour",
+  );
+  check(
+    "and a line is a whole pixel, because half a pixel is not a line",
+    /--hair:\s*1px/.test(boardCss),
+    "at 0.5px the renderer antialiases every line across two device pixels and " +
+      "the whole grid comes out at half strength",
   );
   check(
     "the old 8x8 template is gone",
@@ -348,6 +362,7 @@ async function main() {
     boardJs.includes('id: "board-center"') &&
       boardJs.includes('centreArea.style.gridColumn = "2 / 6"') &&
       boardJs.includes('centreArea.style.gridRow = "2 / 10"'),
+    "the reference draws the middle as one field, so the lines stop at the ring",
   );
 
   /* ---------------------------------------------------- the board's colours */
