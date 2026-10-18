@@ -118,6 +118,65 @@ async function main() {
             return { x: r.left, y: r.top, w: r.width, h: r.height, pos: s.position, inset: s.inset };
           })(),
 
+          /* The property card, and the die it must not disturb.
+
+             Pressed open by name before anything is measured, because a card
+             sitting in the middle of the board is underneath everything else -
+             and because "the card fits its rectangle" is a claim that has to be
+             made at every board size, not at one. The rectangle is taken from
+             the six tiles that bound it rather than from the stylesheet, so a
+             change to the CSS cannot quietly widen the card past what was
+             agreed. */
+          card: (() => {
+            const board = document.querySelector(".board");
+            const moon = board.querySelector('.board__cell[data-id="moon"]');
+            if (!moon) return null;
+            moon.click();
+            const at = (id) =>
+              board.querySelector('.board__cell[data-id="' + id + '"]').getBoundingClientRect();
+            const holder = board.querySelector(".board__card");
+            const c = holder.querySelector(".property-card");
+            if (!c) return { open: false };
+            // The card's turn is a transform, and a transformed element's
+            // bounding rect is its PROJECTED box - a card mid-turn at eighty-eight
+            // degrees measures 3.5% of its width, which is a truer reading of
+            // the animation than of the layout. The turn is finished first so
+            // that what is measured is where the card sits, not how far it has
+            // turned. finish() leaves it at its end state, so this does not skip
+            // or fake anything.
+            for (const a of holder.getAnimations()) a.finish();
+            const cb = c.getBoundingClientRect();
+            const db = board.querySelector(".board__dice").getBoundingClientRect();
+            const leftIds = ["halleys-comet", "kuiper-belt", "pluto"];
+            const rightIds = ["earth-137", "orions-belt", "epoch"];
+            const six = leftIds.concat(rightIds);
+            const allowed = {
+              l: Math.max(...leftIds.map((i) => at(i).right)),
+              r: Math.min(...rightIds.map((i) => at(i).left)),
+              top: Math.min(...six.map((i) => at(i).top)),
+              bottom: Math.max(...six.map((i) => at(i).bottom)),
+            };
+            const gaps = [
+              cb.left - allowed.l, allowed.r - cb.right,
+              cb.top - allowed.top, allowed.bottom - cb.bottom,
+            ];
+            const clipped = [...c.querySelectorAll(".property-card__description span, .property-card__name span")]
+              .filter((s) => s.scrollWidth > s.clientWidth + 1).length;
+            return {
+              open: true,
+              left: cb.left, right: cb.right, top: cb.top, bottom: cb.bottom,
+              allowed,
+              cardW: cb.width,
+              holderW: holder.getBoundingClientRect().width,
+              gaps, minGap: Math.min(...gaps), spread: Math.max(...gaps) - Math.min(...gaps),
+              inside: gaps.every((g) => g >= 1.5),
+              clearsLowerRows: cb.bottom < allowed.bottom - 2,
+              dieTop: db.top, dieBelow: db.top >= allowed.bottom - 1,
+              dieW: db.width,
+              clipped,
+            };
+          })(),
+
           /* Is every cell on the square the data says it is?
 
              This exists because a version of this board put all twenty
@@ -309,7 +368,16 @@ for (let j = 0; j < 11; j++) {
         tooWide.length === 0 &&
         tooTall.length === 0 &&
         outside.length === 0 &&
-        geometry.labels.length === 24;
+        geometry.labels.length === 24 &&
+        geometry.card !== undefined &&
+        geometry.card !== null &&
+        geometry.card.open &&
+        geometry.card.inside &&
+        geometry.card.clearsLowerRows &&
+        geometry.card.dieBelow &&
+        geometry.card.clipped === 0 &&
+        geometry.card.minGap >= 1.5 &&
+        geometry.card.spread <= 2.5;
 
       console.log(`${width} x ${height}   ${ok ? "OK" : "PROBLEM"}`);
       console.log(`  cell ${cell}px ${cellWhole ? "(whole)" : "(FRACTIONAL)"}  tracks ${tracksEven ? "six and ten, all equal" : "NOT equal"}  gap ${geometry.gapX}/${geometry.gapY}px  frame ${geometry.padTop}px`);
@@ -336,6 +404,22 @@ for (let j = 0; j < 11; j++) {
       if (pill) {
         console.log(`    pill ${pill.width}% wide, ${pill.height}% tall, at ${pill.left}%,${pill.top}% of its cell  (brief: 46.7 / 10 / 26.7 / 13.3)`);
       }
+      // The card, at this size. Pressed open by the probe above, so this is what
+      // a player would see here, not a reading of the stylesheet.
+      const c = geometry.card;
+      if (!c || !c.open) {
+        console.log(`  card      PROBLEM: pressing Moon opened no card`);
+      } else {
+        console.log(`  card      ${c.inside ? "inside the rectangle the six tiles bound" : "OUTSIDE ITS RECTANGLE"}` +
+          `  margins ${c.gaps.map((g) => g.toFixed(1)).join(" / ")}` +
+          `  tightest ${c.minGap.toFixed(1)}px, spread ${c.spread.toFixed(1)}px`);
+        console.log(`            ${c.clearsLowerRows ? "clear of" : "INTO"} the lower rows` +
+          `   ${c.clipped === 0 ? "no text clipped" : c.clipped + " LINES CLIPPED"}` +
+          `   die ${c.dieW.toFixed(1)}px (${(c.dieW / cell * 100).toFixed(0)}% of a cell), ${c.dieBelow ? "below the card" : "NOT BELOW"}`);
+        console.log(`            card ${c.cardW.toFixed(1)}px in a ${c.holderW.toFixed(1)}px holder` +
+          `  allowed ${c.allowed.l.toFixed(1)}..${c.allowed.r.toFixed(1)}  card ${c.left.toFixed(1)}..${c.right.toFixed(1)}`);
+      }
+
       console.log(`  vertical lines   ${cleanLines.filter((l) => l.i !== undefined).length}/7 clean` +
         (verticals.some((l) => l.clean !== l.total)
           ? `   offenders: ${verticals.filter((l) => l.clean !== l.total).map((l) => `#${l.i} (${l.clean}/${l.total}, off by ${l.worst}, first bad at ${l.firstBad})`).join(", ")}`

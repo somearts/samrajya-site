@@ -38,8 +38,10 @@
 
 import { el } from "./dom.js";
 import { cornerMark } from "./corner-art.js";
-import { dice, roll } from "./dice.js";
-import { CELLS, CORNER_IDS } from "./shared/spaces.js";
+import { dice, makeThrowable } from "./dice.js";
+import { showCard } from "./property-card.js";
+import { isPurchasable } from "./shared/properties.js";
+import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
 
 /**
  * The four corners, and the mark each one carries.
@@ -62,14 +64,16 @@ const CORNER_MARKS = Object.freeze({
 
 
 /**
- * The middle: a die.
+ * The middle: a die, in the board's own colours.
  *
- * The star and its two horizons used to be here. The die is its own module so
- * that the rules can pick it up and throw it later without the board having to
- * know anything about how a throw works.
+ * One set colour per face, taken from the pills themselves rather than written
+ * out here, so a set whose colour is changed on the board changes the die with
+ * it. The die takes them as an argument so that it has no import of its own
+ * into the shared modules - those only exist in the built tree, and a die that
+ * reached for one could not be tested.
  */
 function centre() {
-  return dice();
+  return dice(Object.values(SETS).map((set) => set.color));
 }
 
 /** One corner: its mark, its name, and a rule beneath. */
@@ -167,9 +171,16 @@ function plainCell(cell) {
     return el("div", props, [nameLines(cell)]);
   }
 
+  // A property is a button because it is a place a player can buy, and the card
+  // that says so comes up when it is pressed. The handler lives on the board
+  // rather than on the cell so that the cell carries no behaviour of its own.
   return el(
     "button",
-    { ...props, type: "button", "aria-label": cell.name },
+    {
+      ...props,
+      type: "button",
+      "aria-label": `${cell.name}, ${isPurchasable(cell.id) ? "show details" : "not for sale"}`,
+    },
     [
       el("span", {
         class: "board__pill",
@@ -222,12 +233,27 @@ export function board() {
 
   frame.append(centreArea, ...cells);
 
-  // Thrown once, on arrival, and never again on its own. Whoever gets the rules
-  // for a throw will call roll() from the game; until then the board does it
-  // once so the die is not sitting there on a fixed number, and it stops there
-  // because a die that keeps moving on its own is decoration, not a game.
+  // The card's box. It is empty and hidden until a property is pressed; the
+  // stylesheet is what puts it in the upper middle, inside the rectangle the
+  // six tiles named in property-card.js bound off.
+  const card = el("div", { class: "board__card", hidden: true });
+  frame.append(card);
+
+  // The die. It arrives unthrown and is thrown by pressing it, never on its
+  // own - a die that rolls by itself is a decoration, and the number on it has
+  // to mean something a player asked for.
   const die = centreArea.querySelector(".board__dice");
-  if (die) roll(die);
+  if (die) makeThrowable(die);
+
+  // One handler for every property, on the board rather than twenty times on
+  // the cells. The cells that are not purchasable are not buttons at all, so
+  // pressing a corner or a chest cannot reach this.
+  for (const cell of cells) {
+    if (!cell.matches?.("button[data-id]")) continue;
+    cell.addEventListener("click", () => {
+      showCard(frame, cell.dataset.id);
+    });
+  }
 
   return frame;
 }

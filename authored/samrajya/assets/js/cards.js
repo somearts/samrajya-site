@@ -227,6 +227,54 @@ export function cardSvg(key) {
   );
 }
 
+/**
+ * The artwork on its own, without the pill or the title.
+ *
+ * The board's property card shows the drawing rather than a photograph of the
+ * finished card, so the pill and the word on it are not wanted twice - once in
+ * the artwork and once in the card's own heading. Everything else here is the
+ * same markup `cardSvg` draws: the same ground, the same figures, the same
+ * reference geometry, with this instance's clip id.
+ *
+ * Null for a card that has no artwork, which is a real answer and not a
+ * failure: ten of the twenty properties have a drawing and ten do not, and the
+ * caller decides what to show in the gap.
+ */
+export function cardArt(key) {
+  const card = CARDS[key];
+  if (!card) return "";
+  const id = `art-${key}-${++clipSeq}`;
+  // The pill and the title live INSIDE each card's own artwork, not in the
+  // wrapper - which is right for a card and wrong for the board's property card,
+  // where the same pill and name are already set beside it. They are removed
+  // here rather than in the drawing, so the artwork stays exactly the artwork
+  // and the only thing that changes is what this function hands back.
+  const drawing = card
+    .Art(id)
+    .replace(/<g class="title-pill">[\s\S]*?<\/g>/g, "")
+    .replace(/<text class="title-text"[^>]*>[\s\S]*?<\/text>/g, "");
+  return (
+    // `slice`, not `meet`: the board shows the drawing in a square, and a card
+    // drawn as a wide rectangle or a tall one letterboxed into that square is
+    // mostly empty ground with a small subject in it. Filled and cropped, the
+    // artwork is the size of the space it is given at every board size. The
+    // crop takes from whichever axis the card is long in, and every drawing
+    // keeps its subject near the middle.
+    `<svg viewBox="0 0 ${card.w} ${card.h}" xmlns="http://www.w3.org/2000/svg" ` +
+    `aria-hidden="true" focusable="false" preserveAspectRatio="xMidYMid slice" ` +
+    `class="property-card__art-svg" data-art="${key}">\n` +
+    `  <defs><clipPath id="${id}"><rect width="${card.w}" height="${card.h}" rx="${card.rx}"/></clipPath></defs>\n` +
+    `  <rect width="${card.w}" height="${card.h}" fill="#F7F4EF"/>\n` +
+    `  <g clip-path="url(#${id})">${drawing}</g>\n` +
+    `</svg>`
+  );
+}
+
+/** Which keys have artwork, for the caller that has to offer something else. */
+export function hasArt(key) {
+  return Boolean(CARDS[key]);
+}
+
 /* ------------------------------------------------------------------ artwork
 
    One function per card. Each returns the reference's own markup, with any clip

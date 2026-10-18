@@ -131,7 +131,7 @@ async function main() {
 
   section("The rules, in one place");
 
-  for (const name of ["civilizations.js", "identity.js", "spaces.js"]) {
+  for (const name of ["civilizations.js", "identity.js", "spaces.js", "properties.js"]) {
     const client = join(OUT, "assets", "js", "shared", name);
     if (!(await exists(client))) {
       check(`shared/${name} reached the browser`, false);
@@ -293,6 +293,7 @@ async function main() {
   const boardJs = await readFile(join(OUT, "assets", "js", "board.js"), "utf8");
   const boardCss = await readFile(join(OUT, "assets", "css", "board.css"), "utf8");
   const diceCode = await readFile(join(OUT, "assets", "js", "dice.js"), "utf8");
+const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "utf8");
 
   check(
     "six columns of one cell size",
@@ -379,11 +380,50 @@ async function main() {
     "the rectangle MOON, LAGRANGE POINT L2, MILKY WAY and RAMA describe",
   );
   check(
-    "and it is thrown once on arrival, not left to move on its own",
-    /if \(die\) roll\(die\)/.test(boardJs) &&
-      /animation: dice-throw/.test(boardCss) &&
-      /\[data-rolling="true"\]/.test(boardCss),
-    "infinite only while data-rolling is true, and the die settles",
+    "and it is thrown by pressing it, never on its own",
+    /makeThrowable\(die\)/.test(boardJs) &&
+      /data-face="0"/.test(diceCode) &&
+      /root\.addEventListener\("click"/.test(diceCode) &&
+      /animation: dice-throw/.test(boardCss),
+    "an unthrown die shows no number at all, and nothing loops",
+  );
+  check(
+    "the die is about half the size it was",
+    /width:\s*calc\(var\(--cell\) \* 0\.62\)/.test(boardCss),
+    "it was 1.15 cells; it is an object rather than a feature",
+  );
+  check(
+    "the die takes its six face colours from the board's own sets",
+    /import \{ CELLS, CORNER_IDS, SETS \}/.test(boardJs) &&
+      /return dice\(Object\.values\(SETS\)\.map\(\(set\) => set\.color\)\)/.test(boardJs),
+    "assembled from the pills rather than typed into the die",
+  );
+  check(
+    "and the card is placed in the upper middle by cells and lines, not by percentage",
+    /\.board__card \{[\s\S]*?left:\s*calc\(var\(--cell\) \+ var\(--hair\) \* 2 \+ var\(--card-gap\)\)/.test(boardCss) &&
+      /top:\s*calc\(var\(--cell\) \+ var\(--hair\) \* 2 \+ var\(--card-gap\)\)/.test(boardCss) &&
+      /width:\s*calc\(var\(--cell\) \* 4 \+ var\(--hair\) \* 3 - var\(--card-gap\) \* 2\)/.test(boardCss) &&
+      /height:\s*calc\(var\(--cell\) \* 3 \+ var\(--hair\) \* 2 - var\(--card-gap\) \* 2\)/.test(boardCss),
+    "columns 2 to 5, rows 2 to 4, inset by --card-gap",
+  );
+  check(
+    "nothing the card or the die does can move the board",
+    /\.board__card \{[^}]*position:\s*absolute/.test(boardCss) &&
+      /\.board__dice \{[^}]*position:\s*absolute/.test(boardCss) &&
+      /\.property-card \{[^}]*position:\s*relative/.test(boardCss),
+    "both are out of flow; the card's turn is a transform, which does not lay out",
+  );
+  check(
+    "and the card's turn is transform-only, so it cannot reflow anything",
+    cardJs.includes("rotateY") && !/width:|height:|top:|left:/.test(
+      (cardJs.match(/\.animate\(\s*\[[\s\S]*?\]\s*,/g) || []).join(" "),
+    ),
+  );
+  check(
+    "only a property opens a card",
+    /cell\.matches\?\.\("button\[data-id\]"\)/.test(boardJs) &&
+      /isPurchasable\(cell\.id\)/.test(boardJs),
+    "corners and chests are not buttons, so pressing one cannot reach the card",
   );
   check(
     "six faces, all in the markup, one shown",
@@ -450,6 +490,7 @@ async function main() {
     "--centre-ground": /#fbf9f5/i,
     "--chest-wash": /#000000/i,
     "--wash-strength": /7%/,
+    "--card-inset": /#fbf9f5/i,
   };
   for (const [token, value] of Object.entries(tokens)) {
     check(`${token} is defined once, in the board's own block`, new RegExp(`${token}:\\s*`).test(boardCss));
@@ -542,6 +583,13 @@ async function main() {
     .replace(/^\s*\/\/.*$/gm, "");
 
   check(
+    "the artwork the board reuses is handed over without its pill or its title",
+    /replace\(\/\\?<g class="title-pill"/.test(cardsCode) &&
+      /replace\(\/\\?<text class="title-text"/.test(cardsCode),
+    "the card sets both of those beside the drawing, so drawing them again would say it twice",
+  );
+
+  check(
     "the old art module is gone, not merely unused",
     !existsSync(join(OUT, "assets", "js", "art.js")),
   );
@@ -595,7 +643,11 @@ async function main() {
   );
   check(
     "ten property cards each have a pill behind a white title",
-    (cardsCode.match(/<g class="title-pill">/g) || []).length === 10 &&
+    // Counted by a pill group that is immediately followed by its rectangle, so
+    // the check counts pills that are DRAWN rather than every mention of the
+    // markup - which now includes the pattern cardArt() uses to strip them back
+    // off when the board borrows a drawing.
+    (cardsCode.match(/<g class="title-pill">\s*<rect/g) || []).length === 10 &&
       (cardsCode.match(/fill="#FFFFFF"/g) || []).length === 10,
   );
   check(

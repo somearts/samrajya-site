@@ -14,7 +14,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { DICE_FACES, dice, showFace, roll, prefersStill } from "../authored/samrajya/assets/js/dice.js";
+import { DICE_FACES, dice, showFace, reset, roll, prefersStill, makeThrowable } from "../authored/samrajya/assets/js/dice.js";
 
 /* --------------------------------------------------------------------------
    The markup, without a browser.
@@ -41,6 +41,8 @@ function stubDie() {
   return {
     faces,
     dataset: {},
+    __diceRun: null,
+    addEventListener() {},
     querySelectorAll: (selector) => {
       assert.equal(selector, ".dice__face");
       return faces;
@@ -70,17 +72,17 @@ function instantClock() {
 
 const NO_TICKS = [];
 
-test("the die carries all six faces, and only one of them showing", () => {
+test("the die carries all six faces, and none of them showing to begin with", () => {
   assert.deepEqual(DICE_FACES, [1, 2, 3, 4, 5, 6]);
 
-  const markup = dice();
+  const markup = dice(["#111111", "#222222", "#333333", "#444444", "#555555", "#666666"]);
   for (const n of DICE_FACES) {
     assert.ok(markup.includes(`data-face="${n}"`), `face ${n} is in the markup`);
   }
-  // Six face groups, five of them hidden: one die showing one number.
+  // Six face groups, all hidden: a die that has not been thrown has no number.
   assert.equal((markup.match(/class="dice__face"/g) || []).length, 6);
-  assert.equal((markup.match(/hidden/g) || []).length, 5);
-  assert.ok(markup.includes('data-face="1"'), "it opens on one");
+  assert.equal((markup.match(/hidden/g) || []).length, 6);
+  assert.ok(markup.includes('data-face="0"'), "and it says so");
 });
 
 test("the pips are more on some faces than others, and never fewer than one", () => {
@@ -98,15 +100,18 @@ test("showFace shows exactly one face, and says which it is", () => {
     assert.equal(showFace(die, n), n);
     assert.deepEqual(die.shown, [n]);
     assert.equal(die.dataset.face, String(n));
-    assert.equal(die.getAttribute("aria-label"), `Dice, showing ${WORD(n)}`);
+    assert.equal(die.getAttribute("aria-label"), `Dice, ${WORD(n)}`);
   }
 });
 
-test("a number that is not a face falls back to one rather than blanking the die", () => {
+test("a number that is not a face leaves the die blank rather than wrong", () => {
+  // Falling back to one would put a number on the die that nobody chose, which
+  // is the one thing this die must never do. Blank is the honest answer.
   const die = stubDie();
   for (const bad of [0, 7, -1, null, "x", NaN]) {
-    assert.equal(showFace(die, bad), 1);
-    assert.deepEqual(die.shown, [1]);
+    assert.equal(showFace(die, bad), 0);
+    assert.deepEqual(die.shown, [], "nothing is showing");
+    assert.equal(die.getAttribute("aria-label"), "Dice, not yet thrown");
   }
 });
 
@@ -179,9 +184,59 @@ test("the number is decided before the die starts moving", async () => {
   assert.deepEqual(die.shown, [4]);
 });
 
-test("the die is not left rolling when the schedule runs out", async () => {
+test("the die is blank until it is thrown", () => {
+  const markup = dice();
+  // Face 0 matches no group, so nothing shows: an unthrown die has a rim and a
+  // highlight and no number on it at all.
+  assert.equal(markup.includes('data-face="0"'), true);
+  assert.equal(markup.includes('aria-label="Dice, not yet thrown"'), true);
+  assert.equal((markup.match(/hidden/g) || []).length, 6, "all six faces start hidden");
+
   const die = stubDie();
-  await roll(die, { wait: () => Promise.resolve(), ticks: [1, 1] });
+  for (const face of die.faces) face.hidden = true;
+  assert.equal(reset(die), 0);
+  assert.deepEqual(die.shown, [], "nothing is showing");
+  assert.equal(die.getAttribute("aria-label"), "Dice, not yet thrown");
+});
+
+test("it is throwable by pointer and by keyboard, once", () => {
+  const die = stubDie();
+  die.addEventListener = () => {};
+  assert.equal(makeThrowable(die), die);
+  assert.equal(die.dataset.throwable, "true");
+});
+
+test("the six faces take the colours they are handed, one each", () => {
+  // The board hands the die its set colours; here they are handed in directly,
+  // because what is being checked is that each face takes its own.
+  const colours = ["#111111", "#222222", "#333333", "#444444", "#555555", "#666666"];
+  const markup = dice(colours);
+  assert.equal(new Set(colours).size, 6);
+  for (const colour of colours) {
+    assert.ok(markup.includes(`--pip: ${colour}`), `${colour} is a face colour`);
+  }
+  // Each face carries exactly one colour, and it is its own.
+  const seen = [...markup.matchAll(/--pip: (#[0-9a-f]{6})/g)].map((m) => m[1]);
+  assert.deepEqual(seen, colours, "face n is painted in colour n");
+});
+
+test("the rim is a gradient and the highlight is clipped inside the die", () => {
+  const markup = dice();
+  assert.ok(markup.includes('id="dice-rim"'), "the rim carries a gradient");
+  assert.ok(markup.includes('id="dice-sheen"'), "there is a highlight");
+  assert.ok(markup.includes('clip-path="url(#dice-clip)"'), "and it is clipped to the die");
+  assert.ok(markup.includes('linearGradient'), "the rim is a gradient");
+});
+
+test("a throw while one is in the air restarts it rather than queueing behind", async () => {
+  const die = stubDie();
+  const clock = instantClock();
+  const first = roll(die, { wait: clock.wait, ticks: [1, 1, 1, 1] });
+  // A second throw before the first has finished.
+  const second = roll(die, { wait: clock.wait, ticks: [1] });
+  const [a, b] = await Promise.all([first, second]);
+  assert.equal(a, null, "the first throw was cancelled and says nothing");
+  assert.ok(DICE_FACES.includes(b));
   assert.equal(die.dataset.rolling, "false");
 });
 
@@ -199,5 +254,5 @@ test("a reader who wants less motion gets the number and no throw", async () => 
 });
 
 function WORD(n) {
-  return ["", "one", "two", "three", "four", "five", "six"][n];
+  return ["not yet thrown", "one", "two", "three", "four", "five", "six"][n];
 }

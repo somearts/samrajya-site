@@ -438,6 +438,269 @@ try {
       await sleep(1500);
     }
 
+    /* ------------------------------------------------ the card, pressed on
+
+       Done before anything else is measured, because a card sitting in the
+       middle of the board is underneath everything else. */
+
+    const specials = await page.json(`
+      const board = document.querySelector(".board");
+      const IDS = ["start", "omega", "akash-core", "marketplace",
+                   "ragnarok", "nexus", "epoch", "kronos"];
+      for (const id of IDS) board.querySelector('.board__cell[data-id="' + id + '"]').click();
+      return {
+        pressed: IDS.length,
+        stillHidden: board.querySelector(".board__card").hidden,
+        tags: IDS.map((id) => board.querySelector('.board__cell[data-id="' + id + '"]').tagName),
+      };
+    `);
+    note(`${label}: none of the eight special squares is a button`,
+      specials.tags.every((t) => t !== "BUTTON"), specials.tags.join(" "));
+    note(`${label}: pressing all eight opens no card`,
+      specials.pressed === 8 && specials.stillHidden === true);
+
+    await page.eval(`document.querySelector('.board__cell[data-id="moon"]').click()`);
+    await sleep(900);
+
+    const card = await page.json(`
+      const board = document.querySelector(".board");
+      const holder = board.querySelector(".board__card");
+      const card = holder.querySelector(".property-card");
+      const box = (el) => { const r = el.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+                 w: r.width, h: r.height }; };
+      const at = (id) =>
+        board.querySelector('.board__cell[data-id="' + id + '"]').getBoundingClientRect();
+
+      /* The rectangle the card is allowed to occupy, measured from the six tiles
+         that bound it rather than from the stylesheet, so a change to the CSS
+         cannot quietly widen the card past what was agreed. */
+      const leftIds = ["halleys-comet", "kuiper-belt", "pluto"];
+      const rightIds = ["earth-137", "orions-belt", "epoch"];
+      const sixIds = leftIds.concat(rightIds);
+      const allowed = {
+        l: Math.max(...leftIds.map((i) => at(i).right)),
+        r: Math.min(...rightIds.map((i) => at(i).left)),
+        top: Math.min(...sixIds.map((i) => at(i).top)),
+        bottom: Math.max(...sixIds.map((i) => at(i).bottom)),
+      };
+
+      if (!card) return { present: false, hidden: holder.hidden };
+
+      const name = card.querySelector(".property-card__name");
+      const price = card.querySelector(".property-card__price");
+      const lines = [...card.querySelectorAll(".property-card__description span")];
+      const adv = card.querySelector(".property-card__advantage-text");
+      const pill = card.querySelector(".property-card__pill");
+
+      return {
+        present: true,
+        hidden: holder.hidden,
+        property: card.dataset.property,
+        set: card.dataset.set,
+        accent: getComputedStyle(card).getPropertyValue("--accent").trim(),
+        name: name ? name.textContent.replace(/\\s+/g, " ").trim() : "",
+        nameLines: name ? name.children.length : 0,
+        price: price ? price.textContent.trim() : "",
+        descriptionLines: lines.length,
+        description: lines.map((l) => l.textContent),
+        // Anything wider or taller than its own box would be cut off.
+        clipped: lines.filter((l) => l.scrollWidth > l.clientWidth + 1).map((l) => l.textContent),
+        clippedName: name ? name.scrollWidth > name.clientWidth + 1 : false,
+        advantage: adv ? adv.textContent.trim() : "",
+        advantageClipped: adv ? adv.scrollHeight > adv.clientHeight + 1 : false,
+        pill: pill ? getComputedStyle(pill).backgroundColor : null,
+        art: card.querySelector(".property-card__art--none")
+          ? null : card.querySelector(".property-card__art-svg")?.dataset.art || null,
+        box: box(card),
+        allowed,
+        die: box(board.querySelector(".board__dice")),
+      };
+    `);
+
+    if (!card.present) {
+      note(`${label}: pressing Moon opens a card`, false, "no card on the board");
+    } else {
+      note(`${label}: pressing Moon opens a card`, !card.hidden && card.property === "moon");
+      note(`${label}: named MOON`, card.name === "MOON", card.name);
+      note(`${label}: priced 200`, card.price === "₹200", card.price);
+      note(`${label}: carrying the property's own accent`, card.accent === "#7B68B0", card.accent);
+      note(`${label}: and a pill in that same colour`,
+        card.pill === "rgb(123, 104, 176)", String(card.pill));
+      note(`${label}: two lines of description`, card.descriptionLines === 2,
+        card.description.join(" / "));
+      note(`${label}: and a short advantage`, card.advantage.length > 20, card.advantage);
+      note(`${label}: the artwork is the project's own`, card.art === "moon", String(card.art));
+
+      const b = card.box;
+      const a = card.allowed;
+      note(`${label}: inside the rectangle the six tiles bound`,
+        b.left >= a.l - 0.5 && b.right <= a.r + 0.5 &&
+        b.top >= a.top - 0.5 && b.bottom <= a.bottom + 0.5,
+        `card ${b.left.toFixed(0)}..${b.right.toFixed(0)} / ${b.top.toFixed(0)}..${b.bottom.toFixed(0)}` +
+        `  allowed ${a.l.toFixed(0)}..${a.r.toFixed(0)} / ${a.top.toFixed(0)}..${a.bottom.toFixed(0)}`);
+
+      // Equal margins, to within what a half-pixel board origin allows. The board
+      // deliberately sits at a half pixel - it is centred - so demanding exact
+      // equality here would be an assertion that can never pass, and the one
+      // thing worth checking is that no side is noticeably tighter than another.
+      const gapL = b.left - a.l;
+      const gapR = a.r - b.right;
+      const gapT = b.top - a.top;
+      const gapB = a.bottom - b.bottom;
+      const gaps = [gapL, gapR, gapT, gapB];
+      note(`${label}: with an even margin on every side, so it floats`,
+        Math.min(...gaps) >= 2 && Math.max(...gaps) - Math.min(...gaps) <= 2.5,
+        `${gapL.toFixed(1)} / ${gapR.toFixed(1)} / ${gapT.toFixed(1)} / ${gapB.toFixed(1)}`);
+      note(`${label}: and it does not reach the lower rows`,
+        b.bottom < a.bottom - 2,
+        `bottom ${b.bottom.toFixed(0)} against ${a.bottom.toFixed(0)}`);
+      note(`${label}: no text is clipped`, card.clipped.length === 0 &&
+        !card.clippedName && !card.advantageClipped,
+        card.clipped.length ? card.clipped.join(" / ") : "nothing clipped");
+      note(`${label}: and the die is still below it`,
+        card.die.top >= a.bottom - 0.5,
+        `die ${card.die.top.toFixed(0)}..${card.die.bottom.toFixed(0)}`);
+    }
+
+    // A second property, one with no drawing, to prove it turns rather than
+    // redrawing in place.
+    await page.eval(`document.querySelector('.board__cell[data-id="dyson-sphere"]').click()`);
+    await sleep(900);
+    const second = await page.json(`
+      const c = document.querySelector(".board__card .property-card");
+      if (!c) return null;
+      return {
+        property: c.dataset.property,
+        name: c.querySelector(".property-card__name").textContent.replace(/\\s+/g," ").trim(),
+        price: c.querySelector(".property-card__price").textContent.trim(),
+        accent: getComputedStyle(c).getPropertyValue("--accent").trim(),
+        monogram: !!c.querySelector(".property-card__art--none"),
+      };
+    `);
+    // The two lines are the data's breaks, so the textContent of them runs
+    // together: DYSON SPHERE is written as DYSON / SPHERE.
+    note(`${label}: pressing Dyson Sphere shows its own card`,
+      second && second.property === "dyson-sphere" &&
+      second.name.replace(/\s/g, "") === "DYSONSPHERE" &&
+      second.price === "₹772" && second.accent === "#C9A24A",
+      second ? `${second.name} ${second.price} ${second.accent}` : "no card");
+    note(`${label}: falling back to a monogram where there is no drawing`,
+      second?.monogram === true);
+
+    /* ------------------------------------------------------------- the die */
+
+    const dieBefore = await page.json(`
+      const d = document.querySelector(".board__dice");
+      const b = document.querySelector(".board");
+      return {
+        face: d.dataset.face, rolling: d.dataset.rolling,
+        label: d.getAttribute("aria-label"),
+        pips: d.querySelectorAll(".dice__pip").length,
+        shown: [...d.querySelectorAll(".dice__face")].filter((f) => !f.hasAttribute("hidden")).length,
+        rim: getComputedStyle(d.querySelector(".dice__body")).strokeWidth,
+        width: d.getBoundingClientRect().width,
+        cell: parseFloat(getComputedStyle(document.querySelector(".board")).gridTemplateColumns.split(" ")[0]),
+        scrollBefore: [document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                       document.documentElement.scrollHeight - document.documentElement.clientHeight],
+      };
+    `);
+
+    note(`${label}: the die arrives with no number on it`,
+      dieBefore.face === "0" && dieBefore.shown === 0,
+      `face ${dieBefore.face}, ${dieBefore.shown} faces showing, says "${dieBefore.label}"`);
+    note(`${label}: and it is about half the size it was`,
+      dieBefore.width <= dieBefore.cell * 0.7 && dieBefore.width >= dieBefore.cell * 0.5,
+      `${dieBefore.width.toFixed(1)}px in a ${dieBefore.cell.toFixed(0)}px cell`);
+    note(`${label}: its rim is thin`,
+      parseFloat(dieBefore.rim) <= 3, `${dieBefore.rim}`);
+
+    // The pips are the board's own set colours, so this asks the browser what is
+    // actually painted rather than what the markup claims. A die that fell back
+    // to the ink colour would look perfectly plausible and would be wrong.
+    const painted = await page.json(`
+      const d = document.querySelector(".board__dice");
+      const faces = [...d.querySelectorAll(".dice__face")];
+      const hex = (rgb) => {
+        const [r, g, b] = rgb.match(/\\d+/g).map(Number);
+        return "#" + [r, g, b].map((n) => n.toString(16).padStart(2, "0"))
+          .join("").toUpperCase();
+      };
+      return faces.map((f) => hex(getComputedStyle(f.querySelector(".dice__pip")).fill));
+    `);
+    note(`${label}: and its six faces are painted in six set colours`,
+      new Set(painted).size === 6 && painted.every((c) => /^#[0-9A-F]{6}$/.test(c)) &&
+        painted.includes("#7B68B0") && painted.includes("#C9A24A"),
+      painted.join(" "));
+
+    // Press it, and watch.
+    const thrown = await page.json(`
+      const d = document.querySelector(".board__dice");
+      const board = document.querySelector(".board");
+      const seen = new Set();
+      const box = () => d.getBoundingClientRect();
+      const before = box();
+      let mid = false;
+      // An SVG element has no .click() of its own - click() lives on
+      // HTMLElement - so the event is dispatched, which is also what a tap does.
+      d.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      for (let i = 0; i < 40; i++) {
+        if (d.dataset.rolling === "true") { mid = true; seen.add(d.dataset.face); }
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      const after = box();
+      return {
+        sawRolling: mid,
+        distinct: [...seen].filter((f) => f !== "0").length,
+        face: d.dataset.face,
+        rolling: d.dataset.rolling,
+        label: d.getAttribute("aria-label"),
+        shown: [...d.querySelectorAll(".dice__face")].filter((f) => !f.hasAttribute("hidden")).length,
+        // A throw must not move a single thing.
+        moved: Math.abs(after.left - before.left) + Math.abs(after.top - before.top),
+        boardMoved: JSON.stringify([document.documentElement.scrollWidth - document.documentElement.clientWidth,
+                                     document.documentElement.scrollHeight - document.documentElement.clientHeight]) !==
+                     JSON.stringify([0, 0]) ? "yes" : "no",
+      };
+    `);
+
+    note(`${label}: pressing it throws it`, thrown.sawRolling && thrown.distinct > 1,
+      `${thrown.distinct} faces passed through`);
+    note(`${label}: and it settles on one from one to six`,
+      /^[1-6]$/.test(thrown.face) && thrown.rolling === "false" && thrown.shown === 1,
+      `face ${thrown.face}, rolling=${thrown.rolling}, says "${thrown.label}"`);
+    note(`${label}: the throw moved nothing`,
+      thrown.moved < 0.6 && thrown.boardMoved === "no",
+      `die moved ${thrown.moved.toFixed(2)}px`);
+
+    // Six more presses. Asserting any two results DIFFER would be flaky - a repeat
+    // is a legitimate outcome, one time in six - so what is checked is that every
+    // press really throws and really lands on a face, and that the results are
+    // not stuck on one number.
+    const repeats = await page.json(`
+      const d = document.querySelector(".board__dice");
+      const faces = [];
+      for (let n = 0; n < 6; n++) {
+        d.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        let moved = false;
+        for (let i = 0; i < 60; i++) {
+          if (d.dataset.rolling === "true") moved = true;
+          if (moved && d.dataset.rolling === "false") break;
+          await new Promise((r) => setTimeout(r, 40));
+        }
+        faces.push(d.dataset.face);
+      }
+      return faces;
+    `);
+    note(`${label}: six presses, six throws, all landing on a face`,
+      repeats.length === 6 && repeats.every((f) => /^[1-6]$/.test(f)), repeats.join(" "));
+    note(`${label}: and the results are not stuck on one number`,
+      new Set(repeats).size >= 2, `${new Set(repeats).size} distinct in six`);
+
+    // Put it back to blank so the shots show the board as it is found.
+    await page.eval(`document.querySelector(".board__card").hidden = true`);
+    await sleep(200);
+
     const b = await boardReport(page);
     const name = `${label}:`;
 

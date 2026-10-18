@@ -99,7 +99,9 @@ export class Page {
    * than in a `return`, because a block is what callers actually want to write.
    */
   async json(body) {
-    return this.eval(`(() => { ${body} })()`);
+    // Async, because a probe that has to wait - to watch an animation settle,
+    // say - has to be able to.
+    return this.eval(`(async () => { ${body} })()`);
   }
 
   async setViewport(width, height, deviceScaleFactor = 1, mobile = true) {

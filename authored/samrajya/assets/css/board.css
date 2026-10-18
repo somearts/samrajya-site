@@ -83,6 +83,16 @@
   --chest-wash: #000000;
   --wash-strength: 7%;
 
+  /* The air between the property card and the tiles that bound it. A share of
+     the cell rather than a fixed number of pixels, so the card floats by the
+     same amount at every board size. */
+  --card-gap: calc(var(--cell) * 0.09);
+
+  /* Inside the card: the artwork panel and the wash behind a monogram. The same
+     off-white the middle of the board is, so a card and the field it floats on
+     are made of one paper. */
+  --card-inset: #fbf9f5;
+
   /* The gap and frame between cells, and around the board. Every line on the
      board is this one value, and it is the board's own ground showing through
      the gap - so no cell carries a border that could be drawn twice where it
@@ -282,74 +292,286 @@
 
    HOW BIG
 
-   A shade over one cell, so it sits in the two rows it lives in with more
-   clear space above and below it than there is die. At 1.4 cells it filled
-   seventy per cent of the band and left a thin margin; the board's middle is
-   supposed to be room, not a second board. One and a bit is a die that reads at
-   a glance and has air round it on a 55px cell and on a 67px one alike. */
+   A shade over half the cell. It was 1.15 cells and read as heavy furniture;
+   at 0.62 it is an object rather than a feature, and the band it sits in is
+   mostly air again. */
 
 .board__dice {
   position: absolute;
   left: 50%;
   top: calc(8 * var(--cell) + 7.5 * var(--hair));
-  width: calc(var(--cell) * 1.15);
+  width: calc(var(--cell) * 0.62);
   height: auto;
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
   color: var(--ink);
   overflow: visible;
+
+  /* A shadow that paints outside the element and takes no part in layout, so
+     throwing the die cannot move a single thing around it. */
+  filter: drop-shadow(0 2px 3px rgb(18 17 16 / 0.13));
+  cursor: pointer;
+  transition: filter 160ms ease;
 }
 
-/* The die's own drawing: an outline and filled pips. Two weights of the same
-   colour, nothing else - no gradient, no shadow, no filter, so it sits in the
-   same flat vocabulary as the corner marks and the pills. */
+.board__dice:hover {
+  filter: drop-shadow(0 3px 5px rgb(18 17 16 / 0.18));
+}
+
+.board__dice:focus-visible {
+  outline: 1.5px solid var(--ink);
+  outline-offset: 4px;
+}
+
+/* The die's own drawing: a thin rim carrying a metallic gradient, and a
+   highlight in the upper left that sits under the pips rather than over them.
+   Both are clipped to the die's own shape, so neither can escape it. */
 .dice__body {
   fill: none;
-  stroke: currentColor;
-  stroke-width: 4;
+  stroke: url(#dice-rim);
+  stroke-width: 2.6;
+}
+
+.dice__sheen {
+  fill: url(#dice-sheen);
+  pointer-events: none;
 }
 
 .dice__pip {
-  fill: currentColor;
+  fill: var(--pip);
 }
 
-/* Only one face is ever shown; the rest carry `hidden`, which is why the roll
-   can change the number without touching the structure of the drawing. */
+/* Only one face is ever shown; the rest carry `hidden`, which is why a throw
+   can change the number without touching the structure of the drawing. An
+   unthrown die carries 0, which matches no face, so it shows none. */
 .dice__face[hidden] {
   display: none;
 }
 
 /* THE THROW
 
-   A small, quick wobble, and nothing else. No continuous movement and no loop:
-   `data-rolling` is true only while the die is in the air, so the moment it
-   lands the animation stops existing. The motion is a few degrees of tilt and a
-   couple of pixels of lift, which is what reads as a die touching down rather
-   than as an icon animating. */
+   A small, quick wobble, and nothing else. No loop: `data-rolling` is true only
+   while the die is in the air, so the moment it lands the animation stops
+   existing. */
 
 .board__dice[data-rolling="true"] {
-  animation: dice-throw 260ms ease-in-out infinite;
+  animation: dice-throw 240ms ease-in-out infinite;
 }
 
 @keyframes dice-throw {
   0% {
-    transform: translate(-50%, -50%) rotate(-3deg);
+    transform: translate(-50%, -50%) rotate(-4deg);
   }
   50% {
-    transform: translate(-50%, calc(-50% - 2px)) rotate(3deg);
+    transform: translate(-50%, calc(-50% - 1.5px)) rotate(4deg);
   }
   100% {
-    transform: translate(-50%, -50%) rotate(-3deg);
+    transform: translate(-50%, -50%) rotate(-4deg);
   }
 }
 
-/* A reader who has asked for less motion gets the number and no throw. The
-   roll itself already checks this before it starts; this is the stylesheet
-   half, so that anything else that ever animates the die obeys it too. */
+/* A reader who has asked for less motion gets the number and no throw. The throw
+   checks this before it starts too; this is the stylesheet half. */
 @media (prefers-reduced-motion: reduce) {
   .board__dice[data-rolling="true"] {
     animation: none;
   }
+
+  .board__dice {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------- the property card
+
+   THE RECTANGLE
+
+   Columns two to five of rows two to four - the space HALLEY'S COMET, KUIPER
+   BELT and PLUTO bound on the left and EARTH 137, ORION'S BELT and EPOCH on the
+   right - inset by a gap, so the card floats rather than touches. Written in
+   cells and lines rather than as a percentage, so it is the same rectangle at
+   every board size.
+
+   Columns 2 to 5 is four cells and three lines across; rows 2 to 4 is three
+   cells and two lines down. The extra --hair on left and top is the board's own
+   frame: an absolutely positioned child of this grid resolves against the
+   border box, not the padding box, so without it the card sat a whole line up
+   and to the left of where it was meant to be - which is visible as the top and
+   bottom margins being a pixel tighter than the left and right ones. */
+
+.board__card {
+  position: absolute;
+  left: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
+  top: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
+  width: calc(var(--cell) * 4 + var(--hair) * 3 - var(--card-gap) * 2);
+  height: calc(var(--cell) * 3 + var(--hair) * 2 - var(--card-gap) * 2);
+  pointer-events: none;
+}
+
+/* The floating card: ivory, a hairline, and the soft shadow that says it is
+   above the board rather than printed on it. */
+.property-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 4%;
+  height: 100%;
+  padding: 6.5% 7%;
+  border-radius: 10px;
+  background: var(--cell-ground);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.7) inset,
+    0 2px 10px rgb(18 17 16 / 0.13);
+  transform-origin: 50% 50%;
+  backface-visibility: hidden;
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+/* The accent - the property's own set colour - as a bar down the left edge and
+   as the pill and the price. Nothing else on the card is coloured. The bar takes
+   the card's own left corners, because a square-ended bar on a rounded card
+   stands proud of it at the top and bottom and reads as a stray tab rather than
+   as an edge. */
+.property-card::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2.5px;
+  border-radius: 10px 0 0 10px;
+  background: var(--accent);
+}
+
+.property-card__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 7%;
+}
+
+/* The artwork, or a monogram where a property has no drawing. Both occupy the
+   same box, so every card is laid out identically whatever it shows. */
+.property-card__art {
+  width: calc(var(--cell) * 0.8);
+  aspect-ratio: 1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--card-inset);
+  border: 1px solid rgb(18 17 16 / 0.07);
+  display: grid;
+  place-items: center;
+}
+
+.property-card__art--none {
+  background: color-mix(in srgb, var(--accent) 12%, var(--card-inset));
+  font-size: max(11px, calc(var(--cell) * 0.24));
+  font-weight: 500;
+  color: color-mix(in srgb, var(--accent) 72%, #121110);
+}
+
+.property-card__art-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.property-card__title {
+  display: grid;
+  gap: 20%;
+  justify-items: start;
+  min-width: 0;
+}
+
+/* The tile's pill, at the tile's own proportions - 46.7% of a cell wide and 10%
+   tall, sized here off the card. */
+.property-card__pill {
+  display: block;
+  width: 24px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+/* The tile's typography: the same capitals, the same breaks, the same tracking,
+   and sized off the cell so it never grows with the artwork. */
+.property-card__name {
+  display: grid;
+  gap: 0.1em;
+  margin: 0;
+  font-size: max(8.5px, calc(var(--cell) * 0.125));
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--ink);
+}
+
+.property-card__name span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.property-card__price {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  margin: 0;
+  font-size: max(9.5px, calc(var(--cell) * 0.16));
+  font-weight: 500;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.property-card__price > span:first-child {
+  font-size: 0.72em;
+  opacity: 0.75;
+}
+
+/* Exactly two lines, and the breaks are in the data. */
+.property-card__description {
+  display: grid;
+  align-content: center;
+  gap: 0.15em;
+  margin: 0;
+  font-size: max(7px, calc(var(--cell) * 0.095));
+  line-height: 1.28;
+  color: var(--ink-soft);
+}
+
+.property-card__description span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.property-card__advantage {
+  padding-top: 5%;
+  border-top: 1px solid rgb(18 17 16 / 0.09);
+}
+
+.property-card__label {
+  display: block;
+  margin-bottom: 1px;
+  font-size: max(6px, calc(var(--cell) * 0.08));
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.property-card__advantage-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+  font-size: max(7px, calc(var(--cell) * 0.095));
+  line-height: 1.28;
+  color: var(--ink);
 }
 
 /* ------------------------------------------------------- a property or a chest

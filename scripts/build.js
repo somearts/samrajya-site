@@ -49,7 +49,7 @@ async function main() {
  * would be offered a token the server then refuses.
  */
 async function publishShared() {
-  const wanted = new Set(["civilizations.js", "identity.js", "spaces.js"]);
+  const wanted = new Set(["civilizations.js", "identity.js", "spaces.js", "properties.js"]);
   const entries = await readdir(SHARED);
   const files = entries.filter((name) => wanted.has(name));
   const missing = [...wanted].filter((name) => !files.includes(name));
