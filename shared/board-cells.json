@@ -89,21 +89,6 @@
    "index": 3,
    "col": 1,
    "row": 7,
-   "type": "chest",
-   "id": "ragnarok",
-   "name": "Ragnarok",
-   "lines": [
-    "RAGNAROK"
-   ],
-   "set": null,
-   "color": null,
-   "art": "cards/horizontal/ragnarok.svg",
-   "chest": "weapons"
-  },
-  {
-   "index": 4,
-   "col": 1,
-   "row": 6,
    "type": "property",
    "id": "asteroid-belt",
    "name": "Asteroid Belt",
@@ -115,6 +100,21 @@
    "color": "#CF7A4B",
    "art": "cards/horizontal/asteroid-belt.svg",
    "chest": null
+  },
+  {
+   "index": 4,
+   "col": 1,
+   "row": 6,
+   "type": "chest",
+   "id": "ragnarok",
+   "name": "Ragnarok",
+   "lines": [
+    "RAGNAROK"
+   ],
+   "set": null,
+   "color": null,
+   "art": "cards/horizontal/ragnarok.svg",
+   "chest": "weapons"
   },
   {
    "index": 5,
@@ -197,21 +197,6 @@
    "index": 10,
    "col": 2,
    "row": 1,
-   "type": "chest",
-   "id": "nexus",
-   "name": "Nexus",
-   "lines": [
-    "NEXUS"
-   ],
-   "set": null,
-   "color": null,
-   "art": "cards/vertical/nexus.svg",
-   "chest": "currency"
-  },
-  {
-   "index": 11,
-   "col": 3,
-   "row": 1,
    "type": "property",
    "id": "voyager-1",
    "name": "Voyager 1",
@@ -223,6 +208,21 @@
    "color": "#B8557A",
    "art": "cards/vertical/voyager-1.svg",
    "chest": null
+  },
+  {
+   "index": 11,
+   "col": 3,
+   "row": 1,
+   "type": "chest",
+   "id": "nexus",
+   "name": "Nexus",
+   "lines": [
+    "NEXUS"
+   ],
+   "set": null,
+   "color": null,
+   "art": "cards/vertical/nexus.svg",
+   "chest": "currency"
   },
   {
    "index": 12,
@@ -417,16 +417,16 @@
    "index": 24,
    "col": 5,
    "row": 10,
-   "type": "chest",
-   "id": "kronos",
-   "name": "Kronos",
+   "type": "property",
+   "id": "quasar",
+   "name": "Quasar",
    "lines": [
-    "KRONOS"
+    "QUASAR"
    ],
-   "set": null,
-   "color": null,
+   "set": "s8",
+   "color": "#A8564C",
    "art": null,
-   "chest": "undecided"
+   "chest": null
   },
   {
    "index": 25,
@@ -448,16 +448,16 @@
    "index": 26,
    "col": 3,
    "row": 10,
-   "type": "property",
-   "id": "quasar",
-   "name": "Quasar",
+   "type": "chest",
+   "id": "kronos",
+   "name": "Kronos",
    "lines": [
-    "QUASAR"
+    "KRONOS"
    ],
-   "set": "s8",
-   "color": "#A8564C",
+   "set": null,
+   "color": null,
    "art": null,
-   "chest": null
+   "chest": "undecided"
   },
   {
    "index": 27,

@@ -175,26 +175,11 @@ export const CELLS = deepFreeze([
     chest: null,
   },
 
-  /*  3  col 1, row  7  chest    RAGNAROK */
+  /*  3  col 1, row  7  property ASTEROID / BELT */
   {
     index: 3,
     col: 1,
     row: 7,
-    type: "chest",
-    id: "ragnarok",
-    name: "Ragnarok",
-    lines: ["RAGNAROK"],
-    set: null,
-    color: null,
-    art: "cards/horizontal/ragnarok.svg",
-    chest: "weapons",
-  },
-
-  /*  4  col 1, row  6  property ASTEROID / BELT */
-  {
-    index: 4,
-    col: 1,
-    row: 6,
     type: "property",
     id: "asteroid-belt",
     name: "Asteroid Belt",
@@ -203,6 +188,21 @@ export const CELLS = deepFreeze([
     color: "#CF7A4B",
     art: "cards/horizontal/asteroid-belt.svg",
     chest: null,
+  },
+
+  /*  4  col 1, row  6  chest    RAGNAROK */
+  {
+    index: 4,
+    col: 1,
+    row: 6,
+    type: "chest",
+    id: "ragnarok",
+    name: "Ragnarok",
+    lines: ["RAGNAROK"],
+    set: null,
+    color: null,
+    art: "cards/horizontal/ragnarok.svg",
+    chest: "weapons",
   },
 
   /*  5  col 1, row  5  property JUPITER */
@@ -280,25 +280,10 @@ export const CELLS = deepFreeze([
     chest: null,
   },
 
-  /* 10  col 2, row  1  chest    NEXUS */
+  /* 10  col 2, row  1  property VOYAGER / 1 */
   {
     index: 10,
     col: 2,
-    row: 1,
-    type: "chest",
-    id: "nexus",
-    name: "Nexus",
-    lines: ["NEXUS"],
-    set: null,
-    color: null,
-    art: "cards/vertical/nexus.svg",
-    chest: "currency",
-  },
-
-  /* 11  col 3, row  1  property VOYAGER / 1 */
-  {
-    index: 11,
-    col: 3,
     row: 1,
     type: "property",
     id: "voyager-1",
@@ -308,6 +293,21 @@ export const CELLS = deepFreeze([
     color: "#B8557A",
     art: "cards/vertical/voyager-1.svg",
     chest: null,
+  },
+
+  /* 11  col 3, row  1  chest    NEXUS */
+  {
+    index: 11,
+    col: 3,
+    row: 1,
+    type: "chest",
+    id: "nexus",
+    name: "Nexus",
+    lines: ["NEXUS"],
+    set: null,
+    color: null,
+    art: "cards/vertical/nexus.svg",
+    chest: "currency",
   },
 
   /* 12  col 4, row  1  property PROXIMA / CENTAURI */
@@ -490,19 +490,19 @@ export const CELLS = deepFreeze([
     chest: null,
   },
 
-  /* 24  col 5, row 10  chest    KRONOS */
+  /* 24  col 5, row 10  property QUASAR */
   {
     index: 24,
     col: 5,
     row: 10,
-    type: "chest",
-    id: "kronos",
-    name: "Kronos",
-    lines: ["KRONOS"],
-    set: null,
-    color: null,
+    type: "property",
+    id: "quasar",
+    name: "Quasar",
+    lines: ["QUASAR"],
+    set: "s8",
+    color: "#A8564C",
     art: null,
-    chest: "undecided",
+    chest: null,
   },
 
   /* 25  col 4, row 10  property SUPER- / NOVA */
@@ -520,19 +520,19 @@ export const CELLS = deepFreeze([
     chest: null,
   },
 
-  /* 26  col 3, row 10  property QUASAR */
+  /* 26  col 3, row 10  chest    KRONOS */
   {
     index: 26,
     col: 3,
     row: 10,
-    type: "property",
-    id: "quasar",
-    name: "Quasar",
-    lines: ["QUASAR"],
-    set: "s8",
-    color: "#A8564C",
+    type: "chest",
+    id: "kronos",
+    name: "Kronos",
+    lines: ["KRONOS"],
+    set: null,
+    color: null,
     art: null,
-    chest: null,
+    chest: "undecided",
   },
 
   /* 27  col 2, row 10  property SGR A* */
