@@ -1,0 +1,257 @@
+/* ==========================================================================
+   SAMRAJYA - THE LEDGER
+
+   What the game knows. One object that holds who has which square and what
+   each player has in hand, and the rules that move it.
+
+   WHY IT LIVES HERE RATHER THAN IN THE BROWSER
+   --------------------------------------------
+   It draws nothing and touches no DOM, which is the only reason it can be
+   tested at all: test/ledger.test.js walks every rule in this file in a plain
+   node process, with no page and no build. That is the same reason coins.js
+   imports nothing, and the same reason this module sits beside economy.js
+   rather than inside the client.
+
+   It is here, and not only there, because these are the rules that decide a
+   game. When the board moves onto the server - and turn.js already says out
+   loud that the turn is local-only for now - the server should be validating
+   a buy against these functions and not against a second copy of them. One
+   ledger, two callers, no chance of the two disagreeing about what is allowed.
+
+   EVERY RULE ANSWERS WITH A REASON
+   --------------------------------
+   Nothing here returns a bare true or false. It returns `{ ok, why }`, because
+   a disabled Buy button has to say why it is disabled and the card has to say
+   it in words a player can read: "You need 50 more to take it" is useful, and
+   a greyed-out button with no reason is not.
+
+   A PLAYER IS A SEAT, NOT AN ID
+   ----------------------------
+   The room deliberately never sends a player's id back to the browser, because
+   that id is the identity token and sending it would hand anyone reading the
+   page the ability to act as that player. So everything here is keyed by seat,
+   the same way the coins are and the same way `seatId` in coins.js names one.
+
+   THE RULES ARE DELIBERATELY STRICT
+   ---------------------------------
+   A buy needs an unowned square, enough money, and a seat that is playing. An
+   upgrade needs the player to hold it, to be at the level below, and to be able
+   to afford it - and refusing out of order is the point: Lunar Colony cannot go
+   up before Lunar Outpost has been built.
+
+   The money is never allowed to go negative. A rent larger than the landing
+   player's purse fails and nothing moves, which is a loud, visible outcome
+   rather than a silent negative balance nobody notices until the end.
+   ========================================================================== */
+
+import { MAX_UPGRADE, STARTING_MONEY, isPriced, priceOf, rentFor, upgradeAt } from "./economy.js";
+
+export { MAX_UPGRADE, STARTING_MONEY };
+
+/* ------------------------------------------------------------------- verdicts */
+
+/** A refusal that says why. `extra` carries numbers a toast or a test wants. */
+const no = (why, extra = {}) => ({ ok: false, why, ...extra });
+
+/** A go-ahead. `extra` carries what changed, so a caller need not look again. */
+const yes = (data = {}) => ({ ok: true, why: "", ...data });
+
+/* ------------------------------------------------------------------ creation */
+
+/**
+ * A fresh ledger: twenty squares, all unowned and all unbuilt, and the roster
+ * each holding `opening`.
+ *
+ * `players` is whatever the room already holds - the two names, their civs and
+ * their seats. Nothing is read out of it but who is playing, because ownership
+ * is this file's business and not the room's.
+ */
+export function createLedger(players = [], { opening = STARTING_MONEY } = {}) {
+  return {
+    opening,
+    players: players.map((p) => ({
+      seat: Number.isInteger(p?.seat) ? p.seat : 0,
+      name: p?.name || "",
+      civ: p?.civ || "",
+      money: opening,
+    })),
+    properties: new Map(),
+  };
+}
+
+/** The sheet for one square: who holds it, and how far it is built. */
+export function sheetFor(ledger, id) {
+  const key = String(id ?? "");
+  if (!ledger?.properties.has(key)) {
+    if (!isPriced(key)) return null;
+    ledger.properties.set(key, { owner: null, upgradeLevel: 0 });
+  }
+  return ledger.properties.get(key);
+}
+
+/** The same sheet without making one. */
+export function sheetIfOwned(ledger, id) {
+  return ledger?.properties.get(String(id ?? "")) || null;
+}
+
+/* ------------------------------------------------------------------- queries */
+
+/** The player at a seat, or null. */
+export function playerAt(ledger, seat) {
+  return ledger?.players.find((p) => p.seat === seat) || null;
+}
+
+/** The name a seat goes by, for a line of text. Falls back to a place. */
+export function nameOfSeat(ledger, seat) {
+  return playerAt(ledger, seat)?.name || "";
+}
+
+/** How much a seat is holding. Zero for a seat nobody is sitting in. */
+export function moneyOf(ledger, seat) {
+  return playerAt(ledger, seat)?.money ?? 0;
+}
+
+/** The seat holding a square, or null when nobody holds it. */
+export function ownerOf(ledger, id) {
+  const sheet = sheetIfOwned(ledger, id);
+  return sheet?.owner ?? null;
+}
+
+/** How far a square is built: 0, 1, 2 or 3. */
+export function levelOf(ledger, id) {
+  return sheetIfOwned(ledger, id)?.upgradeLevel ?? 0;
+}
+
+/** What a square charges whoever lands on it. */
+export function rentAt(ledger, id) {
+  if (!isPriced(id)) return null;
+  return rentFor(id, levelOf(ledger, id));
+}
+
+/* -------------------------------------------------------------------- buying */
+
+/**
+ * May this seat take this square?
+ *
+ * `ok` is the answer; `why` is a sentence for a card or a check to use when it
+ * is no.
+ */
+export function canBuy(ledger, id, seat) {
+  if (!isPriced(id)) return no("This square is not for sale.");
+  const player = playerAt(ledger, seat);
+  if (!player) return no("Nobody is sitting in that seat.");
+  if (ownerOf(ledger, id) !== null) return no("Somebody already holds this square.");
+  const price = priceOf(id);
+  if (player.money < price) return no(`You need ${price - player.money} more to take it.`);
+  return yes();
+}
+
+/**
+ * Take the square, and take the money with it.
+ *
+ * Refuses rather than throwing when `canBuy` says no, and refuses without
+ * changing anything when it does.
+ */
+export function buy(ledger, id, seat) {
+  const verdict = canBuy(ledger, id, seat);
+  if (!verdict.ok) return verdict;
+
+  const player = playerAt(ledger, seat);
+  const price = priceOf(id);
+  player.money -= price;
+  const sheet = sheetFor(ledger, id);
+  sheet.owner = seat;
+  return yes({ spent: price, money: player.money, sheet });
+}
+
+/* ----------------------------------------------------------------- upgrading */
+
+/** The next build for a square, or null when it is already finished. */
+export function nextUpgrade(ledger, id) {
+  const level = levelOf(ledger, id);
+  return level < MAX_UPGRADE ? upgradeAt(id, level) : null;
+}
+
+/**
+ * May this seat put the next build on this square?
+ *
+ * Three things have to be true and all three are checked: the seat holds the
+ * square, the square is not already finished, and the seat can pay for it.
+ */
+export function canUpgrade(ledger, id, seat) {
+  if (!isPriced(id)) return no("This square is not for sale.");
+  const player = playerAt(ledger, seat);
+  if (!player) return no("Nobody is sitting in that seat.");
+  if (ownerOf(ledger, id) === null) return no("Nobody holds this square yet.");
+  if (ownerOf(ledger, id) !== seat) return no(`${nameOfSeat(ledger, ownerOf(ledger, id))} holds this square.`);
+  const upgrade = nextUpgrade(ledger, id);
+  if (!upgrade) return no("This square is built as far as it goes.");
+  if (player.money < upgrade.cost) {
+    return no(`You need ${upgrade.cost - player.money} more to build this.`);
+  }
+  return yes({ upgrade });
+}
+
+/** Put the next build on, and take the money for it. */
+export function upgrade(ledger, id, seat) {
+  const verdict = canUpgrade(ledger, id, seat);
+  if (!verdict.ok) return verdict;
+
+  const player = playerAt(ledger, seat);
+  const sheet = sheetFor(ledger, id);
+  const step = upgradeAt(id, sheet.upgradeLevel);
+  player.money -= step.cost;
+  sheet.upgradeLevel += 1;
+  return yes({
+    upgrade: step,
+    level: sheet.upgradeLevel,
+    spent: step.cost,
+    money: player.money,
+    rent: rentFor(id, sheet.upgradeLevel),
+    sheet,
+  });
+}
+
+/* --------------------------------------------------------------------- rent */
+
+/** Who, if anybody, a square charges when it is landed on. */
+export function rentPayer(ledger, id, seat) {
+  const owner = ownerOf(ledger, id);
+  if (owner === null || owner === seat) return null;
+  return owner;
+}
+
+/**
+ * Charge whoever lands on a square.
+ *
+ * The payer keeps what is left and the owner is paid, and the answer says both
+ * so a toast can be written without going back to the ledger for the numbers.
+ *
+ * A square nobody holds charges nothing, and landing on your own charges
+ * nothing. Both are the same case as far as the ledger is concerned - there is
+ * no second player to pay - and both return `ok: true` with `rent: 0`, because
+ * nothing went wrong.
+ *
+ * The one thing refused is a payment the payer cannot make. The purse is never
+ * allowed below zero; refusing is loud, and a silent negative balance is not.
+ */
+export function payRent(ledger, id, seat) {
+  const owner = rentPayer(ledger, id, seat);
+  const rent = rentAt(ledger, id) ?? 0;
+  if (owner === null) return yes({ rent: 0, from: seat, to: null, paid: false });
+
+  const payer = playerAt(ledger, seat);
+  const holder = playerAt(ledger, owner);
+  if (!payer || !holder) return no("That seat is not playing.");
+
+  if (payer.money < rent) {
+    return no(
+      `${payer.name || "They"} cannot pay ${rent} and does not have it.`,
+      { rent, from: seat, to: owner, paid: false },
+    );
+  }
+
+  payer.money -= rent;
+  holder.money += rent;
+  return yes({ rent, from: seat, to: owner, paid: rent > 0, payer: payer.money, holder: holder.money });
+}
