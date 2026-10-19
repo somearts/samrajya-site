@@ -728,7 +728,14 @@
    starts, and runs to about two thirds of the way down it. */
 
 .board__card[data-card-kind="chest"] {
-  top: calc(var(--cell) + var(--hair));
+  /* The extra --hair is the board's own one-pixel padding.
+
+     An absolutely positioned box is measured from the board's PADDING edge, and
+     the grid's rows are measured from the content edge - which is a pixel lower.
+     Without the extra hair the card sat exactly one pixel above the middle it
+     is supposed to start at, which is invisible and which a half-pixel check
+     catches. */
+  top: calc(var(--cell) + var(--hair) * 2);
   height: calc((var(--cell) * 8 + var(--hair) * 9) * 0.65);
 }
 

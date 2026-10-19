@@ -485,14 +485,39 @@ try {
       for (const id of IDS) board.querySelector('.board__cell[data-id="' + id + '"]').click();
       return {
         pressed: IDS.length,
-        stillHidden: board.querySelector(".board__card").hidden,
         tags: IDS.map((id) => board.querySelector('.board__cell[data-id="' + id + '"]').tagName),
+        /* Which of the eight opened ITSELF a card.
+
+           Asked as "is a card on screen" it would answer yes for every square
+           after Ragnarok, because that card is still there - a corner does not
+           dismiss somebody else's card. What is wanted is whether pressing this
+           square put THIS square's card up, which is what the board's own
+           record of what it is showing says. */
+        opened: IDS.filter((id) => {
+          board.querySelector('.board__cell[data-id="' + id + '"]').click();
+          return board.dataset.property === id;
+        }),
       };
     `);
-    note(`${label}: none of the eight special squares is a button`,
-      specials.tags.every((t) => t !== "BUTTON"), specials.tags.join(" "));
-    note(`${label}: pressing all eight opens no card`,
-      specials.pressed === 8 && specials.stillHidden === true);
+    // Seven of the eight are still not buttons, and still open nothing.
+    //
+    // Ragnarok is the eighth and it is a BUTTON, which is a deliberate change.
+    // The rule the other seven follow is that a square you cannot act on should
+    // not be a button, because a button that does nothing is still one a reader
+    // can find and press. Ragnarok now does something, so the rule no longer
+    // applies to it - and a chest you can look at but not reach is worse than
+    // one that is simply not there.
+    note(`${label}: seven of the eight special squares are still not buttons`,
+      specials.tags.filter((t) => t !== "BUTTON").length === 7,
+      specials.tags.join(" "));
+    note(`${label}: and of those eight, only Ragnarok opens a card`,
+      specials.opened.length === 1 && specials.opened[0] === "ragnarok",
+      `opened: ${specials.opened.join(" ") || "none"}`);
+    note(`${label}: and Ragnarok opens it read-only, with no Draw`,
+      await page.json(`
+        const d = document.querySelector(".chest-card [data-action='draw']");
+        return Boolean(d && d.disabled);
+      `), "the Draw pill is there and disabled");
 
     await page.eval(`document.querySelector('.board__cell[data-id="moon"]').click()`);
     await sleep(900);
@@ -843,6 +868,246 @@ try {
     note(`${label}: and it is unlocked afterwards`,
       during.unlocked, `board still moving=${!during.unlocked}`);
 
+    /* ---------------------------------------------------------------- ragnarok
+
+       Everything here is about one square. It cannot be asked of the other
+       chests - Nexus, Epoch and Kronos have no purpose decided yet, and asking
+       them questions would mean inventing answers for them. */
+
+    const READ_CHEST = `
+      const b = document.querySelector(".board");
+      const card = b.querySelector(".chest-card");
+      const holder = b.querySelector(".board__card");
+      const centre = b.querySelector("#board-center");
+      const draw = card?.querySelector('[data-action="draw"]');
+      const collect = card?.querySelector('[data-action="collect"]');
+      const box = (e) => { const r = e.getBoundingClientRect();
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+      return {
+        open: Boolean(card),
+        phase: card?.dataset.phase || null,
+        kind: holder?.dataset.cardKind || null,
+        drawPresent: Boolean(draw),
+        drawDisabled: draw ? draw.disabled : null,
+        collectPresent: Boolean(collect),
+        title: card?.querySelector(".property-card__name")?.textContent || "",
+        kind_: card?.querySelector(".chest-card__kind")?.textContent || "",
+        price: card?.querySelector(".property-card__price") ? true : false,
+        slots: card ? card.querySelectorAll(".chest-card__slot").length : 0,
+        slotNames: [...(card?.querySelectorAll(".chest-card__slot-name") || [])].map((n) => n.textContent),
+        drew: card?.querySelector(".chest-card__drew")?.textContent || "",
+        targets: [...(card?.querySelectorAll(".chest-card__target") || [])].map((n) => n.textContent),
+        blurb: card?.querySelector(".chest-card__blurb")?.textContent || "",
+        // Does the card stay inside the ring? Read AFTER the turn animation has
+        // finished: a rotateY in flight inflates the bounding box, and measuring
+        // mid-turn reports a card that is nowhere near overflowing.
+        settled: !card || holder.getAnimations().every((a) => a.playState !== "running"),
+        insideMiddle: !card ? true :
+          box(card).top >= box(centre).top - 0.5 && box(card).bottom <= box(centre).bottom + 0.5,
+        overflows: card ? card.scrollHeight > card.clientHeight + 1 : false,
+        insideRing: !card ? true :
+          box(card).left >= box(b).left - 0.5 && box(card).right <= box(b).right + 0.5,
+        // Does the title say all of itself?
+        titleClipped: card
+          ? [...card.querySelectorAll(".property-card__name span")]
+              .some((s) => s.scrollWidth > s.clientWidth + 1)
+          : false,
+        /* The title's lines, kept apart. textContent joins two spans with nothing
+           between them, so "Welcome to" and "Ragnarok" arrive as
+           "Welcome toRagnarok" - a string the card never says, and one that
+           would make the comparison below fail for the wrong reason. */
+        titleLines: [...(card?.querySelectorAll(".property-card__name span") || [])]
+          .map((n) => n.textContent),
+        // The numbers, so a geometry failure can say which edge is out.
+        geometry: (() => {
+          if (!card) return null;
+          const c = box(card), m = box(centre);
+          return {
+            top: c.top.toFixed(1) + " (middle " + m.top.toFixed(1) + ")",
+            bottom: c.bottom.toFixed(1) + " (middle " + m.bottom.toFixed(1) + ")",
+          };
+        })(),
+        // What the player is carrying.
+        weapons: b.coins.state.players.map((p) => p.id + "=[" + p.weapons.join(",") + "]"),
+        dots: document.querySelectorAll(".who__weapon").length,
+        count: document.querySelector(".who__weapons")?.dataset.count || "0",
+        whoOverflow: (() => {
+          const chips = [...document.querySelectorAll(".who")];
+          return chips.some((c) => c.scrollWidth > c.clientWidth + 1);
+        })(),
+      };
+    `;
+
+    const landOnRagnarok = async (seat) => page.eval(`
+      (async () => {
+        const b = document.querySelector(".board");
+        b.coins.reset();
+        b.coins.movePlayer("${seat}", 4);
+        return true;
+      })()
+    `);
+    const settle = () => sleep(2600);
+
+    // Landed on it: drawable.
+    await landOnRagnarok("seat-0");
+    await settle();
+    const chestLanded = await page.json(READ_CHEST);
+
+    note(`${label}: landing on Ragnarok opens the chest card by itself`,
+      chestLanded.open && chestLanded.kind === "chest",
+      `open ${chestLanded.open}, kind ${chestLanded.kind}`);
+    note(`${label}: with a Draw that is not disabled`,
+      chestLanded.drawPresent && chestLanded.drawDisabled === false,
+      `present ${chestLanded.drawPresent}, disabled ${chestLanded.drawDisabled}`);
+    note(`${label}: it says what it is and quotes no price`,
+      chestLanded.kind_ === "Community Chest" && !chestLanded.price,
+      `"${chestLanded.kind_}", price shown ${chestLanded.price}`);
+    note(`${label}: and its title is not cut short`,
+      chestLanded.titleLines.join(" ") === "Welcome to Ragnarok" && !chestLanded.titleClipped,
+      `"${chestLanded.titleLines.join(" ")}", clipped ${chestLanded.titleClipped}`);
+    note(`${label}: three face-down cards, each named`,
+      chestLanded.slots === 3 &&
+      chestLanded.slotNames.join("|") === "Antimatter Weapon|Nuclear Warhead|Eye of Shiva",
+      chestLanded.slotNames.join(" | "));
+    note(`${label}: the card stays inside the ring, and inside the middle`,
+      chestLanded.insideMiddle && chestLanded.insideRing,
+      `middle ${chestLanded.insideMiddle}, ring ${chestLanded.insideRing}; top ${chestLanded.geometry?.top}, bottom ${chestLanded.geometry?.bottom}`);
+    note(`${label}: and it does not overflow its own box`,
+      !chestLanded.overflows, `scrolls past its own bottom: ${chestLanded.overflows}`);
+
+    /* It cannot be dismissed before the draw is answered. Tried three ways:
+       another square, the same square, and a new throw. */
+    await page.eval(`
+      (async () => {
+        const b = document.querySelector(".board");
+        // Forced to a weapon. This sequence then spends three seconds finding
+        // out that the card cannot be dismissed, and a draw of bad luck would
+        // have closed the card out from under the question being asked.
+        const real = Math.random;
+        Math.random = () => 0.15;
+        b.querySelector('[data-action="draw"]').click();
+        await new Promise((r) => setTimeout(r, 200));
+        Math.random = real;
+        return true;
+      })()
+    `);
+    await sleep(500);
+    const locked = await page.json(READ_CHEST);
+    const stayedPut = await page.eval(`
+      (async () => {
+        const b = document.querySelector(".board");
+        b.querySelector('.board__cell[data-id="moon"]').click();
+        await new Promise((r) => setTimeout(r, 300));
+        const afterSquare = Boolean(b.querySelector(".chest-card"));
+
+        b.querySelector('.board__cell[data-id="ragnarok"]').click();
+        await new Promise((r) => setTimeout(r, 300));
+        const afterSame = Boolean(b.querySelector(".chest-card"));
+
+        b.querySelector(".board__dice").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        await new Promise((r) => setTimeout(r, 400));
+        return { afterSquare, afterSame, stillChest: Boolean(b.querySelector(".chest-card")) };
+      })()
+    `);
+    note(`${label}: it cannot be closed before the draw is answered`,
+      locked.phase === "drawing" && stayedPut.afterSquare && stayedPut.afterSame && stayedPut.stillChest,
+      `phase ${locked.phase}; survived a square ${stayedPut.afterSquare}, itself ${stayedPut.afterSame}, a throw ${stayedPut.stillChest}`);
+
+    // Let the draw finish, then collect.
+    await sleep(1600);
+    const chestRevealed = await page.json(READ_CHEST);
+    note(`${label}: a weapon says what it is and what it reaches`,
+      /^You drew the /.test(chestRevealed.drew) &&
+      chestRevealed.targets.length >= 6 && chestRevealed.blurb.length > 20,
+      `"${chestRevealed.drew}", ${chestRevealed.targets.length} targets`);
+    note(`${label}: and every target is named as its own tile names it`,
+      chestRevealed.targets.every((t) => t.trim().length > 2),
+      chestRevealed.targets.join(" | "));
+
+    const before = chestRevealed.weapons.join(" ");
+    await page.eval(`document.querySelector('[data-action="collect"]').click(); true;`);
+    await sleep(1400);
+    const collected = await page.json(READ_CHEST);
+    note(`${label}: collecting adds exactly one weapon`,
+      collected.weapons[0] !== before && collected.weapons[0].includes("]") &&
+      !collected.weapons[0].endsWith("=[]") &&
+      collected.dots === 1,
+      `${before} -> ${collected.weapons.join(" ")}, ${collected.dots} dots`);
+    note(`${label}: and the card closes`,
+      !collected.open, `open ${collected.open}`);
+
+    /* Bad luck. Forced, so the branch is seen rather than waited for. */
+    await landOnRagnarok("seat-0");
+    await settle();
+    await page.eval(`
+      (async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const real = Math.random;
+        Math.random = () => 0.97;   // the last tenth of the roll
+        document.querySelector('[data-action="draw"]').click();
+        await wait(1500);
+        Math.random = real;
+        return true;
+      })()
+    `);
+    await sleep(400);
+    // Polled rather than waited for. The line appears about two seconds after
+    // the tap - a nine-hundred-millisecond shuffle, then the shake, and only
+    // then the sentence - and a fixed sleep that guesses wrong fails for a
+    // reason that has nothing to do with bad luck.
+    await page.eval(`
+      (async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        for (let i = 0; i < 80; i++) {
+          if (document.querySelector(".chest-card__drew")) break;
+          await wait(50);
+        }
+        return true;
+      })()
+    `);
+    const bad = await page.json(READ_CHEST);
+    note(`${label}: bad luck says so and adds nothing`,
+      bad.drew === "Bad luck. Try next time." && bad.collectPresent === false,
+      `"${bad.drew}", collect offered ${bad.collectPresent}`);
+
+    await sleep(2600);
+    const afterBad = await page.json(READ_CHEST);
+    note(`${label}: and closes itself, having given no weapon`,
+      !afterBad.open && afterBad.dots === 1,
+      `open ${afterBad.open}, dots still ${afterBad.dots}`);
+
+    /* The chip at 360px with seven weapons. Six dots and a count, so the name is
+       never the thing that gets squeezed. */
+    await page.setViewport(360, 800, DSF);
+    await sleep(400);
+    await page.eval(`
+      (async () => {
+        const b = document.querySelector(".board");
+        const p = b.coins.state.players[0];
+        p.weapons = ["antimatter","nuclear","shiva","nuclear","shiva","antimatter","nuclear"];
+        const m = await import("/samrajya/assets/js/chest-card.js");
+        m.renderWeapons(document, 0, p.weapons);
+        return true;
+      })()
+    `);
+    await sleep(300);
+    const chip = await page.json(READ_CHEST);
+    note(`${label}: seven weapons show six dots and a count at 360px`,
+      chip.dots === 6 && chip.count === "7" && !chip.whoOverflow,
+      `${chip.dots} dots, count "${chip.count}", chip overflowing ${chip.whoOverflow}`);
+
+    await page.setViewport(W, H, DSF);
+    await sleep(400);
+    await page.eval(`
+      (async () => {
+        const b = document.querySelector(".board");
+        b.coins.state.players[0].weapons = [];
+        const m = await import("/samrajya/assets/js/chest-card.js");
+        m.renderWeapons(document, 0, []);
+        return true;
+      })()
+    `);
+
     /* ------------------------------------------------------------- the die */
 
     const dieBefore = await page.json(`
@@ -936,10 +1201,28 @@ try {
       const b = document.querySelector(".board");
       const d = b.querySelector(".board__dice");
       const faces = [];
+
+      /* Answer any chest a throw put up, so the next press is not into a locked
+         die. See the same helper further down for why this is needed. */
+      const finishVisit = async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const card = () => b.querySelector(".chest-card");
+        if (!card()) return;
+        const draw = card().querySelector('[data-action="draw"]');
+        if (draw && !draw.disabled) draw.click();
+        for (let i = 0; i < 80; i++) {
+          const collect = card()?.querySelector('[data-action="collect"]');
+          if (collect && !collect.disabled) { collect.click(); break; }
+          if (!card()) break;
+          await wait(50);
+        }
+        for (let i = 0; i < 60 && card(); i++) await wait(50);
+      };
+
       for (let n = 0; n < 6; n++) {
         d.dispatchEvent(new MouseEvent("click", { bubbles: true }));
         let moved = false;
-        for (let i = 0; i < 90; i++) {
+        for (let i = 0; i < 120; i++) {
           if (d.dataset.rolling === "true") moved = true;
           const settled = moved && d.dataset.rolling === "false";
           // The coin has to have landed too. A throw also walks a coin, and the
@@ -949,6 +1232,7 @@ try {
           if (settled && b.dataset.moving !== "true") break;
           await new Promise((r) => setTimeout(r, 40));
         }
+        await finishVisit();
         faces.push(d.dataset.face);
       }
       return faces;
@@ -982,6 +1266,36 @@ try {
          as one. The board says so itself: data-moving is set for exactly as
          long as a coin is travelling. */
       const turns = [];
+      /* Finish whatever a throw put on the board.
+
+         A throw now also walks a coin, and landing on Ragnarok puts a chest
+         card up that cannot be dismissed until the draw is answered - so that
+         turn is not over when the die stops, it is over when the visit is. A
+         loop that threw four times in a row would press into a locked die and
+         read four throws as two or three.
+
+         So after each throw this waits, and if a chest is waiting it answers it
+         the way a player would: draw, then collect. Forcing a weapon rather than
+         letting the draw fall where it may keeps the loop about the turn cycle
+         and not about the odds. */
+      const finishVisit = async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const card = () => board.querySelector(".chest-card");
+        if (!card()) return false;
+
+        const draw = card().querySelector('[data-action="draw"]');
+        if (draw && !draw.disabled) draw.click();
+
+        for (let i = 0; i < 80; i++) {
+          const collect = card()?.querySelector('[data-action="collect"]');
+          if (collect && !collect.disabled) { collect.click(); break; }
+          if (!card()) break;
+          await wait(50);
+        }
+        for (let i = 0; i < 60 && card(); i++) await wait(50);
+        return true;
+      };
+
       for (let i = 0; i < 4; i++) {
         turns.push({ text: pill.textContent, seat: pill.dataset.turn, name: pill.dataset.name });
         die.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -991,6 +1305,7 @@ try {
           if (!rolling && !travelling) break;
           await new Promise((r) => setTimeout(r, 40));
         }
+        await finishVisit();
       }
       turns.push({ text: pill.textContent, seat: pill.dataset.turn, name: pill.dataset.name });
 

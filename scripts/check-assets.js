@@ -432,9 +432,14 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
     "the card's type is thirty per cent larger, floors included",
     /font-size:\s*max\(11\.05px, calc\(var\(--cell\) \* 0\.1625\)\)/.test(boardCss) &&
       /font-size:\s*max\(12\.35px, calc\(var\(--cell\) \* 0\.208\)\)/.test(boardCss) &&
-      /font-size:\s*max\(9\.1px, calc\(var\(--cell\) \* 0\.1235\)\)/.test(boardCss) &&
       /font-size:\s*max\(7\.8px, calc\(var\(--cell\) \* 0\.104\)\)/.test(boardCss) &&
-      (boardCss.match(/max\(9\.1px, calc\(var\(--cell\) \* 0\.1235\)\)/g) || []).length === 2,
+      // Asked of the two rules rather than counted across the file. The chest
+      // card reuses this same small type on purpose - it is the same family as
+      // the property card - and a count of the whole stylesheet would have
+      // failed the moment a second card reused a size, which is the opposite of
+      // what the count was for.
+      /\.property-card__description \{[^}]*max\(9\.1px, calc\(var\(--cell\) \* 0\.1235\)\)/.test(boardCss) &&
+      /\.property-card__advantage-text \{[^}]*max\(9\.1px, calc\(var\(--cell\) \* 0\.1235\)\)/.test(boardCss),
     "the floors bind at the smallest cell, so raising only the multiplier would have changed nothing there",
   );
   check(
@@ -682,6 +687,41 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
     "flat, like every other drawing here",
     !/<linearGradient|<radialGradient|<filter\b|feGaussian|drop-shadow|blur\(|box-shadow|text-shadow|<image\b|https?:\/\/(?!www\.w3\.org)/i.test(artCode),
     "no gradient, no filter, no shadow and nothing fetched - depth is overlapping flat shapes",
+  );
+
+  const weaponsModule = await readFile(join(OUT, "assets", "js", "shared", "weapons.js"), "utf8");
+
+  check(
+    // The copy lives in shared/weapons.json because it is meant to be edited by
+    // somebody who does not read JavaScript. This is what stops it being a file
+    // that quietly stops being the truth.
+    "the weapons data is one editable file, built into the module that ships",
+    existsSync(join(SHARED, "weapons.json")) &&
+      existsSync(join(OUT, "assets", "js", "shared", "weapons.js")) &&
+      weaponsModule.startsWith("/* GENERATED FILE"),
+    "weapons.json is the source; weapons.js is written from it on every build",
+  );
+
+  const chestCode = await readFile(join(OUT, "assets", "js", "chest-card.js"), "utf8");
+  // Comments are stripped before looking for copy. Three of the card's strings
+  // are quoted in the comments that explain why they are not in the card, and a
+  // check that cannot tell a sentence from a sentence about a sentence is a
+  // check that either fails forever or gets deleted.
+  const chestCodeBare = chestCode
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+
+  check(
+    "and the chest card reads its copy from that module, not from itself",
+    /from "\.\/shared\/weapons\.js"/.test(chestCodeBare) &&
+      !/Welcome to Ragnarok|Community Chest|armoury at the end of time|bad luck\./i.test(chestCodeBare),
+    "no line of the card's copy is written into the card's code",
+  );
+
+  check(
+    "the chest card takes the board's colours by name",
+    /from "\.\/shared\/spaces\.js"/.test(chestCode) && /SETS\[/.test(chestCode),
+    "a weapon's colour is the set the data names, never a hex written here",
   );
 
   section("The cards");

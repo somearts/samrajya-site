@@ -165,6 +165,7 @@ export function showCard(board, id) {
     holder.replaceChildren(propertyCard(property));
     holder.hidden = false;
     holder.dataset.property = id;
+    holder.dataset.cardKind = "property";
     return Promise.resolve(property);
   }
 
@@ -178,6 +179,11 @@ export function showCard(board, id) {
     holder.replaceChildren(propertyCard(property));
     holder.hidden = false;
     holder.dataset.property = id;
+    // Said on every swap rather than cleared when a chest goes away. A chest
+    // card is taller than a property card, and the height lives on this holder -
+    // so leaving "chest" behind when a property card arrives kept the tall
+    // rectangle, and the property card hung 137px into the rows below the die.
+    holder.dataset.cardKind = "property";
   };
 
   if (!turning) {

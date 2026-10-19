@@ -455,7 +455,7 @@ async function reveal(card, slots, outcome, result, { still: quiet }) {
 
 function badLuckLines() {
   return [
-    el("p", { class: "chest-card__drew", text: "Bad luck. Try next time." }),
+    el("p", { class: "chest-card__drew", text: RAGNAROK.badLuck }),
   ];
 }
 
