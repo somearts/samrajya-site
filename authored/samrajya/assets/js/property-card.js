@@ -31,6 +31,7 @@
 
 import { el } from "./dom.js";
 import { cardArt } from "./cards.js";
+import { propertyArt } from "./property-art.js";
 import { propertyFor } from "./shared/properties.js";
 
 /** How long a turn takes. Short enough not to wait for, long enough to see. */
@@ -49,19 +50,32 @@ function still() {
 /**
  * The artwork for a property, or nothing.
  *
- * The drawing is the project's own - the same figures the finished cards use,
- * without their pill or their title, because the card has its own of each.
+ * Two sources, in this order, and the order is the point:
+ *
+ *   1. `property-art.js` - the drawing written for the board. The ten that were
+ *      made for the board's own use come from here.
+ *   2. `cardArt` - the ten finished cards' own artwork, borrowed without its
+ *      pill or its title, because the card has its own of each.
+ *
+ * The first source is asked first because it is the one meant for this
+ * rectangle. The second is a borrowing, and a borrowing should never win over
+ * the thing it borrows for.
+ *
+ * Only if neither has a drawing does the card fall back to a letter.
  */
 function artwork(property) {
-  if (!property.art) return null;
+  const drawn = propertyArt(property.id);
+  if (drawn) return el("div", { class: "property-card__art", html: drawn });
 
-  // The data's paths are "cards/horizontal/moon.svg"; the card module is keyed
-  // by the card's own name, which is the same word without the set's path.
-  const key = property.art.replace(/^cards\/(?:horizontal|vertical)\//, "").replace(/\.svg$/, "");
-  const art = cardArt(key);
-  if (!art) return null;
+  if (property.art) {
+    // The data's paths are "cards/horizontal/moon.svg"; the card module is keyed
+    // by the card's own name, which is the same word without the set's path.
+    const key = property.art.replace(/^cards\/(?:horizontal|vertical)\//, "").replace(/\.svg$/, "");
+    const borrowed = cardArt(key);
+    if (borrowed) return el("div", { class: "property-card__art", html: borrowed });
+  }
 
-  return el("div", { class: "property-card__art", html: art });
+  return null;
 }
 
 /** The mark shown where a property has no drawing. */

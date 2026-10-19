@@ -16,7 +16,7 @@
    selectors, so none of those assertions could be carried across. What is here
    is written against the six-by-ten ring: twenty-eight `.board__cell` elements
    addressed by data-id and data-index, four corners, twenty properties with a
-   pill, four chests without one, and no card artwork on the board at all.
+   pill, four chests without one, and no card artwork until a card is opened.
 
    It is NOT the old file rebuilt, and it does not claim to cover what the old
    one covered. In particular it no longer checks the card artwork's ink, its
@@ -563,8 +563,7 @@ try {
         `die ${card.die.top.toFixed(0)}..${card.die.bottom.toFixed(0)}`);
     }
 
-    // A second property, one with no drawing, to prove it turns rather than
-    // redrawing in place.
+    // A second property, to prove it turns rather than redrawing in place.
     await page.eval(`document.querySelector('.board__cell[data-id="dyson-sphere"]').click()`);
     await sleep(900);
     const second = await page.json(`
@@ -576,6 +575,7 @@ try {
         price: c.querySelector(".property-card__price").textContent.trim(),
         accent: getComputedStyle(c).getPropertyValue("--accent").trim(),
         monogram: !!c.querySelector(".property-card__art--none"),
+        art: c.querySelector(".property-card__art-svg")?.dataset.art || null,
       };
     `);
     // The two lines are the data's breaks, so the textContent of them runs
@@ -585,8 +585,63 @@ try {
       second.name.replace(/\s/g, "") === "DYSONSPHERE" &&
       second.price === "₹772" && second.accent === "#C9A24A",
       second ? `${second.name} ${second.price} ${second.accent}` : "no card");
-    note(`${label}: falling back to a monogram where there is no drawing`,
-      second?.monogram === true);
+    // One of the ten that used to be a letter. It is a drawing now, and the
+    // drawing is the board's own rather than one borrowed from a card.
+    note(`${label}: and it is drawn, not spelled as a letter`,
+      second?.monogram === false && second?.art === "dyson-sphere",
+      `monogram ${second?.monogram}, art ${second?.art}`);
+
+    /* --------------------------------- every property's drawing, one by one
+
+       Half the collection - Earth 137 through Sagittarius A* - was a letter for
+       a while, so this walks all twenty and asks each card what it drew. It is
+       the check that could not be written any other way: whether a property has
+       a picture depends on the artwork module answering and on the card falling
+       through to it, and only a real card in a real browser knows that.
+
+       Distinctness is asked for too, because twenty cards that all answer "yes"
+       but share one drawing would pass a naive check and look like nothing was
+       done at all. */
+
+    const EVERY_PROPERTY = [
+      "moon", "lagrange-l2", "asteroid-belt", "jupiter", "pluto",
+      "kuiper-belt", "halleys-comet", "voyager-1", "proxima-centauri", "earth-137",
+      "orions-belt", "wow-signal", "dyson-sphere", "wormhole", "milky-way",
+      "rama", "quasar", "supernova", "sagittarius-a-star", "event-horizon",
+    ];
+
+    const drawnAll = [];
+    for (const id of EVERY_PROPERTY) {
+      await page.eval(`document.querySelector('.board__cell[data-id="${id}"]').click()`);
+      await sleep(260);
+      drawnAll.push(await page.json(`
+        const c = document.querySelector(".board__card .property-card");
+        if (!c) return null;
+        const svg = c.querySelector(".property-card__art-svg");
+        return {
+          id: c.dataset.property,
+          monogram: !!c.querySelector(".property-card__art--none"),
+          art: svg ? svg.dataset.art : null,
+          // Enough of the markup to tell two drawings apart, and no more than
+          // enough to keep the report readable.
+          shapes: svg ? svg.querySelectorAll("circle,ellipse,rect,path,polygon,line").length : 0,
+          painted: svg ? svg.querySelectorAll("circle,ellipse,rect,path,polygon").length : 0,
+        };
+      `));
+    }
+
+    const missing = drawnAll.filter((d) => !d || d.monogram || !d.art).map((d) => d?.id);
+    note(`${label}: all twenty properties are drawn, none is a letter`,
+      drawnAll.length === 20 && missing.length === 0,
+      missing.length ? `undrawn: ${missing.join(" ")}` : `${drawnAll.length} drawn`);
+
+    note(`${label}: and each card's drawing is its own`,
+      new Set(drawnAll.map((d) => d.art)).size === 20,
+      `${new Set(drawnAll.map((d) => d.art)).size} distinct`);
+
+    note(`${label}: every one of them actually puts ink on the page`,
+      drawnAll.every((d) => d && d.painted >= 6),
+      drawnAll.map((d) => `${d.id}:${d.painted}`).join(" "));
 
     /* ------------------------------------------------------------- the die */
 

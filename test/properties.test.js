@@ -21,6 +21,7 @@ import {
   isPurchasable,
 } from "../shared/properties.js";
 import { CELLS } from "../shared/spaces.js";
+import { ART_IDS, hasPropertyArt } from "../authored/samrajya/assets/js/property-art.js";
 
 test("there are exactly twenty purchasable properties", () => {
   const onBoard = CELLS.filter((c) => c.type === "property");
@@ -129,13 +130,15 @@ test("the card keeps the tile's own pill colour and label", () => {
   }
 });
 
-test("ten properties have artwork and ten do not, and that is not a gap", () => {
+test("the data still names a drawing for only the ten that borrow one", () => {
+  // This field is a pointer into the finished CARD artwork, so it stays null for
+  // the ten the board draws for itself. It is not the board's idea of whether a
+  // property has a picture - that is the test below, and it is the one that
+  // matters to a player.
   const withArt = PROPERTIES.filter((p) => p.art);
   assert.equal(withArt.length, 10);
   assert.equal(PROPERTIES.length - withArt.length, 10);
   assert.ok(propertyFor("moon").art.endsWith("moon.svg"));
-  // Each is either a path to a drawing or null, and never anything in between -
-  // the card falls back to a monogram, so null is a decision and not a gap.
   for (const p of PROPERTIES) {
     assert.equal(
       p.art === null || (typeof p.art === "string" && p.art.endsWith(".svg")),
@@ -143,6 +146,18 @@ test("ten properties have artwork and ten do not, and that is not a gap", () => 
       `${p.id} has artwork or does not`,
     );
   }
+});
+
+test("every property is drawn, and none of them fell back to a letter", () => {
+  const drawn = PROPERTIES.filter((p) => hasPropertyArt(p.id) || p.art);
+  assert.equal(drawn.length, 20);
+
+  // The ten the board draws for itself, by name - this is the list that was
+  // previously a row of monograms.
+  assert.deepEqual(ART_IDS, [
+    "earth-137", "orions-belt", "wow-signal", "dyson-sphere", "wormhole",
+    "milky-way", "rama", "quasar", "supernova", "sagittarius-a-star",
+  ]);
 });
 
 test("the three properties nobody gave directions for still have copy", () => {

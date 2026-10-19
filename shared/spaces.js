@@ -171,7 +171,11 @@ export const CELLS = deepFreeze([
     lines: ["LAGRANGE", "POINT L2"],
     set: "s1",
     color: "#7B68B0",
-    art: "cards/horizontal/lagrange-l2.svg",
+    // The card this square borrows is the LAGRANGE POINT card. It is not
+    // named after this square, because the card module is keyed by the card's
+    // own title and this square's title is the longer "Lagrange Point L2".
+    // Naming it after the square left this one card drawing nothing at all.
+    art: "cards/horizontal/lagrange-point.svg",
     chest: null,
   },
 

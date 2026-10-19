@@ -627,6 +627,63 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
      into an interpretation - and none of them has anything to do with the board,
      because the board's cells do not draw cards yet. */
 
+  /* The ten that were missing.
+
+     These ten had no drawing at all, so their cards fell back to a letter. They
+     are drawn in the vocabulary of the twenty that already existed, and these
+     four checks are what "the same vocabulary" is made to mean: the same ramp of
+     colours, the same two canvases, the same flat-only treatment, and a drawing
+     of their own for every one of the ten. */
+
+  const artCode = await readFile(join(OUT, "assets", "js", "property-art.js"), "utf8");
+  const wanted = [
+    "earth-137", "orions-belt", "wow-signal", "dyson-sphere", "wormhole",
+    "milky-way", "rama", "quasar", "supernova", "sagittarius-a-star",
+  ];
+
+  // Four of the ten are single-word ids, so they are written as bare object keys
+  // and six are quoted. The quotes are optional here; what is not optional is
+  // that a typo cannot quietly leave a property undrawn.
+  const hasDrawing = (id) =>
+    new RegExp(`["']?${id.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")}["']?\\s*:\\s*\\{`, "m").test(artCode);
+
+  check(
+    "the ten that had no drawing each have one now",
+    wanted.every(hasDrawing),
+    wanted.map((id) => `${id}:${hasDrawing(id) ? "yes" : "MISSING"}`).join(" "),
+  );
+
+  // The ramp the existing twenty use, and nothing outside it.
+  const RAMP = [
+    "#F7F4EF", "#D8D0C0", "#CFC7B8", "#B8AE9C", "#A39986",
+    "#8E8472", "#5A5044", "#17121B", "#E5DFD3",
+    "#F1E8DD", "#EBDDCF", "#D9876B", "#CF7A4B",
+  ];
+  const RAMP_SET = new Set(RAMP.map((c) => c.toUpperCase()));
+  // The drawn body only - the header is prose, and the wrapper is the wrapper.
+  const body = artCode.slice(artCode.indexOf("export const ART"));
+  const used = [...body.matchAll(/#[0-9A-Fa-f]{6}/g)].map((m) => m[0].toUpperCase());
+  const strays = [...new Set(used.filter((c) => !RAMP_SET.has(c)))];
+  check(
+    "and they are drawn only in the ramp the other twenty are drawn in",
+    strays.length === 0,
+    strays.length ? `strays: ${strays.join(" ")}` : `${new Set(used).size} of the ramp's ${RAMP.length}`,
+  );
+
+  check(
+    "on the same two canvases the other twenty are drawn on",
+    (artCode.match(/\.\.\.LANDSCAPE/g) || []).length === 2 &&
+      (artCode.match(/\.\.\.PORTRAIT/g) || []).length === 8 &&
+      /w: 328, h: 212/.test(artCode) && /w: 190, h: 300/.test(artCode),
+    "328x212 for what is wide, 190x300 for what is tall, as the finished cards chose them",
+  );
+
+  check(
+    "flat, like every other drawing here",
+    !/<linearGradient|<radialGradient|<filter\b|feGaussian|drop-shadow|blur\(|box-shadow|text-shadow|<image\b|https?:\/\/(?!www\.w3\.org)/i.test(artCode),
+    "no gradient, no filter, no shadow and nothing fetched - depth is overlapping flat shapes",
+  );
+
   section("The cards");
 
   const cardsCode = (await readFile(join(OUT, "assets", "js", "cards.js"), "utf8"))
@@ -638,6 +695,41 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
     /replace\(\/\\?<g class="title-pill"/.test(cardsCode) &&
       /replace\(\/\\?<text class="title-text"/.test(cardsCode),
     "the card sets both of those beside the drawing, so drawing them again would say it twice",
+  );
+
+  const spacesCode = await readFile(join(OUT, "assets", "js", "shared", "spaces.js"), "utf8");
+  // The key a path is asked for by: cards/horizontal/moon.svg -> moon. This is
+  // exactly the substitution property-card.js does, so a mismatch here is a
+  // mismatch there.
+  const spacesArtKeys = [...spacesCode.matchAll(/art:\s*"cards\/(?:horizontal|vertical)\/([^"]+)\.svg"/g)]
+    .map((m) => m[1]);
+  const CARDS_KEYS = new Set(
+    [...cardsCode.matchAll(/^\s{2}"?([a-z0-9-]+)"?: Object\.freeze\(\{/gm)].map((m) => m[1]),
+  );
+
+  check(
+    // The one that would have caught Lagrange L2. Its square is "lagrange-l2"
+    // and its art path said lagrange-l2.svg, but the card it borrows is the
+    // LAGRANGE POINT card, which is keyed by the card's own title. Nothing
+    // matched, so the card quietly drew nothing and fell back to a letter, and
+    // every check that asked "does this square have artwork?" was answered by
+    // the square's own data and said yes.
+    "every art path names a card that exists",
+    spacesArtKeys.every((key) => CARDS_KEYS.has(key)) &&
+      spacesArtKeys.length === [...new Set(spacesArtKeys)].length,
+    spacesArtKeys.filter((key) => !CARDS_KEYS.has(key)).length
+      ? `no such card: ${spacesArtKeys.filter((key) => !CARDS_KEYS.has(key)).join(" ")}`
+      : `${spacesArtKeys.length} paths, ${CARDS_KEYS.size} cards`,
+  );
+
+  check(
+    "and the twenty that were already finished are left exactly as they were",
+    cardsCode.includes("function artmoon(id)") &&
+      cardsCode.includes("function arteventHorizon(id)") &&
+      /CARDS\[key\]/.test(cardsCode) &&
+      /from "\.\/cards\.js"/.test(cardJs) &&
+      /cardArt\(key\)/.test(cardJs),
+    "the twelve finished cards are untouched, and the ten borrowed from them still are",
   );
 
   check(
