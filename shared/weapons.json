@@ -1,0 +1,68 @@
+{
+  "_note": [
+    "RAGNAROK - the weapons chest.",
+    "",
+    "This file is the editable source. scripts/build.js turns it into",
+    "shared/weapons.js, which is what the browser imports - so there is one file",
+    "to edit and nothing is fetched at runtime.",
+    "",
+    "Colours are named tokens, not hex: `set` refers to a set in spaces.js, so",
+    "the three weapon colours are the board's own and cannot drift from it.",
+    "The three chosen are indigo, terracotta and teal - the three calmest on the",
+    "board, and each far enough from the other two to be told apart at pill size."
+  ],
+
+  "chest": {
+    "id": "ragnarok",
+    "label": "Community Chest",
+    "title": "Welcome to Ragnarok",
+    "tagline": "The armoury at the end of time.",
+    "body": "Ragnarok is where weapons are drawn. Draw once per visit and you may leave with one. Carry your weapons to Fight, where you can strike an opponent's colony. Every weapon can only reach certain colonies, and a successful strike hands that colony to you.",
+    "oddsCaption": "Each draw: 30% for each weapon, 10% bad luck."
+  },
+
+  "weapons": [
+    {
+      "id": "antimatter",
+      "name": "Antimatter Weapon",
+      "set": "s7",
+      "emblem": "rings",
+      "blurb": "Annihilates stellar and cosmic-scale colonies.",
+      "targets": [
+        "proxima-centauri", "supernova", "quasar",
+        "sagittarius-a-star", "milky-way", "wormhole"
+      ]
+    },
+    {
+      "id": "nuclear",
+      "name": "Nuclear Warhead",
+      "set": "s2",
+      "emblem": "cone",
+      "blurb": "Hits solid worlds and objects within reach.",
+      "targets": [
+        "moon", "asteroid-belt", "jupiter", "pluto",
+        "kuiper-belt", "halleys-comet", "voyager-1"
+      ]
+    },
+    {
+      "id": "shiva",
+      "name": "Eye of Shiva",
+      "set": "s3",
+      "emblem": "eye",
+      "blurb": "Reaches what physics cannot explain.",
+      "targets": [
+        "lagrange-l2", "event-horizon", "earth-137",
+        "orions-belt", "wow-signal", "dyson-sphere"
+      ]
+    }
+  ],
+
+  "immune": ["rama"],
+
+  "odds": {
+    "antimatter": 30,
+    "nuclear": 30,
+    "shiva": 30,
+    "bad-luck": 10
+  }
+}
