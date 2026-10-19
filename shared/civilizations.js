@@ -20,13 +20,26 @@
  * have renamed it for the picker, for the server and for everyone else. That is
  * the one thing this file exists to make impossible: a civilisation cannot be
  * offered on screen and then be something else at the other end.
+ *
+ * `coin` is the colour that civilisation's piece is drawn in. It lives on the
+ * token rather than in a second list beside this one, because a colour that
+ * could disagree with the civilisation it belongs to is two sources of truth
+ * wearing one name - and the piece is how a player finds themselves on a board
+ * of twenty-eight otherwise identical squares.
+ *
+ * The four are BRIGHT on purpose. Every other colour on the board is a set's,
+ * and a coin the same value as the pill it is standing next to is a coin nobody
+ * can pick out. Each is at least 30 CIE dE away from all eight set colours,
+ * which is measured in test/shared.test.js rather than asserted here: the amber
+ * coin and the gold pill are the pair most likely to be mistaken, and they are
+ * also the pair the arithmetic says are furthest apart of the four.
  */
 export const CIVILIZATIONS = Object.freeze(
   [
-    { id: "indus-valley", name: "Indus Valley" },
-    { id: "mesopotamian", name: "Mesopotamian" },
-    { id: "ancient-egyptian", name: "Ancient Egyptian" },
-    { id: "aztec", name: "Aztec" },
+    { id: "indus-valley", name: "Indus Valley", coin: "#0A84FF" },
+    { id: "mesopotamian", name: "Mesopotamian", coin: "#D42D1F" },
+    { id: "ancient-egyptian", name: "Ancient Egyptian", coin: "#15A34A" },
+    { id: "aztec", name: "Aztec", coin: "#FF9500" },
   ].map((civilization) => Object.freeze(civilization)),
 );
 
@@ -40,6 +53,18 @@ const BY_ID = new Map(CIVILIZATIONS.map((c) => [c.id, c]));
  */
 export function civById(id) {
   return BY_ID.get(String(id ?? "").trim().toLowerCase()) || null;
+}
+
+/**
+ * The colour a civilisation's piece is drawn in, or null.
+ *
+ * Null is never a fallback colour. A player who has not chosen has not chosen,
+ * and the same rule holds here as everywhere else in this file: a caller that
+ * gets null has to decide what to do about it rather than being handed a guess
+ * that would put two players' coins in the same blue by accident.
+ */
+export function coinColor(id) {
+  return BY_ID.get(String(id ?? "").trim().toLowerCase())?.coin ?? null;
 }
 
 /** Is this one of ours? Used to refuse anything else at the door. */

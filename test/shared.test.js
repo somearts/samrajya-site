@@ -23,11 +23,13 @@ import assert from "node:assert/strict";
 import {
   CIVILIZATIONS,
   civById,
+  coinColor,
   isCiv,
   civIds,
   nameOf,
   choices,
 } from "../shared/civilizations.js";
+import { SETS } from "../shared/spaces.js";
 
 import {
   NAME_MIN,
@@ -67,6 +69,99 @@ test("and it is frozen all the way down, not just the list", () => {
   // civilisation for the picker, the server and everybody else.
   assert.ok(Object.isFrozen(CIVILIZATIONS));
   for (const civ of CIVILIZATIONS) assert.ok(Object.isFrozen(civ), civ.id);
+});
+
+/* ------------------------------------------------------------- coin colours */
+
+/**
+ * Colour difference in CIE Lab, CIE76.
+ *
+ * Squared RGB distance is not a good enough measure to write a rule about. It
+ * rates a saturated blue against a dark grey as being about as different as two
+ * pastels of the same hue are, which is false to the eye and would let a rule
+ * like "the coins must stand apart from the pills" pass on two colours nobody
+ * could tell apart on the board.
+ *
+ * Lab is the space that was invented to stop exactly that happening: it is
+ * roughly perceptually uniform, so a dE of 30 means "plainly different colours"
+ * and not "different numbers". The maths is thirty lines rather than a
+ * dependency, and the same thirty lines are what chose the four values in the
+ * first place.
+ */
+function lab(hex) {
+  const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const [r8, g8, b8] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const [r, g, b] = [r8, g8, b8].map(toLinear);
+
+  // sRGB to XYZ, then to the reference white D65.
+  let x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
+  let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  let z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883;
+
+  // The cube root, with the linear part of the curve kept for near-black values
+  // where it would otherwise divide by roughly nothing.
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  [x, y, z] = [f(x), f(y), f(z)];
+
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+
+function deltaE(a, b) {
+  const [l1, a1, b1] = lab(a);
+  const [l2, a2, b2] = lab(b);
+  return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
+}
+
+test("every civilisation has one coin colour, and coinColor finds it", () => {
+  for (const civ of CIVILIZATIONS) {
+    assert.match(civ.coin, /^#[0-9A-F]{6}$/, `${civ.id} has a coin colour`);
+    assert.equal(coinColor(civ.id), civ.coin, `${civ.id} resolves to its own`);
+    assert.equal(coinColor(civ.id.toUpperCase()), civ.coin, `${civ.id} ignores case`);
+  }
+});
+
+test("and coinColor returns null rather than a guess for anything else", () => {
+  // The same rule as everywhere else in this file. A fallback colour here would
+  // put two players' coins in the same blue because neither had chosen.
+  for (const nope of ["roman", "", null, undefined, 7]) {
+    assert.equal(coinColor(nope), null, `${nope} has no coin colour`);
+  }
+});
+
+test("the four coin colours are told apart from each other", () => {
+  const coins = CIVILIZATIONS.map((c) => c.coin);
+  for (let i = 0; i < coins.length; i++) {
+    for (let j = i + 1; j < coins.length; j++) {
+      const d = deltaE(coins[i], coins[j]);
+      assert.ok(d >= 30, `${CIVILIZATIONS[i].id} and ${CIVILIZATIONS[j].id} are ${d.toFixed(1)} apart`);
+    }
+  }
+});
+
+test("and none of them can be mistaken for a set pill it stands beside", () => {
+  // This is the one that matters. A coin the same value as the pill next to it
+  // is a coin nobody can pick out, and the amber/gold pair is the risk: s6 is a
+  // muted gold and amber is a bright one, which is a distinction the eye makes
+  // at a glance on a swatch and not at all on a 40px disc in a corner.
+  const pills = Object.values(SETS).map((s) => s.color);
+  for (const civ of CIVILIZATIONS) {
+    const nearest = pills
+      .map((p) => ({ p, d: deltaE(civ.coin, p) }))
+      .sort((a, b) => a.d - b.d)[0];
+    assert.ok(
+      nearest.d >= 30,
+      `${civ.id}'s coin is only ${nearest.d.toFixed(1)} from pill ${nearest.p}`,
+    );
+  }
+});
+
+test("the set colours themselves are unchanged", () => {
+  // The coins are additive. If a set colour had to move to make room for a
+  // coin, every pill and every card on the board would have moved with it.
+  assert.deepEqual(
+    Object.values(SETS).map((s) => s.color),
+    ["#7B68B0", "#CF7A4B", "#3F8F96", "#B8557A", "#6F9A7B", "#C9A24A", "#5B6FA6", "#A8564C"],
+  );
 });
 
 /* --------------------------------------------------------------- lookup */
