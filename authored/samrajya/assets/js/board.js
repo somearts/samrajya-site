@@ -39,6 +39,7 @@
 import { el } from "./dom.js";
 import { cornerMark } from "./corner-art.js";
 import { dice, makeThrowable } from "./dice.js";
+import { coins, seatId } from "./coins.js";
 import { showCard } from "./property-card.js";
 import { turnPill } from "./turn.js";
 import { isPurchasable } from "./shared/properties.js";
@@ -259,7 +260,85 @@ export function board({ players = [] } = {}) {
   const turn = turnPill(players);
   centreArea.append(turn.node);
 
-  if (die) makeThrowable(die, () => turn.next());
+  // The coins. Every player has one, and they all start on Start, and the layer
+  // takes no taps so the squares underneath stay pressable.
+  const pieces = coins(frame, { players });
+  // The handle `theCoins()` reads, so `movePlayer` can be driven from outside
+  // this module. It is a reference to the same object the board is using - not a
+  // copy, and not a second set of coins.
+  frame.coins = pieces;
+
+  /* THE ONE PLACE A ROLL BECOMES A MOVE
+     ----------------------------------
+     The die and the turn pill already work and are not rebuilt here. What this
+     adds is the one fact neither of them keeps: WHO threw.
+
+     That has to be read at the moment of the roll, before `turn.next()` runs,
+     because advancing the turn is what changes the answer. Read afterwards the
+     pill is already naming the next player and the wrong coin moves - a bug that
+     would only show with two players on a board, and would look like the coins
+     were moving on their own.
+
+     So the seat is captured on the way in and carried until the die lands. The
+     listeners are registered BEFORE makeThrowable's, so the capture happens
+     first on every tap. */
+  let rolling = null;
+
+  const capture = () => {
+    rolling = playerIdAtSeat(turn, players);
+    // A card left open from the last turn is closed as this one starts. Tapping
+    // a square by hand still opens one, which is the existing behaviour and is
+    // untouched - this only clears what the last roll left behind.
+    showCard(frame, "");
+    pieces.clearHighlight();
+  };
+
+  if (die) {
+    die.addEventListener("click", capture);
+    die.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      capture();
+    });
+
+    makeThrowable(die, (face) => {
+      const who = rolling;
+      rolling = null;
+      turn.next();
+      if (who) pieces.movePlayer(who, face);
+    });
+
+    /* THE DIE IS OFF WHILE A COIN IS IN THE AIR
+       ----------------------------------------
+       A second throw landing on top of a move in progress would move two coins
+       from one roll. The die is an SVG with a role, not a real button, so
+       `disabled` does nothing to it - what actually stops a throw is stopping
+       the event on its way in.
+
+       That is done on `centreArea` in the capture phase rather than on the die.
+       Listeners on the element itself fire in registration order whatever their
+       phase, so one added to the die would run first only by accident of being
+       added first; on an ancestor, the capture phase is guaranteed to run before
+       the die's own listeners, which is the property being relied on here. */
+    centreArea.addEventListener(
+      "click",
+      (event) => {
+        if (!pieces.isMoving()) return;
+        event.stopImmediatePropagation();
+        event.preventDefault();
+      },
+      true,
+    );
+    centreArea.addEventListener(
+      "keydown",
+      (event) => {
+        if (!pieces.isMoving()) return;
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.stopImmediatePropagation();
+        event.preventDefault();
+      },
+      true,
+    );
+  }
 
   // One handler for every property, on the board rather than twenty times on
   // the cells. The cells that are not purchasable are not buttons at all, so
@@ -279,9 +358,47 @@ export function theDice(root) {
   return (root || document).querySelector(".board__dice");
 }
 
+/**
+ * The coins on this board, or null.
+ *
+ * The same kind of handle as `theDice` above, and for the same reason: `movePlayer`
+ * is the one function a server will call when there is a server that knows who
+ * rolled what, and something has to be able to reach it from outside the module
+ * that built the board. A check reaches it the same way.
+ */
+export function theCoins(root) {
+  return (root || document).querySelector(".board")?.coins ?? null;
+}
+
 /** Whether a cell is one of the four corners. */
 export function isCornerCell(cell) {
   return CORNER_IDS.includes(cell.id);
+}
+
+/**
+ * Which player's coin the turn pill is currently naming.
+ *
+ * The pill carries the seat it is on as `data-turn`, and this turns that seat
+ * into the name that seat's coin knows - `seat-N`. It is a lookup and not a
+ * second turn counter on purpose: there is exactly one thing on this board that
+ * knows whose turn it is, and it is the pill.
+ *
+ * It cannot ask the roster for an id, and this is the whole reason the coins
+ * are named after seats. The room deliberately does not send the client each
+ * player's `id` - that is the identity token, and the design of it is that the
+ * far end of the socket is not handed it back - so the roster arriving here
+ * carries `name`, `civ`, `joined` and `role` and nothing else to identify
+ * anybody by. Reading `player.id` and finding nothing would have made every
+ * roll move no coin at all, which is exactly what happened the first time.
+ */
+export function playerIdAtSeat(pill, players = []) {
+  const seat = Number(pill?.node?.dataset?.turn);
+  if (!Number.isInteger(seat)) return null;
+  const named = (players || []).filter((p) => p && p.name);
+  // The same roster the pill counts on, so the seat means the same player in
+  // both places. A seat with no name is a seat nobody is sitting in.
+  if (!named[seat]) return null;
+  return seatId(seat);
 }
 
 /** How many of each kind of cell a board has. Used by the geometry check. */

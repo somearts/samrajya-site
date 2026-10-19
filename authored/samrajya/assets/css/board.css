@@ -191,6 +191,91 @@
   background: var(--cell-ground);
 }
 
+/* --------------------------------------------------------------- the coins
+
+   A coin layer sits over the grid and takes no taps: `pointer-events: none` is
+   the whole reason a coin is allowed to overlap a square at all, because a coin
+   that swallowed taps would stop the square underneath being pressable. It is
+   below the card in z-order, so a card that opens over the middle of the board
+   is never covered by a coin that happens to be passing across it. */
+
+.board__coins {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.coin {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-radius: 50%;
+
+  /* The disc itself is flat. The whole point of a coin on this board is that it
+     is the one thing a player can find on twenty-eight identical squares, and
+     that works by being a plain bright shape, not by being a rendered object. */
+  background: var(--coin);
+
+  /* The lighter rim is a ring inset from the edge rather than a border, because
+     a border would sit outside the diameter the slot layout was spaced for and
+     two coins would touch where they are meant to have a gap between them. */
+  box-shadow:
+    inset 0 0 0 max(1px, calc(var(--cell) * 0.022)) color-mix(in srgb, var(--coin) 55%, white),
+    0 1px 3px rgb(0 0 0 / 0.3),
+    0 3px 8px rgb(0 0 0 / 0.18);
+
+  /* The glide between squares and into a shared slot. `--glide` is set by
+     coins.js for the length of a move and put back to none after it, so a
+     resize relayout lands instantly instead of sliding the whole board. */
+  transition:
+    left var(--glide, 0ms) ease-out,
+    top var(--glide, 0ms) ease-out,
+    width var(--glide, 0ms) linear,
+    height var(--glide, 0ms) linear;
+
+  will-change: left, top;
+}
+
+/* The thin inner ring. A separate element because it is a hairline inset from
+   the rim rather than another box-shadow, and because it is the one part of the
+   coin that reads at a glance as "coin" rather than "dot". */
+.coin::after {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  border: 1px solid rgb(255 255 255 / 0.42);
+}
+
+/* --------------------------------------------------------- where it landed
+
+   A coin's square, once it has stopped on it. An inset shadow and a very faint
+   wash of the coin's own colour - not a ring, not a lift, nothing that would be
+   mistaken for a second coin. It says "somebody is here" and stops there. */
+
+.board__cell[data-landed] {
+  box-shadow: inset 0 0 calc(var(--cell) * 0.18) rgb(0 0 0 / 0.26);
+}
+
+.board__cell[data-landed]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  /* Eight percent. The wash is meant to be found rather than looked for, and at
+     twelve the blue coin turned its square into a blue square, which says
+     something louder than "somebody is standing here". */
+  background: color-mix(in srgb, var(--land) 8%, transparent);
+  pointer-events: none;
+  animation: land-in 250ms ease-out both;
+}
+
+@keyframes land-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
 /* ------------------------------------------------------------ a corner cell
 
    The project's own corner: black, the hairline mark, the name, and the rule
@@ -408,6 +493,20 @@
 
   .board__dice {
     transition: none;
+  }
+
+  /* A coin that has asked not to be moved should be somewhere else, not be
+     seen travelling there. coins.js already skips the hop and the per-step
+     glide in this mode; this removes the slide into a shared slot as well, so
+     a coin sharing a square arrives rather than glides. The mark on the square
+     it landed on still appears, because a thing appearing is not a thing
+     moving. */
+  .coin {
+    transition: none;
+  }
+
+  .board__cell[data-landed]::before {
+    animation: none;
   }
 }
 
