@@ -287,6 +287,41 @@ function boardReport(page) {
       })(),
       ornamentGone: board.querySelectorAll(".board__star, .board__line, .board__centre-mark").length,
 
+      /* The coins, read off the page rather than assumed.
+
+         The two questions this answers cannot be asked any other way. Whether
+         two coins OVERLAP is a question about two rectangles, and it changes with
+         the cell size - an arrangement that fits at 390px wide can touch at
+         320px. And whether the dice are refused mid-move is a question about an
+         event arriving, which only a real browser can be asked.
+
+         Overlap is measured with a tolerance of a pixel, because a shadow
+         on a 40px disc is wider than the gap between two of them and a check
+         that counted shadows would fail a correct layout. */
+      coins: {
+        count: board.querySelectorAll(".coin").length,
+        moving: board.dataset.moving === "true",
+        layerPointerEvents: (() => {
+          const l = board.querySelector(".board__coins");
+          return l ? getComputedStyle(l).pointerEvents : null;
+        })(),
+        positions: (board.coins?.state?.players || []).map((p) => ({
+          id: p.id, position: p.position,
+        })),
+        rects: [...board.querySelectorAll(".coin")].map((c) => {
+          const r = c.getBoundingClientRect();
+          return { player: c.dataset.player, slot: c.dataset.slot, box: box(c), w: r.width, h: r.height };
+        }),
+        // The squares that carry a landing mark, and the card that is open.
+        landed: [...board.querySelectorAll(".board__cell[data-landed]")]
+          .map((c) => c.dataset.index),
+        openCard: board.dataset.property || null,
+        cardVisible: (() => {
+          const h = board.querySelector(".board__card");
+          return Boolean(h && !h.hidden && h.firstElementChild);
+        })(),
+      },
+
       board: box(board),
       screen: { w: innerWidth, h: innerHeight },
       scrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -643,6 +678,171 @@ try {
       drawnAll.every((d) => d && d.painted >= 6),
       drawnAll.map((d) => `${d.id}:${d.painted}`).join(" "));
 
+    /* -------------------------------------------------------------- the coins
+
+       Everything here is measured off the rendered page. The overlap one cannot
+       be asked anywhere else: two 14px discs with 1px shadows either side of them
+       is a question about rectangles that changes with the cell size, and an
+       arrangement that fits at 390px wide can touch at 320px. */
+
+    /** Do two boxes overlap? A pixel of slack, for the shadows. */
+    const overlaps = (a, b, slack = 1) =>
+      a.left < b.right - slack && b.left < a.right - slack &&
+      a.top < b.bottom - slack && b.top < a.bottom - slack;
+
+    const start = await boardReport(page);
+    const c0 = start.coins;
+
+    note(`${label}: both players have a coin`,
+      c0.count === start.who.length && c0.count >= 2,
+      `${c0.count} coins for ${start.who.length} players`);
+
+    note(`${label}: and they all start on Start`,
+      c0.positions.length > 0 && c0.positions.every((p) => p.position === 0),
+      c0.positions.map((p) => `${p.id}=${p.position}`).join(" "));
+
+    note(`${label}: the coin layer takes no taps, so a square is still pressable`,
+      c0.layerPointerEvents === "none", `pointer-events: ${c0.layerPointerEvents}`);
+
+    note(`${label}: and two coins on Start do not overlap`,
+      !c0.rects.some((r, i) => c0.rects.slice(i + 1).some((o) => overlaps(r.box, o.box))),
+      c0.rects.map((r) => `${r.player}@${r.box.left.toFixed(0)},${r.box.top.toFixed(0)}`).join(" "));
+
+    note(`${label}: each coin is about 0.36 of a cell across`,
+      c0.rects.every((r) => r.w > 4 && r.w < 30),
+      c0.rects.map((r) => `${r.w.toFixed(1)}px`).join(" "));
+
+    /* A move, driven through the same function the die calls. Three puts a coin
+       on Asteroid Belt, which is a property - so the landing has a card to open,
+       and the two squares it crossed must not be marked or opened. */
+    await page.eval(`
+      (async () => {
+        const c = document.querySelector(".board").coins;
+        c.reset();
+        await c.movePlayer("seat-0", 3);
+        return true;
+      })()
+    `);
+    await sleep(1800);
+    const landed = await boardReport(page);
+    const cl = landed.coins;
+
+    note(`${label}: a coin moves to the square the die named`,
+      cl.positions[0].position === 3,
+      cl.positions.map((p) => `${p.id}=${p.position}`).join(" "));
+
+    note(`${label}: only the destination is marked`,
+      cl.landed.length === 1 && cl.landed[0] === "3",
+      `marked: ${cl.landed.join(" ") || "none"} (destination is 3)`);
+
+    note(`${label}: and only the destination opens its card`,
+      cl.cardVisible && cl.openCard === "asteroid-belt",
+      `open: ${cl.openCard}, visible ${cl.cardVisible}`);
+
+    note(`${label}: the squares it crossed get neither`,
+      !cl.landed.includes("1") && !cl.landed.includes("2"),
+      `1 and 2 are marked: ${cl.landed.includes("1")}/${cl.landed.includes("2")}`);
+
+    /* Wrapping. Twenty-seven from Start is Fight, and one more is Start - so the
+       coin has to come back round rather than walk off the end of the board. */
+    await page.eval(`
+      (async () => {
+        const c = document.querySelector(".board").coins;
+        c.reset();
+        await c.movePlayer("seat-0", 27);
+        await c.movePlayer("seat-0", 1);
+        return true;
+      })()
+    `);
+    await sleep(2200);
+    const wrapped = await boardReport(page);
+    const cw = wrapped.coins;
+
+    note(`${label}: wrapping past Start brings the coin home`,
+      cw.positions[0].position === 0,
+      cw.positions.map((p) => `${p.id}=${p.position}`).join(" "));
+
+    note(`${label}: and a corner gets the mark but no card`,
+      cw.landed.length === 1 && cw.landed[0] === "0" && !cw.cardVisible,
+      `marked ${cw.landed.join(" ")}, card visible ${cw.cardVisible}`);
+
+    /* Two coins on one square. Both are driven to Asteroid Belt, which is what
+       two threes would do, and the question is whether they can both be seen. */
+    await page.eval(`
+      (async () => {
+        const c = document.querySelector(".board").coins;
+        c.reset();
+        await c.movePlayer("seat-1", 3);
+        await c.movePlayer("seat-0", 3);
+        return true;
+      })()
+    `);
+    await sleep(2200);
+    const shared = await boardReport(page);
+    const cs = shared.coins;
+
+    note(`${label}: two coins can stand on one square`,
+      cs.positions.filter((p) => p.position === 3).length === 2,
+      cs.positions.map((p) => `${p.id}=${p.position}`).join(" "));
+
+    note(`${label}: and when they do, they do not overlap`,
+      !cs.rects.some((r, i) => cs.rects.slice(i + 1).some((o) => overlaps(r.box, o.box))),
+      cs.rects.map((r) => `${r.player} slot ${r.slot} at ${r.box.left.toFixed(0)},${r.box.top.toFixed(0)}`).join(" | "));
+
+    note(`${label}: and each takes a different slot`,
+      new Set(cs.rects.map((r) => r.slot)).size === cs.rects.length,
+      cs.rects.map((r) => `${r.player}:${r.slot}`).join(" "));
+
+    /* The die is refused while a coin is in the air.
+
+       Asked by throwing one, which is the only way the question arises: if the
+       throw went through, the turn would advance and a second move would be
+       started off one roll.
+
+       The thing watched is the TURN, not the coin. A coin's own position while
+       it is mid-hop changes on every frame by design, so comparing it before
+       and after proves nothing - the first version of this check compared
+       positions and passed or failed for reasons that had nothing to do with
+       the die. The turn advancing is the observable that means a throw was
+       actually accepted. */
+    const during = await page.eval(`
+      (async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const b = document.querySelector(".board");
+        const die = b.querySelector(".board__dice");
+        const pill = b.querySelector(".board__turn");
+        const seatNow = () => pill.dataset.turn;
+
+        const moving = b.coins.movePlayer("seat-0", 6);
+        await wait(120);
+        const wasMoving = b.dataset.moving === "true";
+        const seatBefore = seatNow();
+        const faceBefore = die.dataset.face;
+
+        // Throw while the coin is in the air.
+        die.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        await wait(320);
+        const seatAfter = seatNow();
+        const faceAfter = die.dataset.face;
+
+        await moving;
+        await wait(200);
+        return {
+          wasMoving,
+          seatBefore, seatAfter,
+          faceBefore, faceAfter,
+          unlocked: b.dataset.moving !== "true",
+        };
+      })()
+    `);
+    note(`${label}: the coin is in the air while it moves`,
+      during.wasMoving, `board said moving=${during.wasMoving}`);
+    note(`${label}: the die is refused mid-move, so one roll moves one coin`,
+      during.seatAfter === during.seatBefore && during.faceAfter === during.faceBefore,
+      `turn ${during.seatBefore} stayed ${during.seatAfter}; die ${during.faceBefore} stayed ${during.faceAfter}`);
+    note(`${label}: and it is unlocked afterwards`,
+      during.unlocked, `board still moving=${!during.unlocked}`);
+
     /* ------------------------------------------------------------- the die */
 
     const dieBefore = await page.json(`
@@ -733,14 +933,20 @@ try {
     // press really throws and really lands on a face, and that the results are
     // not stuck on one number.
     const repeats = await page.json(`
-      const d = document.querySelector(".board__dice");
+      const b = document.querySelector(".board");
+      const d = b.querySelector(".board__dice");
       const faces = [];
       for (let n = 0; n < 6; n++) {
         d.dispatchEvent(new MouseEvent("click", { bubbles: true }));
         let moved = false;
-        for (let i = 0; i < 60; i++) {
+        for (let i = 0; i < 90; i++) {
           if (d.dataset.rolling === "true") moved = true;
-          if (moved && d.dataset.rolling === "false") break;
+          const settled = moved && d.dataset.rolling === "false";
+          // The coin has to have landed too. A throw also walks a coin, and the
+          // die is refused while one is in the air - so pressing again the
+          // moment the die stops would be pressing into a locked die. This loop
+          // used to wait only for the die, and passed by a lucky margin.
+          if (settled && b.dataset.moving !== "true") break;
           await new Promise((r) => setTimeout(r, 40));
         }
         faces.push(d.dataset.face);
@@ -764,16 +970,25 @@ try {
       const box = (el) => { const r = el.getBoundingClientRect();
         return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height }; };
 
-      /* The pill, thrown three times, so the alternation is seen rather than
+      /* The pill, thrown four times, so the alternation is seen rather than
          assumed. Each press is given time to land - the turn moves on landing,
          not on the tap, which is the whole difference between this and a
-         counter that counts touches. */
+         counter that counts touches.
+
+         Waiting is for the WHOLE turn, not just for the die to stop rolling. A
+         throw now also walks a coin, and the die is refused while that coin is
+         in the air - so waiting only for the roll would have the second press
+         refused by the very rule the game now has, and four throws would read
+         as one. The board says so itself: data-moving is set for exactly as
+         long as a coin is travelling. */
       const turns = [];
       for (let i = 0; i < 4; i++) {
         turns.push({ text: pill.textContent, seat: pill.dataset.turn, name: pill.dataset.name });
         die.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-        for (let n = 0; n < 60; n++) {
-          if (die.dataset.rolling === "false") break;
+        for (let n = 0; n < 90; n++) {
+          const rolling = die.dataset.rolling !== "false";
+          const travelling = board.dataset.moving === "true";
+          if (!rolling && !travelling) break;
           await new Promise((r) => setTimeout(r, 40));
         }
       }

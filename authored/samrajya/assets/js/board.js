@@ -39,7 +39,10 @@
 import { el } from "./dom.js";
 import { cornerMark } from "./corner-art.js";
 import { dice, makeThrowable } from "./dice.js";
-import { coins, seatId } from "./coins.js";
+// The layer draws the coins; the rules they obey - including the name a seat
+// goes by - are in coins.js, which imports nothing and is tested on its own.
+import { coins } from "./coin-layer.js";
+import { seatId } from "./coins.js";
 import { showCard } from "./property-card.js";
 import { turnPill } from "./turn.js";
 import { isPurchasable } from "./shared/properties.js";
