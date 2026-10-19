@@ -3,25 +3,29 @@
 
    What the twenty purchasable squares are worth, and what they are.
 
-   PRICES ARE DERIVED, NOT TYPED
-   -----------------------------
-   Moon is 200 and every subsequent purchasable property along the board's own
-   travel order is 44 more than the one before it. None of those twenty numbers
-   is written out here. They are computed from the board, so if a property ever
-   moves, the scale moves with it and no price can be left behind on the wrong
-   square - which is exactly the sort of thing that happens when twenty numbers
-   are written down by hand next to twenty names.
+   PRICES COME FROM THE ECONOMY, NOT FROM HERE
+   ------------------------------------------
+   This module once scaled the twenty properties as 200 plus 44 for each step
+   along the board's travel order, so that no price could ever be left behind on
+   the wrong square. That derivation is gone. A game's economy is designed rather
+   than extrapolated - rent jumps, the step changes, and Sagittarius A* costs
+   more than Quasar despite meeting it first - and no arithmetic can produce
+   those numbers. So every price now lives in shared/economy.js, written down
+   once, and this module only reads it.
 
-   Two things follow from the derivation that are worth stating, because they are
-   decisions rather than consequences:
+   That trade is worth stating plainly: derived prices were safe from being
+   wrong by accident, and they could not be wrong on purpose either. The table
+   is checked instead - see test/economy.test.js.
+
+   THE PRICE IS LOOKED UP BY NAME
+   ------------------------------
+   Not by board position. The economy table is written cheapest first, which is
+   not the order the board is walked, and the twenty prices deliberately do not
+   rise along the board. Which brings the second thing worth saying:
 
      Only properties are priced. The four corners and the four chests are not
      places anybody buys, so they have no price and asking for one gives null
      rather than a number that means nothing.
-
-     The step is 44, and 44 divides the round numbers the scale lands on -
-     200, 244, 288 - which is not a coincidence worth relying on and is not
-     relied on here. The scale is simply arithmetic.
 
    THE WRITING
    -----------
@@ -32,17 +36,14 @@
    ========================================================================== */
 
 import { CELLS, CURRENCY } from "./spaces.js";
-
-/** What Moon costs, and what each step along the board adds. */
-export const PRICE_FIRST = 200;
-export const PRICE_STEP = 44;
+import { priceOf as economyPrice } from "./economy.js";
 
 /**
  * The twenty purchasable properties, in the order the board is travelled.
  *
- * Sorted by index rather than left in array order on purpose: the price depends
- * on being Nth along the board, so the order it is computed in is the whole
- * meaning of the number.
+ * Sorted by index rather than left in array order, because that is the order
+ * the board is walked. Nothing else about the order matters: the price is read
+ * from the economy by name.
  */
 export const PROPERTIES = Object.freeze(
   CELLS.filter((cell) => cell.type === "property")
@@ -60,10 +61,17 @@ export const PROPERTIES = Object.freeze(
         color: cell.color,
         art: cell.art,
         step: n,
-        price: PRICE_FIRST + n * PRICE_STEP,
+        price: economyPrice(cell.id),
       }),
     ),
 );
+
+/**
+ * The step along the board, kept so the ordering still says something.
+ *
+ * It is Nth purchasable square along the travel order and nothing else. It was
+ * once what the price was built from; now it is only a position.
+ */
 
 /**
  * The copy, keyed by cell id.

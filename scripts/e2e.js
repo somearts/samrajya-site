@@ -643,7 +643,7 @@ try {
     note(`${label}: pressing Dyson Sphere shows its own card`,
       second && second.property === "dyson-sphere" &&
       second.name.replace(/\s/g, "") === "DYSONSPHERE" &&
-      second.price === "₹772" && second.accent === "#C9A24A",
+      second.price === "₹900" && second.accent === "#C9A24A",
       second ? `${second.name} ${second.price} ${second.accent}` : "no card");
     // One of the ten that used to be a letter. It is a drawing now, and the
     // drawing is the board's own rather than one borrowed from a card.

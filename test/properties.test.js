@@ -2,18 +2,17 @@
    THE PROPERTIES
 
    Twenty squares somebody can buy, what they cost, and what they say. The
-   prices are derived from the board rather than written down, and that is the
-   thing worth testing hardest: a scale that is arithmetically right and
-   attached to the wrong squares would look perfect on a price list and be
-   wrong on the board.
+   prices used to be derived from the board rather than written down; they now
+   come from shared/economy.js, so what matters here is that each one lands on
+   the square it belongs to. A price that is arithmetically right and attached
+   to the wrong square would look perfect on a price list and be wrong on the
+   board.
    ========================================================================== */
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  PRICE_FIRST,
-  PRICE_STEP,
   PROPERTIES,
   PROPERTIES_WITH_COPY,
   propertyFor,
@@ -42,23 +41,64 @@ test("and they are in the order the board is travelled", () => {
   assert.equal(PROPERTIES[0].index, 1);
 });
 
-test("Moon is 200 and each one after it is 44 more, along the board", () => {
-  assert.equal(PRICE_FIRST, 200);
-  assert.equal(PRICE_STEP, 44);
+test("every square carries the price the table gives it, by name", () => {
+  // Spelled out one by one, in board order, so a price filed against the wrong
+  // square cannot pass. This is the whole reason these numbers are checked:
+  // nothing computes them any more, so nothing else would notice.
+  const LADDER = [
+    ["moon", 200],
+    ["lagrange-l2", 250],
+    ["asteroid-belt", 300],
+    ["jupiter", 350],
+    ["pluto", 400],
+    ["kuiper-belt", 450],
+    ["halleys-comet", 500],
+    ["voyager-1", 550],
+    ["proxima-centauri", 600],
+    ["event-horizon", 700],
+    ["earth-137", 750],
+    ["orions-belt", 800],
+    ["wow-signal", 850],
+    ["dyson-sphere", 900],
+    ["wormhole", 950],
+    ["milky-way", 1000],
+    ["rama", 1100],
+    ["quasar", 1200],
+    ["supernova", 1300],
+    ["sagittarius-a-star", 1400],
+  ];
 
-  assert.equal(propertyFor("moon").price, 200);
+  assert.deepEqual(PROPERTIES.map((p) => [p.id, p.price]), LADDER);
 
-  const expected = PROPERTIES.map((_, n) => 200 + n * 44);
-  assert.deepEqual(PROPERTIES.map((p) => p.price), expected);
+  for (const [id, price] of LADDER) {
+    assert.equal(propertyFor(id).price, price, `${id} costs ${price}`);
+  }
+});
 
-  // Spelled out, so a change to the step or to the order cannot pass unnoticed.
-  assert.equal(propertyFor("lagrange-l2").price, 244);
-  assert.equal(propertyFor("asteroid-belt").price, 288);
-  assert.equal(propertyFor("jupiter").price, 332);
-  assert.equal(propertyFor("pluto").price, 376);
-  assert.equal(propertyFor("halleys-comet").price, 464);
-  assert.equal(propertyFor("wormhole").price, 816);
-  assert.equal(propertyFor("sagittarius-a-star").price, 1036);
+test("Sagittarius A* is the most expensive place on the board", () => {
+  const dearest = PROPERTIES.reduce((a, b) => (b.price > a.price ? b : a));
+  assert.equal(dearest.id, "sagittarius-a-star");
+  assert.equal(dearest.price, 1400);
+
+  // The three biggest, cheapest first.
+  const top3 = PROPERTIES
+    .map((p) => p.price)
+    .sort((a, b) => b - a)
+    .slice(0, 3);
+  assert.deepEqual(top3, [1400, 1300, 1200]);
+});
+
+test("the price climbs along the board, so the cheapest place is met first", () => {
+  // Not a rule about how the table is written - a property's price comes from
+  // its name. It is an observation about this board, and it is the reason
+  // buying power builds up gradually instead of arriving all at once.
+  const prices = PROPERTIES.map((p) => p.price);
+  for (let n = 1; n < prices.length; n += 1) {
+    assert.ok(
+      prices[n] > prices[n - 1],
+      `${PROPERTIES[n].id} at ${prices[n]} is dearer than ${PROPERTIES[n - 1].id} at ${prices[n - 1]}`,
+    );
+  }
 });
 
 test("the two chests and the four corners are not for sale", () => {
@@ -74,7 +114,7 @@ test("the two chests and the four corners are not for sale", () => {
 
 test("a price is written with the rupee sign", () => {
   assert.equal(priceOf("moon"), "₹200");
-  assert.equal(priceOf("quasar"), "₹948");
+  assert.equal(priceOf("quasar"), "₹1200");
 });
 
 test("an id nobody has heard of is not a property", () => {
