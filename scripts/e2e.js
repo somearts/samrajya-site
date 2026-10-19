@@ -959,9 +959,9 @@ try {
     note(`${label}: with a Draw that is not disabled`,
       chestLanded.drawPresent && chestLanded.drawDisabled === false,
       `present ${chestLanded.drawPresent}, disabled ${chestLanded.drawDisabled}`);
-    note(`${label}: it says what it is and quotes no price`,
-      chestLanded.kind_ === "Community Chest" && !chestLanded.price,
-      `"${chestLanded.kind_}", price shown ${chestLanded.price}`);
+    note(`${label}: it says what it is in its title, and quotes no price`,
+      chestLanded.kind_ === "" && !chestLanded.price,
+      `label "${chestLanded.kind_}", price shown ${chestLanded.price}`);
     note(`${label}: and its title is not cut short`,
       chestLanded.titleLines.join(" ") === "Welcome to Ragnarok" && !chestLanded.titleClipped,
       `"${chestLanded.titleLines.join(" ")}", clipped ${chestLanded.titleClipped}`);

@@ -14,7 +14,7 @@
 
   "chest": {
     "id": "ragnarok",
-    "label": "Community Chest",
+    "_label": "The card used to carry a 'COMMUNITY CHEST' label where a property puts its price. It is gone: the title already says what this is, and the label was taking the width the title needed. The word is kept here only so it is not lost if the card wants to say it somewhere else.",
     "title": "Welcome to Ragnarok",
     "titleLines": ["Welcome to", "Ragnarok"],
     "tagline": "The armoury at the end of time.",

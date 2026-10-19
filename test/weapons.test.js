@@ -236,7 +236,6 @@ test("weaponById resolves each of the three and nothing else", () => {
 
 test("the copy is all there, and says what it says", () => {
   assert.equal(RAGNAROK.id, "ragnarok");
-  assert.equal(RAGNAROK.label, "Community Chest");
   assert.equal(RAGNAROK.title, "Welcome to Ragnarok");
   assert.equal(RAGNAROK.tagline, "The armoury at the end of time.");
   assert.equal(RAGNAROK.oddsCaption, "Each draw: 30% for each weapon, 10% bad luck.");
@@ -245,6 +244,16 @@ test("the copy is all there, and says what it says", () => {
     assert.ok(w.blurb.length > 20, `${w.id} has a line about what it does`);
     assert.ok(w.emblem, `${w.id} names an emblem`);
   }
+});
+
+test("and the chest says what it is once, in its title", () => {
+  // There used to be a COMMUNITY CHEST label where a property puts its price.
+  // It is gone: the title already names the place, and the label was taking the
+  // width the title needed. This is here so that putting one back is a decision
+  // somebody makes rather than a leftover nobody notices.
+  assert.equal(RAGNAROK.label, undefined, "no second label in the data");
+  const visible = [RAGNAROK.title, ...RAGNAROK.titleLines].join(" ");
+  assert.doesNotMatch(visible, /community chest/i);
 });
 
 test("and the title's break is the title, with a space between the lines", () => {

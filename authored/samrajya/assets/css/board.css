@@ -736,7 +736,20 @@
      is supposed to start at, which is invisible and which a half-pixel check
      catches. */
   top: calc(var(--cell) + var(--hair) * 2);
-  height: calc((var(--cell) * 8 + var(--hair) * 9) * 0.65);
+  /* Its own height, up to a ceiling.
+
+     It used to be a fixed two thirds of the middle with the empty space at the
+     bottom of it - a card that ended well past its last line, which read as
+     though something more was still coming. It is now its own height, and the
+     ceiling is only reached when the content genuinely needs it.
+
+     The ceiling is the DIE, expressed as a fraction of the middle. The die
+     begins eighty-four per cent of the way down the middle at every board size,
+     so eighty per cent is the last line this card can reach without sitting on
+     top of the thing a player presses. It is a fraction rather than a number of
+     pixels for the same reason the rest of the board is: it keeps the same
+     proportion at every size and cannot grow into the ring. */
+  height: auto;
 }
 
 /* The card itself scrolls rather than the board. A chest card on a short screen
@@ -745,8 +758,9 @@
 .chest-card {
   display: flex;
   flex-direction: column;
-  gap: calc(var(--cell) * 0.09);
-  height: 100%;
+  gap: calc(var(--cell) * 0.11);
+  height: auto;
+  max-height: calc((var(--cell) * 8 + var(--hair) * 9) * 0.8);
   overflow-y: auto;
   overscroll-behavior: contain;
   /* The scrollbar is never part of what this card looks like. */
@@ -757,39 +771,47 @@
   display: none;
 }
 
-/* COMMUNITY CHEST, where a property puts its price. */
-.chest-card__kind {
-  margin: 0;
-  font-size: max(7px, calc(var(--cell) * 0.092));
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  white-space: nowrap;
+/* THE TYPE
+
+   Every size below is the one it replaces, larger. The title is up by about a
+   third and a half and everything else by thirty per cent, which is what a card
+   read on a phone at arm's length actually needs - the earlier sizes were
+   legible in a screenshot and small on a hand.
+
+   Both the floor and the multiplier move together on every one. Raising only
+   the multiplier does nothing at the smallest cell, because the floor is what
+   binds there - so a size that looked raised on a large board and had not moved
+   at all on the smallest phone would have looked like a change and been none. */
+.chest-card .property-card__name {
+  font-size: max(15.2px, calc(var(--cell) * 0.2234));
 }
 
-/* The head gives its room to the title. A property's head has an artwork box
-   beside it; a chest has none, and the title is long, so the two gaps are
-   tightened rather than the type being made smaller. */
+/* The head is one column now - the COMMUNITY CHEST label is gone - so the title
+   has the whole of it, and the gaps around it can breathe rather than squeeze.
+
+   The pill and the heading were touching: a five-pixel bar and a line of caps
+   with a sixth of an em between them read as one crowded object rather than a
+   label and a title. */
 .chest-card .property-card__head {
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr;
   gap: 4%;
 }
 
 .chest-card .property-card__title {
-  gap: 0.14em;
+  gap: 0.42em;
 }
 
 .chest-card__tagline {
   margin: 0;
-  font-size: max(9.1px, calc(var(--cell) * 0.1235));
-  line-height: 1.3;
+  font-size: max(11.8px, calc(var(--cell) * 0.1606));
+  line-height: 1.32;
   color: var(--ink);
 }
 
 .chest-card__body {
   margin: 0;
-  font-size: max(7.8px, calc(var(--cell) * 0.104));
-  line-height: 1.42;
+  font-size: max(10.1px, calc(var(--cell) * 0.1352));
+  line-height: 1.44;
   color: var(--ink-soft);
 }
 
@@ -823,7 +845,7 @@
 }
 
 .chest-card__mark {
-  font-size: max(11px, calc(var(--cell) * 0.19));
+  font-size: max(15.4px, calc(var(--cell) * 0.266));
   font-weight: 500;
   color: color-mix(in srgb, var(--weapon) 78%, #121110);
 }
@@ -854,9 +876,9 @@
 }
 
 .chest-card__slot-name {
-  font-size: max(6.6px, calc(var(--cell) * 0.088));
+  font-size: max(8.6px, calc(var(--cell) * 0.1144));
   letter-spacing: 0.02em;
-  line-height: 1.15;
+  line-height: 1.18;
   text-align: center;
   color: var(--ink-soft);
 }
@@ -923,7 +945,7 @@
   align-items: center;
   justify-content: center;
   align-self: center;
-  min-height: max(20px, calc(var(--cell) * 0.30));
+  min-height: max(26px, calc(var(--cell) * 0.39));
   padding: 0 1.5em;
   margin: 0;
   border: 1px solid rgb(18 17 16 / 0.3);
@@ -931,7 +953,7 @@
   background: rgb(255 255 255 / 0.2);
   backdrop-filter: blur(5px);
   font: inherit;
-  font-size: max(8.5px, calc(var(--cell) * 0.116));
+  font-size: max(11.1px, calc(var(--cell) * 0.1508));
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--ink);
@@ -952,7 +974,7 @@
 
 .chest-card__odds {
   margin: 0;
-  font-size: max(7.2px, calc(var(--cell) * 0.096));
+  font-size: max(9.4px, calc(var(--cell) * 0.1248));
   letter-spacing: 0.04em;
   text-align: center;
   color: var(--ink-soft);
@@ -960,42 +982,47 @@
 
 .chest-card__result {
   display: grid;
-  gap: calc(var(--cell) * 0.045);
-  padding-top: calc(var(--cell) * 0.06);
+  gap: calc(var(--cell) * 0.055);
+  padding-top: calc(var(--cell) * 0.07);
   border-top: 1px solid rgb(18 17 16 / 0.09);
 }
 
 .chest-card__drew {
   margin: 0;
-  font-size: max(9.1px, calc(var(--cell) * 0.1235));
+  font-size: max(11.8px, calc(var(--cell) * 0.1606));
   color: var(--ink);
 }
 
 .chest-card__reach,
 .chest-card__blurb {
   margin: 0;
-  font-size: max(7.8px, calc(var(--cell) * 0.104));
-  line-height: 1.35;
+  font-size: max(10.1px, calc(var(--cell) * 0.1352));
+  line-height: 1.36;
   color: var(--ink-soft);
 }
 
 .chest-card__targets {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
+  gap: 4px;
 }
 
 /* A colony a weapon reaches, named exactly as its own tile names it. */
 .chest-card__target {
-  padding: 1px 5px;
+  padding: 2px 6px;
   border-radius: 999px;
   border: 1px solid rgb(18 17 16 / 0.16);
   background: rgb(255 255 255 / 0.4);
-  font-size: max(6.6px, calc(var(--cell) * 0.088));
+  font-size: max(8.6px, calc(var(--cell) * 0.1144));
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--ink-soft);
   white-space: nowrap;
+  /* Never squeezed. A flex item will shrink below its own text, and with the
+     line held on one line that means PROXIMA CENTAURI loses its last letters
+     rather than moving down a line - so a long name is told not to shrink and
+     wraps whole, which is what a reader expects of a list of names. */
+  flex-shrink: 0;
 }
 
 /* The dot in flight, on its way to the name at the top. */
@@ -1107,6 +1134,31 @@
 }
 
 .board__cell--property:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+/* RAGNAROK IS A CHEST THAT IS ALSO A BUTTON.
+
+   The reset above is written for properties, so when Ragnarok became pressable
+   it inherited every default the browser gives a button - including its
+   two-pixel outset border, which drew a black frame round a block that had spent
+   its whole life having no frame. It is the same button on a black ground rather
+   than a tinted one, so the same decisions have to be made explicitly.
+
+   The ground is not set here: `.board__cell--chest` already washes it, and this
+   rule is only about what the browser was going to add on top. */
+button.board__cell--chest {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 0;
+}
+
+button.board__cell--chest:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: -2px;
 }

@@ -165,19 +165,15 @@ export function chestCard({ drawable = false } = {}) {
     "aria-live": "polite",
   }, [
     el("div", { class: "property-card__head" }, [
-      // No sigil here, and that is a change from the first version of this card.
-      // The head is three columns - something, the title, the label - and at a
-      // phone's cell size the title column was left about forty pixels wide,
-      // which turned "Welcome to Ragnarok" into "WELCO... RAGNAR...". The label
-      // stays where a price would be, because that is what that column is for.
-      // The sigil went instead, and the three weapon emblems are carrying the
-      // chest's identity anyway.
+      // No sigil here, and no "COMMUNITY CHEST" label where the price would go.
+      // The head is one column and the title has it all. The label was removed
+      // because the card already says what Ragnarok is in its title, and a
+      // second line saying it again was taking the width the title needed -
+      // which is how "Welcome to Ragnarok" came out as "WELCO... RAGNAR...".
       el("div", { class: "property-card__title" }, [
         el("span", { class: "property-card__pill", "aria-hidden": "true" }),
         el("h3", { class: "property-card__name", html: RAGNAROK.titleLines.map((line) => `<span>${line}</span>`).join("") }),
       ]),
-      // Where a property puts its price. A chest has none, so it says what it is.
-      el("p", { class: "chest-card__kind", text: RAGNAROK.label }),
     ]),
 
     el("p", { class: "chest-card__tagline", text: RAGNAROK.tagline }),
