@@ -151,6 +151,10 @@ export function showCard(board, id) {
     holder.hidden = true;
     holder.replaceChildren();
     board.dataset.property = "";
+    // A chest card is taller than this one. Leaving the flag behind would make
+    // the NEXT property card open in the chest's rectangle, which is the kind of
+    // thing that only shows up on the square after the one you were looking at.
+    delete holder.dataset.cardKind;
     return Promise.resolve(null);
   }
 
@@ -221,5 +225,6 @@ export function hideCard(board) {
   board.dataset.property = "";
   holder.replaceChildren();
   holder.hidden = true;
+  delete holder.dataset.cardKind;
   return Promise.resolve();
 }

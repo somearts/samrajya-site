@@ -43,6 +43,8 @@ import { dice, makeThrowable } from "./dice.js";
 // goes by - are in coins.js, which imports nothing and is tested on its own.
 import { coins } from "./coin-layer.js";
 import { seatId } from "./coins.js";
+import { chestPending, renderWeapons, showChest } from "./chest-card.js";
+import { RAGNAROK } from "./shared/weapons.js";
 import { showCard } from "./property-card.js";
 import { turnPill } from "./turn.js";
 import { isPurchasable } from "./shared/properties.js";
@@ -175,7 +177,26 @@ function plainCell(cell) {
   if (isChest) {
     // A chest's wash is black, set by the stylesheet, because a chest belongs
     // to no set and has no colour of its own to tint with.
-    return el("div", props, [nameLines(cell)]);
+    //
+    // Ragnarok is the exception, and it is now a button. The rule the other
+    // seven follow is that a square you cannot act on should not be a button,
+    // because a button that does nothing is still one a reader can find and
+    // press. Ragnarok has stopped being that: it opens a card, and a player can
+    // look at what the armoury is. The other three chests and the four corners
+    // still do nothing, and still are not buttons.
+    if (cell.id !== RAGNAROK.id) {
+      return el("div", props, [nameLines(cell)]);
+    }
+
+    return el(
+      "button",
+      {
+        ...props,
+        type: "button",
+        "aria-label": `${cell.name}, community chest`,
+      },
+      [nameLines(cell)],
+    );
   }
 
   // A property is a button because it is a place a player can buy, and the card
@@ -265,7 +286,34 @@ export function board({ players = [] } = {}) {
 
   // The coins. Every player has one, and they all start on Start, and the layer
   // takes no taps so the squares underneath stay pressable.
-  const pieces = coins(frame, { players });
+  const pieces = coins(frame, {
+    players,
+
+    /* WHAT A LANDING MEANS.
+
+       The coin layer knows where a coin stopped and knows nothing else. What
+       that square does about it is this file's business, because it is the only
+       place that knows what each square is for.
+
+       Ragnarok runs a draw. A property shows its card. Anything else - a
+       corner, or one of the three chests with nothing decided for them yet -
+       closes whatever was open and says nothing, which is the honest answer for
+       a square that has not been given a purpose. */
+    onLand: async ({ cell, player }) => {
+      if (cell?.dataset.id === RAGNAROK.id) {
+        const seat = pieces.state.players.indexOf(player);
+        await showChest(frame, {
+          drawable: true,
+          onWeapon: (weaponId) => {
+            player.weapons.push(weaponId);
+            renderWeapons(document, seat, player.weapons);
+          },
+        });
+        return;
+      }
+      await showCard(frame, cell && isPurchasable(cell.dataset.id) ? cell.dataset.id : "");
+    },
+  });
   // The handle `theCoins()` reads, so `movePlayer` can be driven from outside
   // this module. It is a reference to the same object the board is using - not a
   // copy, and not a second set of coins.
@@ -292,6 +340,11 @@ export function board({ players = [] } = {}) {
     // A card left open from the last turn is closed as this one starts. Tapping
     // a square by hand still opens one, which is the existing behaviour and is
     // untouched - this only clears what the last roll left behind.
+    //
+    // Except a chest waiting on a draw. Clearing that would let a throw abandon
+    // a visit before it was answered, which is the one thing Ragnarok promises
+    // it will not do.
+    if (chestPending(frame)) return;
     showCard(frame, "");
     pieces.clearHighlight();
   };
@@ -349,6 +402,19 @@ export function board({ players = [] } = {}) {
   for (const cell of cells) {
     if (!cell.matches?.("button[data-id]")) continue;
     cell.addEventListener("click", () => {
+      // A chest card that is waiting on a draw cannot be replaced. It is the one
+      // card on the board that has not finished saying what it has to say, and
+      // replacing it would let a visitor leave Ragnarok without drawing.
+      if (chestPending(frame)) return;
+
+      if (cell.dataset.id === RAGNAROK.id) {
+        // Opened by hand rather than by landing: read-only. The card says what
+        // the chest is and what a draw would give, with the button there and
+        // disabled, because a visit that did not happen is not a draw.
+        showChest(frame, { drawable: false });
+        return;
+      }
+
       showCard(frame, cell.dataset.id);
     });
   }

@@ -16,8 +16,10 @@
     "id": "ragnarok",
     "label": "Community Chest",
     "title": "Welcome to Ragnarok",
+    "titleLines": ["Welcome to", "Ragnarok"],
     "tagline": "The armoury at the end of time.",
     "body": "Ragnarok is where weapons are drawn. Draw once per visit and you may leave with one. Carry your weapons to Fight, where you can strike an opponent's colony. Every weapon can only reach certain colonies, and a successful strike hands that colony to you.",
+    "_titleLines": "The title is too long for one line in the card's title column at a phone's cell size, and an ellipsis reading 'WELCO...' is worse than a break. The break lives here rather than being guessed in the card, for the same reason every board name carries its own lines: the drawing and the data cannot then disagree about where something wraps.",
     "oddsCaption": "Each draw: 30% for each weapon, 10% bad luck."
   },
 

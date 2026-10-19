@@ -716,6 +716,325 @@
   color: var(--ink);
 }
 
+/* ----------------------------------------------------------------- ragnarok
+
+   THE TALL HOLDER
+
+   A property card is three rows of cells high. Ragnarok has three card faces, a
+   button, a result and a list of targets in it, so it is taller - but it is
+   written as a FRACTION of the middle rather than in cells, so it keeps the same
+   proportion of the board at every size and cannot grow into the ring however
+   small a cell gets. It starts at the top of the middle, where a property card
+   starts, and runs to about two thirds of the way down it. */
+
+.board__card[data-card-kind="chest"] {
+  top: calc(var(--cell) + var(--hair));
+  height: calc((var(--cell) * 8 + var(--hair) * 9) * 0.65);
+}
+
+/* The card itself scrolls rather than the board. A chest card on a short screen
+   is taller than the space it was given, and the only two things that may move
+   are the card's own contents - never the board under it. */
+.chest-card {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cell) * 0.09);
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* The scrollbar is never part of what this card looks like. */
+  scrollbar-width: none;
+}
+
+.chest-card::-webkit-scrollbar {
+  display: none;
+}
+
+/* COMMUNITY CHEST, where a property puts its price. */
+.chest-card__kind {
+  margin: 0;
+  font-size: max(7px, calc(var(--cell) * 0.092));
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* The head gives its room to the title. A property's head has an artwork box
+   beside it; a chest has none, and the title is long, so the two gaps are
+   tightened rather than the type being made smaller. */
+.chest-card .property-card__head {
+  grid-template-columns: 1fr auto;
+  gap: 4%;
+}
+
+.chest-card .property-card__title {
+  gap: 0.14em;
+}
+
+.chest-card__tagline {
+  margin: 0;
+  font-size: max(9.1px, calc(var(--cell) * 0.1235));
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.chest-card__body {
+  margin: 0;
+  font-size: max(7.8px, calc(var(--cell) * 0.104));
+  line-height: 1.42;
+  color: var(--ink-soft);
+}
+
+/* The three faces. Portrait, because a playing card is taller than it is wide,
+   and they sit in one row because three is what there are. */
+.chest-card__slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: calc(var(--cell) * 0.07);
+}
+
+.chest-card__slot {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: calc(var(--cell) * 0.04);
+  aspect-ratio: 5 / 6.4;
+  padding: calc(var(--cell) * 0.05);
+  border-radius: 6px;
+  background: var(--card-inset);
+  border: 1px solid rgb(18 17 16 / 0.08);
+  backface-visibility: hidden;
+}
+
+.chest-card__back {
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--weapon) 14%, var(--card-inset));
+  transition: opacity 200ms ease-out;
+}
+
+.chest-card__mark {
+  font-size: max(11px, calc(var(--cell) * 0.19));
+  font-weight: 500;
+  color: color-mix(in srgb, var(--weapon) 78%, #121110);
+}
+
+.chest-card__face {
+  position: absolute;
+  inset: calc(var(--cell) * 0.05);
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--cell-ground);
+  opacity: 0;
+  transform: rotateY(180deg);
+}
+
+.chest-card__emblem {
+  width: 74%;
+  height: 74%;
+}
+
+.chest-card__pill {
+  display: block;
+  width: 60%;
+  height: 3px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: var(--weapon);
+}
+
+.chest-card__slot-name {
+  font-size: max(6.6px, calc(var(--cell) * 0.088));
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.chest-card__slot[hidden],
+.chest-card__result[hidden] {
+  /* An author rule of `display` beats the browser's own `[hidden]` rule, so
+     anything with display set here has to say so again. Without this the two
+     cards that fade away on a draw stay in the layout as invisible holes: they
+     look right, take up 170px of the column, and push the Collect button off
+     the bottom of a card that is already taller than the space it was given. */
+  display: none;
+}
+
+/* The drawn one is face up, centred, and smaller than the two that are gone -
+   not because it matters less, but because the answer is what the card is for
+   now and the card needs room to say it. */
+.chest-card__slot.is-drawn {
+  grid-column: 1 / -1;
+  aspect-ratio: 5 / 4.4;
+  justify-self: center;
+  width: 46%;
+}
+
+/* ONCE THE DRAW IS ANSWERED, the card stops explaining itself.
+
+   The tagline, the body and the odds caption have done their job the moment
+   there is a weapon in front of you, and keeping them on screen pushes "You drew
+   the..." and the Collect button below the fold on a phone. What is left is the
+   answer and the button, and that fits. */
+.chest-card[data-phase="revealed"] .chest-card__tagline,
+.chest-card[data-phase="revealed"] .chest-card__body,
+.chest-card[data-phase="revealed"] .chest-card__odds,
+.chest-card[data-phase="revealed"] .chest-card__draw,
+.chest-card[data-phase="bad-luck"] .chest-card__tagline,
+.chest-card[data-phase="bad-luck"] .chest-card__body,
+.chest-card[data-phase="bad-luck"] .chest-card__odds,
+.chest-card[data-phase="bad-luck"] .chest-card__draw {
+  display: none;
+}
+
+.chest-card[data-phase="drawing"] .chest-card__draw {
+  display: none;
+}
+
+.chest-card__slot.is-drawn .chest-card__back {
+  opacity: 0;
+}
+
+.chest-card__slot.is-drawn .chest-card__face {
+  opacity: 1;
+  transform: rotateY(0deg);
+}
+
+/* THE GLASS PILL
+
+   One transparent pill, a hairline border, a little blur behind it. The same
+   family as every other pill on the board - the same caps, the same tracking,
+   the same border-radius - so it reads as the same control rather than as a
+   web button that arrived by accident. */
+.chest-card__draw,
+.chest-card__collect {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  min-height: max(20px, calc(var(--cell) * 0.30));
+  padding: 0 1.5em;
+  margin: 0;
+  border: 1px solid rgb(18 17 16 / 0.3);
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.2);
+  backdrop-filter: blur(5px);
+  font: inherit;
+  font-size: max(8.5px, calc(var(--cell) * 0.116));
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.chest-card__draw:disabled {
+  cursor: default;
+  opacity: 0.38;
+  border-style: dashed;
+}
+
+.chest-card__collect {
+  border-color: color-mix(in srgb, var(--weapon) 70%, #121110);
+  color: color-mix(in srgb, var(--weapon) 62%, #121110);
+  margin-top: calc(var(--cell) * 0.04);
+}
+
+.chest-card__odds {
+  margin: 0;
+  font-size: max(7.2px, calc(var(--cell) * 0.096));
+  letter-spacing: 0.04em;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.chest-card__result {
+  display: grid;
+  gap: calc(var(--cell) * 0.045);
+  padding-top: calc(var(--cell) * 0.06);
+  border-top: 1px solid rgb(18 17 16 / 0.09);
+}
+
+.chest-card__drew {
+  margin: 0;
+  font-size: max(9.1px, calc(var(--cell) * 0.1235));
+  color: var(--ink);
+}
+
+.chest-card__reach,
+.chest-card__blurb {
+  margin: 0;
+  font-size: max(7.8px, calc(var(--cell) * 0.104));
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.chest-card__targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+/* A colony a weapon reaches, named exactly as its own tile names it. */
+.chest-card__target {
+  padding: 1px 5px;
+  border-radius: 999px;
+  border: 1px solid rgb(18 17 16 / 0.16);
+  background: rgb(255 255 255 / 0.4);
+  font-size: max(6.6px, calc(var(--cell) * 0.088));
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* The dot in flight, on its way to the name at the top. */
+.chest-card__flying {
+  position: fixed;
+  z-index: 60;
+  border-radius: 50%;
+  background: var(--weapon);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.3);
+  pointer-events: none;
+}
+
+/* THE DOTS ON THE NAME
+
+   Before the name, because that is where a player looks first. Six and then a
+   count: the name is the part of that chip that has to survive at 360px, so it
+   is the one thing here that is never squeezed.
+
+   `align-self: center` rather than sitting on the chip's baseline. The chip
+   aligns its children to the baseline, which put a five-pixel circle half below
+   the text and clipped its top - a weapon that looked like a crescent. */
+.who__weapons {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  height: 8px;
+}
+
+.who__weapon {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--weapon);
+  box-shadow: 0 0 0 1px rgb(18 17 16 / 0.2);
+}
+
+.who__count {
+  align-self: center;
+  font-size: 0.6rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--ink-soft);
+}
+
 /* ------------------------------------------------------- a property or a chest
 
    Two kinds of cell, and the reference draws them differently.

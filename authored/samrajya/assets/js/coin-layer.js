@@ -87,7 +87,7 @@ function coinNode(player, index) {
  * server will call when there is a server that knows who rolled what. Nothing
  * else here is meant to be driven from outside.
  */
-export function coins(board, { players = [] } = {}) {
+export function coins(board, { players = [], onLand = null } = {}) {
   /* One source of truth for where everybody is. `position` is a board index,
      and nothing else keeps a copy of it - the DOM is redrawn from this, never
      the other way round, so a coin and its state cannot disagree. */
@@ -99,6 +99,11 @@ export function coins(board, { players = [] } = {}) {
         name: p.name,
         color: coinColor(p.civ),
         position: 0,
+        // What this player is carrying. Empty to start, appended to by whoever
+        // hands them a weapon, and nothing here reads it except the name chip -
+        // there is no attacking yet, so a weapon is a thing you are seen with
+        // rather than a thing you can do.
+        weapons: [],
       })),
   };
 
@@ -282,13 +287,19 @@ export function coins(board, { players = [] } = {}) {
       layout(still ? 0 : SETTLE_MS);
       highlight(to, player);
 
-      // Only the destination is dealt with. `showCard` is called for every
-      // landing, not just for the ones that have a card: a square that is not
-      // for sale closes whatever was open, because a card left on screen from
-      // the last move is not this square's card and saying where you landed
-      // means the board shows where you landed and nothing else.
+      // Only the destination is dealt with. What that MEANS is the board's business
+      // rather than this file's: a property shows its card, Ragnarok runs a
+      // draw, and a corner or a chest with nothing to say shows nothing. So the
+      // landing is handed to `onLand` when there is one, and falls back to the
+      // old behaviour when there is not - a card opened by hand for a square
+      // that is not for sale closes whatever was open, because a card left on
+      // screen from the last move is not this square's card.
       const cell = cells.get(to);
-      await showCard(board, (cell && isPurchasable(cell.dataset.id)) ? cell.dataset.id : "");
+      if (typeof onLand === "function") {
+        await onLand({ cell, player, index: to });
+      } else {
+        await showCard(board, (cell && isPurchasable(cell.dataset.id)) ? cell.dataset.id : "");
+      }
 
       return { id: player.id, from, to, steps: hops };
     } finally {

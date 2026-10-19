@@ -247,6 +247,19 @@ test("the copy is all there, and says what it says", () => {
   }
 });
 
+test("and the title's break is the title, with a space between the lines", () => {
+  // The title is too long for the card's title column at a phone's cell size,
+  // so it is broken in the data rather than guessed in the card. Which means two
+  // fields have to agree, and this is what stops them drifting apart - a title
+  // that said "Welcome to Ragnarok" while the card read "Welcome to Nowhere"
+  // would look fine in a test and wrong on the board.
+  assert.deepEqual(RAGNAROK.titleLines, ["Welcome to", "Ragnarok"]);
+  assert.equal(RAGNAROK.titleLines.join(" "), RAGNAROK.title);
+  for (const line of RAGNAROK.titleLines) {
+    assert.ok(line.length <= 14, `"${line}" fits a line on its own`);
+  }
+});
+
 test("each weapon's colour is a set that exists", () => {
   // Colours are named tokens so the card cannot drift from the board. If a
   // weapon names a set nobody has, the pill would come out as nothing.
