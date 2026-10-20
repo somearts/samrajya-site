@@ -76,3 +76,31 @@ new_sqlite_classes = ["GameRoom"]
 #   and there is no key to leak and no admin token to misconfigure.
 # - Cache headers are at Cloudflare's defaults. The first deploy should not
 #   also be the deploy that changes how the live site behaves.
+
+# ---------------------------------------------------------------------------
+# PREVIEW
+# ---------------------------------------------------------------------------
+# A second deployment of this same Worker, for testing on a phone without
+# touching golake.app. It lives on workers.dev and on no custom-domain route.
+#
+# `routes = []` is the load-bearing line. An environment inherits the top-level
+# routes unless it says otherwise, and a preview that inherited them would
+# compete with the live site for the same address. Empty is deliberate.
+#
+# Deploy with `npm run deploy:preview`; the URL is printed by Wrangler and is
+# also `https://golake-samrajya-preview.samratrockin.workers.dev/samrajya/`.
+[env.preview]
+name = "golake-samrajya-preview"
+workers_dev = true
+routes = []
+
+# Durable Object bindings and migrations are not inherited from the top level,
+# so the preview states its own. The class is the same GameRoom, in a namespace
+# only this preview worker can reach.
+[[env.preview.durable_objects.bindings]]
+name = "GAME_ROOM"
+class_name = "GameRoom"
+
+[[env.preview.migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameRoom"]

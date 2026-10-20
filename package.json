@@ -10,6 +10,7 @@
     "dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "deploy:dry": "npm run build && wrangler deploy --dry-run",
+    "deploy:preview": "npm run build && wrangler deploy --env preview",
     "test": "node --test \"test/*.test.js\"",
     "test:board": "node scripts/measure-board.mjs",
     "test:e2e": "node scripts/e2e.js",
