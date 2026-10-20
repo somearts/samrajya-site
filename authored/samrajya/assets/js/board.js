@@ -756,7 +756,6 @@ export function board({
     reading = true;
     cardMode = "read";
     paintPhase();
-    console.log("OPENREAD", id, "phase", game.phase, "busy", busy, "reading", reading);
 
     if (id === RAGNAROK.id) {
       showChest(frame, { drawable: false, onClose: () => closeRead() });
