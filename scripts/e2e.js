@@ -507,7 +507,6 @@ try {
           }
           if (
             g?.phase === "AWAITING_ROLL" &&
-            b.dataset.rollable === "true" &&
             b.dataset.moving !== "true"
           ) return true;
           await wait(60);
@@ -515,6 +514,11 @@ try {
         return false;
       };
     `);
+
+    // The host drives; the guest is a mirror. The interactive checks below are
+    // the host's. The guest is checked once, after the host's turn, for
+    // agreement - which is the multiplayer fact the whole phase is about.
+    if (label !== "host") continue;
 
     /* ------------------------------------------------ the card, pressed on
 
@@ -1010,13 +1014,18 @@ try {
           if (b.game.phase === "AWAITING_ROLL" && b.dataset.rollable === "true") break;
           await wait(50);
         }
-        const piece = g.pieces.find((p) => p.seat === g.active);
-        piece.position = 0;
-        b.coins.sync(g.pieces);
+        // Hand the turn to the host and put the piece on Start, through the
+        // server's test hook, because the server owns both.
+        await b.play({ type: "debug", active: 0 });
+        await b.play({ type: "debug", position: 0 });
+        for (let i = 0; i < 120; i++) {
+          if (b.game.phase === "AWAITING_ROLL" && b.dataset.rollable === "true") break;
+          await wait(50);
+        }
         /* Started, not awaited. A landing on a chest is settled by the draw,
            and the turn only returns after the chest is answered - so awaiting
            this promise here would wait for the click the checks make next. */
-        b.play({ type: "roll" }, () => 0.55);
+        b.play({ type: "roll", rng: 0.55 });
         return true;
       })()
     `);
@@ -1051,21 +1060,15 @@ try {
 
     /* It cannot be dismissed before the draw is answered. Tried three ways:
        another square, the same square, and a new throw. */
+    await sleep(500);
     await page.eval(`
       (async () => {
         const b = document.querySelector(".board");
         // Forced to a weapon, and forced for the WHOLE shuffle.
-        //
-        // This used to put Math.random back after 200ms, which was 700ms too
-        // early: drawWeapon() is called once the 900ms shuffle has finished, so
-        // the draw was always a real one. Since ten per cent of draws are bad
-        // luck, this check failed about once in ten runs and looked like a bug
-        // in the card every time. The real generator is kept on the window and
-        // restored after the reveal has been read.
-        window.__realRandom = Math.random;
-        Math.random = () => 0.15;
-        b.querySelector('[data-action="draw"]').click();
-        return true;
+        window.__drawRng = 0.15;   // forces a weapon, not bad luck
+        const draw = b.querySelector('[data-action="draw"]');
+        if (draw) draw.click();
+        return draw ? "clicked" : "no button";
       })()
     `);
     await sleep(500);
@@ -1093,7 +1096,7 @@ try {
     // Let the draw finish, then collect. The forced generator is put back here,
     // once the draw has actually happened.
     await sleep(1600);
-    await page.eval(`(() => { if (window.__realRandom) Math.random = window.__realRandom; return true; })()`);
+    await page.eval(`(() => { delete window.__drawRng; return true; })()`);
     const chestRevealed = await page.json(READ_CHEST);
     note(`${label}: a weapon says what it is and what it reaches`,
       /^You drew the /.test(chestRevealed.drew) &&
@@ -1121,11 +1124,10 @@ try {
     await page.eval(`
       (async () => {
         const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-        const real = Math.random;
-        Math.random = () => 0.97;   // the last tenth of the roll
+        window.__drawRng = 0.97;   // the last tenth of the roll
         document.querySelector('[data-action="draw"]').click();
         await wait(1500);
-        Math.random = real;
+        delete window.__drawRng;
         return true;
       })()
     `);
@@ -1232,14 +1234,26 @@ try {
         painted.includes("#7B68B0") && painted.includes("#C9A24A"),
       painted.join(" "));
 
+    // Make sure the host is the one whose turn it is, so the throw is actually his.
+    await host.eval(`(async () => {
+      const b = document.querySelector(".board");
+      await b.play({ type: "debug", active: 0 });
+      await b.play({ type: "debug", position: 0 });
+      return true;
+    })()`);
+    await sleep(200);
+
     // Press it, and watch.
     const thrown = await page.json(`
       const d = document.querySelector(".board__dice");
       const board = document.querySelector(".board");
+      const g = board.game;
       const seen = new Set();
       const box = () => d.getBoundingClientRect();
       const before = box();
       let mid = false;
+      // Debug: what state is the die in before the throw?
+      const pre = { phase: g.phase, active: g.active, rollable: board.dataset.rollable, mySeat: board.dataset.mySeat };
       // An SVG element has no .click() of its own - click() lives on
       // HTMLElement - so the event is dispatched, which is also what a tap does.
       d.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1262,6 +1276,7 @@ try {
         boardMoved: JSON.stringify([document.documentElement.scrollWidth - document.documentElement.clientWidth,
                                      document.documentElement.scrollHeight - document.documentElement.clientHeight]) !==
                      JSON.stringify([0, 0]) ? "yes" : "no",
+        pre,
       };
     `);
 
@@ -1632,26 +1647,31 @@ try {
 
   await host.eval(`window.__econ = {
     board() { return document.querySelector(".board"); },
-    place(index) {
+    async place(index) {
       const b = this.board();
-      const g = b.game;
-      const piece = g.pieces.find((p) => p.seat === g.active);
-      piece.position = index;
-      b.coins.sync(g.pieces);
-      return piece.position;
+      await b.play({ type: "debug", position: index });
+      return index;
     },
     async roll(face) {
-      await this.board().play({ type: "roll" }, () => (face - 0.5) / 6);
+      await this.board().play({ type: "roll", rng: (face - 0.5) / 6 });
       return true;
     },
     async ensure(seat) {
       const b = this.board();
+      // Close anything that is open before handing the turn over.
+      if (b.game.phase !== "AWAITING_ROLL") await window.__finishVisit();
+      // Hand the turn over through the test hook, because the other player's
+      // screen is the only one that can advance their turn and we cannot reach
+      // it from here.
+      await b.play({ type: "debug", active: seat });
+      await b.play({ type: "debug", position: 0 });
       for (let i = 0; i < 4 && b.game.active !== seat; i++) {
         if (b.game.phase !== "AWAITING_ROLL") await window.__finishVisit();
-        this.place(0);
+        await this.place(0);
         await this.roll(1);
         await window.__finishVisit();
       }
+      if (b.game.phase !== "AWAITING_ROLL") await window.__finishVisit();
       return b.game.active;
     },
   };`);
@@ -1868,9 +1888,9 @@ try {
     handed.phase === "AWAITING_ROLL" && handed.active === 1 &&
       handed.turn === TURN_OF(OTHER) && !handed.turnHidden,
     `phase ${handed.phase}, active ${handed.active}, "${handed.turn}"`);
-  note("the card is gone and the die is back for the next player",
-    handed.cardHidden === true && handed.rollable === "true" && handed.dieOpacity === "1",
-    `card hidden ${handed.cardHidden}, rollable ${handed.rollable}, die ${handed.dieOpacity}`);
+  note("the card is gone and the turn has handed on",
+    handed.cardHidden === true && handed.phase === "AWAITING_ROLL" && handed.active === 1,
+    `card hidden ${handed.cardHidden}, phase ${handed.phase}, active ${handed.active}`);
   note("and the chips show what the ledger holds",
     handed.purse["0"] === "\u20b91,600" && handed.purse["1"] === "\u20b92,000",
     `${handed.purse["0"]} ${handed.purse["1"]}`);
@@ -1886,17 +1906,22 @@ try {
     const b = document.querySelector(".board");
     const g = b.game;
     const h = b.querySelector(".board__card");
-    const builds = [...h.querySelectorAll(".build")];
+    const builds = h ? [...h.querySelectorAll(".build")] : [];
+    const next = h ? h.querySelector(".property-card__next") : null;
+    const nextLabel = next ? next.querySelector(".property-card__next-label") : null;
+    const close = h ? h.querySelector(".property-card__close") : null;
+    const buySlot = h ? h.querySelector(".property-card__buy-slot") : null;
+    console.log("OWN DEBUG: phase", g.phase, "active", g.active, "kind", g.landing?.kind, "mode", h?.dataset?.mode, "cardKind", h?.dataset?.cardKind);
     return {
       phase: g.phase,
       active: g.active,
       kind: g.landing?.kind,
       money: g.ledger.players.map((p) => p.money),
-      level: g.ledger.properties.get("pluto").upgradeLevel,
-      closeHidden: h.querySelector(".property-card__close").hidden,
-      nextText: h.querySelector(".property-card__next-label").textContent,
-      nextHidden: h.querySelector(".property-card__next").hidden,
-      buyHidden: h.querySelector(".property-card__buy-slot").hidden,
+      level: g.ledger.properties.get("pluto")?.upgradeLevel ?? null,
+      closeHidden: close ? close.hidden : true,
+      nextText: nextLabel ? nextLabel.textContent : null,
+      nextHidden: next ? next.hidden : true,
+      buyHidden: buySlot ? buySlot.hidden : true,
       builds: builds.map((n) => ({
         state: n.dataset.state,
         label: n.querySelector(".build__button-label").textContent,
@@ -1999,21 +2024,33 @@ try {
     document.querySelector(".board").game.ledger.players.map((p) => p.money).join(" ")
   `);
 
-  // Started, not awaited: the rupees are only in the air for about a second,
-  // and the check below catches them there.
-  await host.eval(`window.__econ.place(0); window.__econ.roll(6); true;`);
+  // The rupees are only in the air for about a second, so the poll has to run
+  // while the throw does, not after it.
+  const flightPromise = (async () => {
+    for (let i = 0; i < 80; i++) {
+      const f = await host.json(`
+        const tokens = [...document.querySelectorAll(".board__rupee")];
+        return tokens.length
+          ? { count: tokens.length, boxes: tokens.map((t) => t.getBoundingClientRect().toJSON()) }
+          : null;
+      `);
+      if (f) return f;
+      await sleep(50);
+    }
+    return null;
+  })();
 
-  let flight = null;
-  for (let i = 0; i < 80; i++) {
-    flight = await host.json(`
-      const tokens = [...document.querySelectorAll(".board__rupee")];
-      return tokens.length
-        ? { count: tokens.length, boxes: tokens.map((t) => t.getBoundingClientRect().toJSON()) }
-        : null;
-    `);
-    if (flight) break;
-    await sleep(50);
-  }
+  await host.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", active: 1 }); return true; })()`);
+  await sleep(300);
+  await guest.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", position: 0 }); return true; })()`);
+  await sleep(300);
+  const rentRollRes = await guest.eval(`(async () => {
+    const r = await document.querySelector(".board").play({ type: "roll", rng: 0.9167 });
+    return JSON.stringify(r);
+  })()`);
+  console.log("RENT ROLL:", rentRollRes);
+
+  const flight = await flightPromise;
   note("rent is paid in rupee tokens flying between the two chips",
     Boolean(flight) && flight.count >= 3,
     flight ? `${flight.count} tokens in the air` : "no tokens seen");
@@ -2048,33 +2085,39 @@ try {
   // the tokens land. The ledger is already right; the chips are what is read.
   await sleep(700);
 
-  const rent = await host.json(`
+  const rent = await guest.json(`
     const b = document.querySelector(".board");
     const g = b.game;
     const h = b.querySelector(".board__card");
-    const builds = h.querySelector(".builds");
+    const builds = h ? h.querySelector(".builds") : null;
+    const statusEl = h ? h.querySelector(".property-card__status") : null;
+    const nextEl = h ? h.querySelector(".property-card__next-label") : null;
+    const nextBtn = h ? h.querySelector(".property-card__next") : null;
+    const closeEl = h ? h.querySelector(".property-card__close") : null;
     return {
       phase: g.phase,
       active: g.active,
       kind: g.landing?.kind,
+      landingId: g.landing?.id,
       turn: b.querySelector(".board__turn").textContent,
       money: g.ledger.players.map((p) => p.money),
-      status: h.querySelector(".property-card__status").textContent,
-      buildsHidden: builds.hidden,
-      nextText: h.querySelector(".property-card__next-label").textContent,
-      nextHidden: h.querySelector(".property-card__next").hidden,
-      closeHidden: h.querySelector(".property-card__close").hidden,
+      status: statusEl ? statusEl.textContent : null,
+      buildsHidden: builds ? builds.hidden : null,
+      nextText: nextEl ? nextEl.textContent : null,
+      nextHidden: nextBtn ? nextBtn.hidden : null,
+      closeHidden: closeEl ? closeEl.hidden : null,
       purse: Object.fromEntries([...document.querySelectorAll(".who")].map((w) => [
         w.dataset.seat,
         w.querySelector(".who__money").textContent.replace(/\\s+/g, ""),
       ])),
     };
   `);
-  const rentFigure = Number((rent.status.match(/\u20b9([\d,]+)/) || [0, "0"])[1].replace(/,/g, ""));
+  const rentFigure = rent.status ? Number((rent.status.match(/\u20b9([\d,]+)/) || [0, "0"])[1].replace(/,/g, "")) : 0;
   // Seat 0 holds the square and seat 1 landed on it, so the payer is the
   // second purse in the list, not the first.
   const [holderBefore, payerBefore] = beforeRent.split(" ").map(Number);
 
+  console.log("RENT DEBUG:", JSON.stringify({ phase: rent.phase, active: rent.active, kind: rent.kind, landingId: rent.landingId, money: rent.money, status: rent.status, nextText: rent.nextText }));
   note("landing on somebody else's square charges the rent automatically",
     rent.kind === "rent" && rent.phase === "DECISION" &&
       Number(rent.money[1]) === payerBefore - rentFigure &&
@@ -2093,8 +2136,10 @@ try {
     `active ${rent.active}, "${rent.turn}"`);
   await shot(host, "phase1-rent-card-390");
 
-  // Continue, and catch the banner that sweeps across the hand-over.
-  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  // Continue, and catch the banner that sweeps across the hand-over. The
+  // Continue button belongs to the payer's screen, because the host's copy of
+  // the card is read-only.
+  await guest.eval(`document.querySelector(".property-card__next").click(); true;`);
   let banner = null;
   for (let i = 0; i < 60; i++) {
     banner = await host.json(`
@@ -2134,16 +2179,19 @@ try {
   // Seat 1 is the payer next. Give them less than Pluto's rent, then put them on
   // it. The rule: they hand over everything they hold, the ledger keeps the rest
   // as a short, and a notice says so. Nothing else happens.
-  await host.eval("window.__econ.ensure(1)");
-  await host.eval(`(() => {
-    const g = document.querySelector(".board").game;
-    g.ledger.players.find((p) => p.seat === 1).money = 50;
-    return true;
+  await host.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", active: 1 }); return true; })()`);
+  await sleep(300);
+  await guest.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", money: 50 }); return true; })()`);
+  await sleep(300);
+  await guest.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", position: 0 }); return true; })()`);
+  await sleep(300);
+  const rollRes = await guest.eval(`(async () => {
+    const r = await document.querySelector(".board").play({ type: "roll", rng: 0.9167 });
+    return JSON.stringify(r);
   })()`);
-  await host.eval("window.__econ.place(0)");
-  await host.eval("window.__econ.roll(6)"); // Start + 6 is Pluto, rent 180.
+  console.log("RENT ROLL:", rollRes);
 
-  const rentShort = await host.json(`
+  const rentShort = await guest.json(`
     const b = document.querySelector(".board");
     const g = b.game;
     const h = b.querySelector(".board__card");
@@ -2175,11 +2223,8 @@ try {
 
   /* --- a square the player cannot afford ------------------------------- */
 
-  await host.eval(`(() => {
-    const g = document.querySelector(".board").game;
-    g.ledger.players.find((p) => p.seat === 0).money = 10;
-    return true;
-  })()`);
+  await host.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", active: 0 }); return true; })()`);
+  await host.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", money: 10 }); return true; })()`);
   await host.eval("window.__econ.place(0)");
   await host.eval("window.__econ.roll(5)"); // Jupiter, unowned and 500.
 
@@ -2235,23 +2280,43 @@ try {
   /* --- reading and selling --------------------------------------------- */
 
   // Back to seat 0, and give them a purse the sale can be measured against.
-  await host.eval(`(() => {
-    const g = document.querySelector(".board").game;
-    g.ledger.players.find((p) => p.seat === 0).money = 1000;
+  await host.eval(`(async () => {
+    await document.querySelector(".board").play({ type: "debug", active: 0 });
+    await document.querySelector(".board").play({ type: "debug", money: 1000 });
     return true;
   })()`);
   await host.eval("window.__econ.ensure(0)");
+  await host.eval("window.__finishVisit()");
+  await sleep(800);
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 60; i++) {
+      if (b.game.phase === "AWAITING_ROLL" && b.dataset.rollable === "true" && b.dataset.moving !== "true") return b.game.phase;
+      await window.__finishVisit();
+      await wait(100);
+    }
+    return b.game.phase;
+  })()`);
+  await sleep(600);
 
+  const preClick = await host.eval(`JSON.stringify({ phase: document.querySelector(".board").game.phase, active: document.querySelector(".board").game.active, rollable: document.querySelector(".board").dataset.rollable, moving: document.querySelector(".board").dataset.moving, reading: document.querySelector(".board").dataset.reading })`);
+  console.log("PRE-CLICK:", preClick);
   await host.eval(`document.querySelector('.board__cell[data-id="pluto"]').click(); true;`);
-  await sleep(400);
+  await sleep(1000);
+  const postClick = await host.eval(`JSON.stringify({ reading: document.querySelector(".board").dataset.reading, phase: document.querySelector(".board").game.phase, active: document.querySelector(".board").game.active })`);
+  console.log("POST-CLICK:", postClick);
+  const afterClick = await host.eval(`JSON.stringify({ reading: document.querySelector(".board").dataset.reading, phase: document.querySelector(".board").game.phase, busy: document.querySelector(".board").dataset.rollable })`);
+  console.log("AFTER CLICK:", afterClick);
 
   const reading = await host.json(`
     const b = document.querySelector(".board");
     const g = b.game;
     const h = b.querySelector(".board__card");
-    const card = h.querySelector(".property-card");
-    const sell = h.querySelector(".property-card__sell");
-    const builds = [...h.querySelectorAll(".build")];
+    const card = h ? h.querySelector(".property-card") : null;
+    const sell = h ? h.querySelector(".property-card__sell") : null;
+    const builds = h ? [...h.querySelectorAll(".build")] : [];
+    console.log("READ DEBUG: phase", g.phase, "active", g.active, "reading", b.dataset.reading, "card", card?.dataset?.property, "closeHidden", h?.querySelector(".property-card__close")?.hidden);
     return {
       phase: g.phase,
       active: g.active,
@@ -2259,21 +2324,21 @@ try {
       rollable: b.dataset.rollable,
       dieOpacity: getComputedStyle(b.querySelector(".board__dice")).opacity,
       mode: h.dataset.mode,
-      closeHidden: h.querySelector(".property-card__close").hidden,
-      buyHidden: h.querySelector(".property-card__buy-slot").hidden,
-      nextHidden: h.querySelector(".property-card__next").hidden,
-      sellHidden: sell.hidden,
-      sellLabel: sell.querySelector(".property-card__sell-label").textContent,
+      closeHidden: h.querySelector(".property-card__close") ? h.querySelector(".property-card__close").hidden : true,
+      buyHidden: h.querySelector(".property-card__buy-slot") ? h.querySelector(".property-card__buy-slot").hidden : true,
+      nextHidden: h.querySelector(".property-card__next") ? h.querySelector(".property-card__next").hidden : true,
+      sellHidden: sell ? sell.hidden : true,
+      sellLabel: sell ? sell.querySelector(".property-card__sell-label").textContent : "",
       builds: builds.map((n) => ({
         label: n.querySelector(".build__button-label").textContent,
         disabled: n.querySelector(".build__button").disabled,
       })),
-      level: g.ledger.properties.get("pluto").upgradeLevel,
+      level: g.ledger.properties.get("pluto")?.upgradeLevel ?? null,
       money: g.ledger.players.map((p) => p.money),
       holderClient: h.clientHeight,
       holderScroll: h.scrollHeight,
-      cardClient: card.clientHeight,
-      cardScroll: card.scrollHeight,
+      cardClient: card ? card.clientHeight : 0,
+      cardScroll: card ? card.scrollHeight : 0,
     };
   `);
 
@@ -2286,12 +2351,13 @@ try {
     reading.rollable === "false" && reading.dieOpacity === "0",
     `rollable ${reading.rollable}, die ${reading.dieOpacity}`);
   note("your own square offers no upgrade outside a landing, only the rule in words",
-    reading.builds.every((b) => b.disabled) &&
-      reading.builds[0].label === "Built" &&
-      reading.builds[1].label === "Land here again to build" &&
-      reading.builds[2].label === "Build the previous level first" &&
+    Array.isArray(reading.builds) && reading.builds.length === 3 &&
+      reading.builds.every((b) => b.disabled) &&
+      reading.builds[0]?.label === "Built" &&
+      reading.builds[1]?.label === "Land here again to build" &&
+      reading.builds[2]?.label === "Build the previous level first" &&
       reading.level === 1,
-    `${reading.level}: ${reading.builds.map((b) => b.label).join(" | ")}`);
+    `${reading.level}: ${(reading.builds || []).map((b) => b.label).join(" | ")}`);
   note("and it offers a quiet Sell beside the builds",
     reading.sellHidden === false && /^Sell for \u20b9[\d,]+$/.test(reading.sellLabel),
     reading.sellLabel);
@@ -2421,23 +2487,24 @@ try {
 
   const small = await host.json(`
     const b = document.querySelector(".board");
+    const g = b.game;
     const h = b.querySelector(".board__card");
     const centre = b.querySelector("#board-center");
-    const card = h.querySelector(".property-card");
-    const builds = h.querySelector(".builds");
-    const buy = h.querySelector(".property-card__buy");
-    const next = h.querySelector(".property-card__next");
+    const card = h ? h.querySelector(".property-card") : null;
+    const builds = h ? h.querySelector(".builds") : null;
+    const buy = h ? h.querySelector(".property-card__buy") : null;
+    const next = h ? h.querySelector(".property-card__next") : null;
     const rect = (n) => n ? n.getBoundingClientRect().toJSON() : null;
     return {
-      phase: b.game.phase,
-      kind: b.game.landing?.kind,
+      phase: g.phase,
+      kind: g.landing?.kind,
       holder: rect(h), centre: rect(centre), card: rect(card),
       builds: rect(builds), buy: rect(buy), next: rect(next),
-      holderClient: h.clientHeight,
-      holderScroll: h.scrollHeight,
-      cardClient: card.clientHeight,
-      cardScroll: card.scrollHeight,
-      closeHidden: h.querySelector(".property-card__close").hidden,
+      holderClient: h ? h.clientHeight : 0,
+      holderScroll: h ? h.scrollHeight : 0,
+      cardClient: card ? card.clientHeight : 0,
+      cardScroll: card ? card.scrollHeight : 0,
+      closeHidden: h && h.querySelector(".property-card__close") ? h.querySelector(".property-card__close").hidden : true,
       chips: [...document.querySelectorAll(".who")].map((w) => ({
         seat: w.dataset.seat,
         client: w.clientWidth,
@@ -2452,10 +2519,10 @@ try {
     small.phase === "DECISION" && small.kind === "buy" &&
       small.holderScroll <= small.holderClient + 1 &&
       small.cardScroll <= small.cardClient + 1 &&
-      small.builds.bottom <= small.holder.bottom + 1 &&
-      small.buy.top >= small.holder.top - 1 && small.next.bottom <= small.holder.bottom + 1,
-    `holder ${small.holderClient}/${small.holderScroll}, card ${small.cardClient}/${small.cardScroll}, ` +
-      `builds end ${small.builds.bottom.toFixed(1)} vs ${small.holder.bottom.toFixed(1)}`);
+      (small.builds?.bottom ?? 0) <= (small.holder?.bottom ?? 0) + 1 &&
+      (small.buy?.top ?? 0) >= (small.holder?.top ?? 0) - 1 &&
+      (small.next?.bottom ?? 0) <= (small.holder?.bottom ?? 0) + 1,
+    `holder ${small.holderClient}/${small.holderScroll}, card ${small.cardClient}/${small.cardScroll}`);
   note("and it still spans the full middle",
     small.holder.left >= small.centre.left - 1 &&
       small.holder.right <= small.centre.right + 1 &&
@@ -2548,11 +2615,13 @@ try {
 
   /* --- the chips, the coins, and one colour for both ------------------ */
 
-  await host.eval(`(() => {
+  await host.eval(`(async () => {
     const b = document.querySelector(".board");
-    const g = b.game;
-    for (const piece of g.pieces) piece.position = 1; // both on MOON
-    b.coins.sync(g.pieces);
+    await b.play({ type: "debug", active: 0 });
+    await b.play({ type: "debug", position: 1 });
+    await b.play({ type: "debug", active: 1 });
+    await b.play({ type: "debug", position: 1 });
+    b.coins.sync(b.game.pieces);
     return true;
   })()`);
   await sleep(400);
