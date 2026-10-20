@@ -57,7 +57,7 @@
 export const BOARD_SIZE = 28;
 
 /** A coin's diameter, as a fraction of one cell. */
-export const COIN_DIAMETER = 0.36;
+export const COIN_DIAMETER = 0.23;
 
 /** One hop, and the ceiling on a whole move however many hops that is. */
 export const STEP_MS = 160;
@@ -68,6 +68,9 @@ export const LIFT = 0.06;
 
 /** How long the final slide into a shared square takes. */
 export const SETTLE_MS = 260;
+
+/** How far down the cell the coin strip sits, as a fraction from the centre. */
+export const COIN_ROW_Y = 0.32;
 
 /**
  * The name a coin knows its player by.
@@ -121,12 +124,18 @@ export function pathFrom(from, steps, total = BOARD_SIZE) {
   return path;
 }
 
-/** The layouts, by how many coins a square is holding. */
+/** The layouts, by how many coins a square is holding. One row, in the lower
+    strip of the tile, so a coin can never sit on the name above it. */
 const LAYOUTS = Object.freeze({
-  1: [[0, 0]],
-  2: [[-0.2, 0], [0.2, 0]],
-  3: [[0, -0.22], [-0.21, 0.18], [0.21, 0.18]],
-  4: [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]],
+  1: [[0, COIN_ROW_Y]],
+  2: [[-0.2, COIN_ROW_Y], [0.2, COIN_ROW_Y]],
+  3: [[-0.3, COIN_ROW_Y], [0, COIN_ROW_Y], [0.3, COIN_ROW_Y]],
+  4: [
+    [-0.375, COIN_ROW_Y],
+    [-0.125, COIN_ROW_Y],
+    [0.125, COIN_ROW_Y],
+    [0.375, COIN_ROW_Y],
+  ],
 });
 
 /** Past four, the four-square layout is reused. There is no fifth player. */
@@ -137,9 +146,9 @@ const layoutFor = (count) =>
  * Where the nth of `count` coins stands on a shared square, as a fraction of the
  * cell from its centre.
  *
- * One is centred. Two are side by side. Three are a triangle - one above, two
- * below - because that is the shape that fits three discs in a square with room
- * left over. Four are a 2x2.
+ * One is in the lower strip. Two, three and four are a single row in that strip
+ * - side by side at first, then closer together as the square fills - because
+ * the lower strip is the only part of a tile the name does not use.
  *
  * Asking for a slot past the end of the layout returns the last one rather than
  * undefined, so a fifth coin lands beside the others on a real square instead of

@@ -33,19 +33,16 @@ export function turnLabel(name) {
 }
 
 /**
- * The turn pill, and a way to move it on.
+ * The turn pill, and a way to put it on a seat.
  *
- * Returns the element to place on the board plus `next()`, which is what the die
- * calls once it has landed. `players` is the roster as the board already has it,
- * and only the ones with a name count.
- *
- * `make` builds the element and defaults to the project's own; it is the same
- * seam the die's roll has for its clock, and it is here so that the rule above -
- * who plays, in what order, wrapping where - can be tested without a document
- * standing in for one. The rule is the part worth checking.
+ * It draws nothing and decides nothing. `set(seat)` is called with the game's
+ * own active seat and writes the name it belongs to; `hide()` is for the two
+ * phases where a throw cannot happen and the line would be a lie. The game is
+ * the only thing that moves the turn, and this is only where that fact is
+ * written down on screen.
  */
 export function turnPill(players = [], make = el) {
-  const named = (players || []).filter((p) => p && p.name);
+  const roster = players || [];
 
   const node = make("p", {
     class: "board__turn",
@@ -54,28 +51,25 @@ export function turnPill(players = [], make = el) {
     "aria-live": "polite",
   });
 
-  if (named.length === 0) {
-    node.hidden = true;
-    return { node, next() {} };
-  }
-
-  let seat = 0;
-  const show = () => {
-    const whose = named[seat % named.length];
-    node.textContent = turnLabel(whose.name);
+  const set = (seat) => {
+    const player = roster[Number(seat)];
+    if (!player || !player.name) {
+      node.hidden = true;
+      return null;
+    }
+    node.textContent = turnLabel(player.name);
     // Which seat is playing, read by the checks rather than by eye.
-    node.dataset.turn = String(seat % named.length);
-    node.dataset.name = whose.name;
+    node.dataset.turn = String(seat);
+    node.dataset.name = player.name;
     node.hidden = false;
+    return player.name;
   };
-  show();
 
-  return {
-    node,
-    /** The throw has landed: the turn goes to the next player. */
-    next() {
-      seat += 1;
-      show();
-    },
+  const hide = () => {
+    node.hidden = true;
   };
+
+  set(0);
+
+  return { node, set, hide };
 }

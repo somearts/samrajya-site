@@ -87,24 +87,34 @@ function coinNode(player, index) {
  * server will call when there is a server that knows who rolled what. Nothing
  * else here is meant to be driven from outside.
  */
-export function coins(board, { players = [], onLand = null } = {}) {
+export function coins(board, { players = [], pieces = null, onLand = null } = {}) {
   /* One source of truth for where everybody is. `position` is a board index,
      and nothing else keeps a copy of it - the DOM is redrawn from this, never
-     the other way round, so a coin and its state cannot disagree. */
+     the other way round, so a coin and its state cannot disagree.
+
+     When the game hands in its own pieces, their positions are the truth and
+     `sync` copies them here. The copy exists only so a coin can lag behind the
+     state while it walks: the game has already moved the piece, and the coin is
+     still catching up. */
   const state = {
     players: (players || [])
       .filter((p) => p && p.name)
-      .map((p, i) => ({
-        id: seatId(i),
-        name: p.name,
-        color: coinColor(p.civ),
-        position: 0,
-        // What this player is carrying. Empty to start, appended to by whoever
-        // hands them a weapon, and nothing here reads it except the name chip -
-        // there is no attacking yet, so a weapon is a thing you are seen with
-        // rather than a thing you can do.
-        weapons: [],
-      })),
+      .map((p, i) => {
+        const seat = Number.isInteger(p.seat) ? p.seat : i;
+        const piece = (pieces || []).find((q) => q.seat === seat) || null;
+        return {
+          id: seatId(seat),
+          seat,
+          name: p.name,
+          color: coinColor(p.civ),
+          position: piece ? piece.position : 0,
+          // What this player is carrying. Empty to start, appended to by whoever
+          // hands them a weapon, and nothing here reads it except the name chip -
+          // there is no attacking yet, so a weapon is a thing you are seen with
+          // rather than a thing you can do.
+          weapons: piece ? [...piece.weapons] : [],
+        };
+      }),
   };
 
   const layer = el("div", { class: "board__coins", "aria-hidden": "true" });
@@ -240,13 +250,13 @@ export function coins(board, { players = [], onLand = null } = {}) {
    * disabled for the duration, and a caller that got this far anyway is a bug
    * worth returning null for rather than a move to stack on top of another.
    */
-  async function movePlayer(playerId, steps) {
+  async function movePlayer(playerId, steps, { path: route = null, land = true } = {}) {
     if (run) return null;
 
     const player = state.players.find((p) => p.id === playerId);
     if (!player) return null;
 
-    const path = pathFrom(player.position, steps);
+    const path = route || pathFrom(player.position, steps);
     const hops = path.length - 1;
     const from = player.position;
     const to = path[path.length - 1];
@@ -295,10 +305,12 @@ export function coins(board, { players = [], onLand = null } = {}) {
       // that is not for sale closes whatever was open, because a card left on
       // screen from the last move is not this square's card.
       const cell = cells.get(to);
-      if (typeof onLand === "function") {
-        await onLand({ cell, player, index: to });
-      } else {
-        await showCard(board, (cell && isPurchasable(cell.dataset.id)) ? cell.dataset.id : "");
+      if (land) {
+        if (typeof onLand === "function") {
+          await onLand({ cell, player, index: to });
+        } else {
+          await showCard(board, (cell && isPurchasable(cell.dataset.id)) ? cell.dataset.id : "");
+        }
       }
 
       return { id: player.id, from, to, steps: hops };
@@ -311,6 +323,48 @@ export function coins(board, { players = [], onLand = null } = {}) {
       // the coin back where it already is, visibly, for no reason.
       setTimeout(() => layer.style.setProperty("--glide", "0ms"), SETTLE_MS + 60);
     }
+  }
+
+  /**
+   * Walk a coin along a path the game has already walked.
+   *
+   * The game's piece has already moved; this is the screen catching up, one hop
+   * at a time. It does not deal with the square: the board plays the events in
+   * their own order, and the landing is one of them.
+   */
+  async function walk(path, seat) {
+    const player =
+      state.players.find((p) => p.seat === seat) ||
+      state.players.find((p) => p.id === seat) ||
+      null;
+    if (!player) return null;
+
+    const clean = (path || []).filter((n) => Number.isInteger(n));
+    if (!clean.length) return null;
+    if (clean.length === 1) {
+      player.position = clean[0];
+      layout(0);
+      highlight(clean[0], player);
+      return { id: player.id, from: clean[0], to: clean[0], steps: 0 };
+    }
+    return movePlayer(player.id, clean.length - 1, { path: clean, land: false });
+  }
+
+  /**
+   * Take the game's positions and weapons as the new truth.
+   *
+   * The board calls this after every action except a roll, whose walk is still
+   * playing: syncing mid-walk would put the coin on its destination before it
+   * had travelled there.
+   */
+  function sync(pieces = []) {
+    for (const player of state.players) {
+      const piece = (pieces || []).find((p) => p.seat === player.seat);
+      if (!piece) continue;
+      player.position = piece.position;
+      player.weapons = [...(piece.weapons || [])];
+    }
+    layout(0);
   }
 
   /* ------------------------------------------------------------- resizing */
@@ -332,7 +386,10 @@ export function coins(board, { players = [], onLand = null } = {}) {
     node: layer,
     state,
     movePlayer,
+    walk,
+    sync,
     clearHighlight,
+    setPieces: sync,
     /** Whether a coin is in the air. The die asks before it will throw. */
     isMoving: () => Boolean(run),
     /** Put everyone back on Start. For a new game, not for a move. */

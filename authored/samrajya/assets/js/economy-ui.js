@@ -3,7 +3,7 @@
 
    Four small jobs, none of which knows a rule:
 
-     the purse beside each name, kept live,
+     the purse beside each name, kept live and counted,
      the mark on a square that somebody holds,
      the line of confirmation after a rent is paid,
      and the level pips that say how far a square is built.
@@ -22,10 +22,10 @@
    every name would shift when a square changed hands. An overlay draws on top
    of the tile and displaces nothing.
 
-   Built levels get three pips along the bottom edge, in the same colour. They
-   are the only thing on a tile that says a square has been developed, and they
-   are what lets a player see the shape of their opponent's holdings at a glance
-   rather than by opening twenty cards.
+   Built levels get three pips in the TOP RIGHT corner, in the same colour. They
+   moved there from the bottom edge when the coins did: the lower strip belongs
+   to the coins now, and a pip under a coin reads as part of it. The corner is
+   the one part of a tile neither the name nor the coin uses.
    ========================================================================== */
 
 import { el } from "./dom.js";
@@ -36,6 +36,18 @@ import { rupees } from "./shared/economy.js";
 /** How long a confirmation stays up before it takes itself away. */
 const TOAST_MS = 2600;
 
+/** How long the balance takes to count to its new figure. */
+export const COUNT_MS = 500;
+
+/** Reduce the work for a reader who has asked for less motion. */
+function still() {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
 /**
  * The purse for a seat, as it is written on the board.
  *
@@ -45,10 +57,67 @@ export function purseOf(ledger, seat) {
   return rupees(moneyOf(ledger, seat));
 }
 
-/** Repaint every purse on the page from the ledger. */
-export function syncPurses(root, ledger) {
+/** The figure without its sign, for the span that carries the sign separately. */
+export function figureOf(amount) {
+  return rupees(amount).slice(1);
+}
+
+/**
+ * Count a figure to its new value.
+ *
+ * The rupee sign is a sibling span, so it does not flicker while the number
+ * counts. `dataset.value` is the honest value - the text is a performance of it
+ * over half a second, and a check that reads the state rather than the frame can
+ * use it.
+ */
+function countTo(node, target, animate) {
+  const from = Number(node.dataset.value ?? target);
+  node.dataset.value = String(target);
+  const write = (value) => {
+    node.textContent = figureOf(value);
+  };
+
+  if (!animate || still() || from === target || typeof requestAnimationFrame !== "function") {
+    write(target);
+    return;
+  }
+
+  const started = performance.now();
+  const tick = (now) => {
+    const t = Math.min(1, (now - started) / COUNT_MS);
+    const eased = 1 - Math.pow(1 - t, 3);
+    write(Math.round(from + (target - from) * eased));
+    if (t < 1) requestAnimationFrame(tick);
+    else write(target);
+  };
+  requestAnimationFrame(tick);
+}
+
+/**
+ * Repaint every purse on the page from the ledger.
+ *
+ * `animate: false` is for the first paint: a board arriving should show the
+ * money it starts with, not count up to it from a number nobody saw.
+ */
+export function syncPurses(root, ledger, { animate = true } = {}) {
   for (const node of root.querySelectorAll(".who[data-seat]")) {
-    node.querySelector(".who__money").textContent = purseOf(ledger, Number(node.dataset.seat));
+    const seat = Number(node.dataset.seat);
+    const money = moneyOf(ledger, seat);
+    const figure = node.querySelector(".who__figure");
+    if (figure) countTo(figure, money, animate);
+    else node.querySelector(".who__money").textContent = purseOf(ledger, seat);
+    node.dataset.money = String(money);
+    node.querySelector(".who__money")?.setAttribute("aria-label", purseOf(ledger, seat));
+  }
+}
+
+/** Mark the seat whose turn it is, and only that seat. */
+export function syncActive(root, seat) {
+  for (const node of root.querySelectorAll(".who[data-seat]")) {
+    const on = Number(node.dataset.seat) === Number(seat);
+    node.classList.toggle("who--active", on);
+    const tag = node.querySelector(".who__turn");
+    if (tag) tag.hidden = !on;
   }
 }
 

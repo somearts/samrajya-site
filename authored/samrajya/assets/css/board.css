@@ -225,16 +225,20 @@
 }
 
 /* No pips on a square nobody has built anything on: an unowned square has
-   `--pips: 0`, and zero of anything is simply nothing. */
+   `--pips: 0`, and zero of anything is simply nothing.
+
+   They live in the TOP RIGHT corner. They used to run along the bottom edge,
+   which was the one strip of the tile the coins did not use - until the coins
+   moved down there. Now the lower strip belongs to the coins, the name owns the
+   middle, and the corner is the only part of a tile left over. */
 .board__cell::before {
   content: "";
   position: absolute;
-  left: 50%;
-  bottom: calc(var(--cell) * 0.045);
+  right: calc(var(--cell) * 0.07);
+  top: calc(var(--cell) * 0.06);
   z-index: 2;
-  width: calc(var(--cell) * 0.34);
-  height: max(2px, calc(var(--cell) * 0.028));
-  transform: translateX(-50%);
+  width: calc(var(--cell) * 0.26);
+  height: max(2px, calc(var(--cell) * 0.026));
   pointer-events: none;
 
   /* One mark per build. The stripes are drawn here rather than as child nodes
@@ -242,11 +246,11 @@
   background: repeating-linear-gradient(
     to right,
     color-mix(in srgb, var(--owner, var(--ink)) 62%, transparent) 0,
-    color-mix(in srgb, var(--owner, var(--ink)) 62%, transparent) calc(var(--cell) * 0.085),
-    transparent calc(var(--cell) * 0.085),
-    transparent calc(var(--cell) * 0.115)
+    color-mix(in srgb, var(--owner, var(--ink)) 62%, transparent) calc(var(--cell) * 0.072),
+    transparent calc(var(--cell) * 0.072),
+    transparent calc(var(--cell) * 0.094)
   );
-  background-size: calc(var(--pips, 0) * var(--cell) * 0.115) 100%;
+  background-size: calc(var(--pips, 0) * var(--cell) * 0.094) 100%;
   background-repeat: no-repeat;
   opacity: min(1, var(--pips, 0));
 }
@@ -323,24 +327,13 @@
 
 .board__cell[data-landed] {
   box-shadow: inset 0 0 calc(var(--cell) * 0.18) rgb(0 0 0 / 0.26);
-}
-
-.board__cell[data-landed]::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  /* Eight percent. The wash is meant to be found rather than looked for, and at
-     twelve the blue coin turned its square into a blue square, which says
-     something louder than "somebody is standing here". */
-  background: color-mix(in srgb, var(--land) 8%, transparent);
-  pointer-events: none;
-  animation: land-in 250ms ease-out both;
-}
-
-@keyframes land-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  /* Eight percent, laid on the cell itself rather than on an overlay. It used to
+     be a ::before, and that put it in the same slot as the build pips - so a
+     coin standing on a square with builds made the pips vanish. The cell's own
+     background is the honest place for a wash, and it leaves ::before free for
+     the one thing that needs a pseudo-element. */
+  background: color-mix(in srgb, var(--land) 8%, var(--cell-ground));
+  transition: background 240ms ease-out;
 }
 
 /* ------------------------------------------------------------ a corner cell
@@ -357,7 +350,10 @@
   align-content: center;
   justify-items: center;
   gap: 0;
-  padding: 7% 3%;
+  /* The bottom is left clear for the coins. A corner keeps its rule and its
+     name above that strip, because a coin parked over the word START is a coin
+     covering the one thing on the tile a player reads. */
+  padding: 6% 3% 28%;
 
   /* Its own container, so the name below is sized against the cell rather than
      the board. Eleven characters - AKASH CORE, MARKETPLACE - have to fit
@@ -572,8 +568,8 @@
     transition: none;
   }
 
-  .board__cell[data-landed]::before {
-    animation: none;
+  .board__cell[data-landed] {
+    transition: none;
   }
 }
 
@@ -1897,4 +1893,578 @@ button.board__cell--chest:focus-visible {
   box-shadow:
     0 2px 8px rgb(18 17 16 / 0.3),
     0 0 0 1px color-mix(in srgb, var(--cell-ground) 22%, transparent);
+}
+/* ==========================================================================
+   PHASE ONE - THE LANDING SCREEN, THE CHIPS, AND WHAT AN ACTION LOOKS LIKE
+
+   Everything below is an addition to the board rather than a replacement for
+   it. The geometry, the cells and the card's own body are untouched; what is
+   here is the phase contract (what is on screen while the turn is in each
+   phase), the decision card's full-middle rectangle, the three buttons a card
+   can wear, the player chip, and the six small animations.
+   ========================================================================== */
+
+/* ------------------------------------------------------------ the phase
+
+   THE DIE AND THE TURN LINE BELONG TO ONE PHASE.
+
+   A throw can only start in AWAITING_ROLL, so that is the only phase in which
+   either of them is visible. `data-rollable` is written by board.js from the
+   game's phase, and it is deliberately narrower than `data-phase`:
+   AWAITING_ROLL with a read-only card open is still not rollable, because a
+   tap outside that card must not throw the die underneath it.
+
+   `data-throwing` is the one exception, and it is not a phase: the state has
+   already left AWAITING_ROLL by the time the coin starts walking, so the die
+   would be hidden before its own throw had been seen. It keeps the die up for
+   exactly the length of the throw, then gets out of the way. */
+
+.board__dice,
+.board__turn {
+  transition:
+    opacity 250ms ease-out,
+    transform 250ms ease-out;
+}
+
+.board[data-rollable="false"] .board__dice {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.82);
+  pointer-events: none;
+}
+
+.board[data-rollable="false"] .board__turn {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.94);
+}
+
+.board[data-throwing="true"] .board__dice {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: none;
+}
+
+/* The read-only card owns the middle while it is up, and the die waits at the
+   edge of the board rather than being pressed through the card. */
+.board[data-reading="true"] .board__dice,
+.board[data-reading="true"] .board__turn {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------- the decision rectangle
+
+   WHEN THE CARD OWNS THE MIDDLE
+
+   A read-only card is a popup: it floats in the top three rows and the board is
+   still visible around it. A decision is not a popup. The turn has stopped, the
+   player must answer, and the card is allowed the whole four-by-eight middle -
+   which is also the only way the card and its three build rows fit a 360x700
+   phone without a scroll.
+
+   `data-mode` is written on the holder by property-card.js and it, not the
+   phase, is what decides the rectangle: the card has to keep the full-middle
+   shape for the 240ms it takes to slide away after Buy, and the phase has
+   already changed to RESOLVING by then. */
+
+.board__card[data-mode="decision"] {
+  left: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
+  top: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
+  width: calc(var(--cell) * 4 + var(--hair) * 3 - var(--card-gap) * 2);
+  height: calc(var(--cell) * 8 + var(--hair) * 9 - var(--card-gap) * 2);
+  max-height: calc(var(--cell) * 8 + var(--hair) * 9 - var(--card-gap) * 2);
+  overflow: hidden;
+  overscroll-behavior: contain;
+  /* No fade: there is nothing below to scroll to. A mask here would dim the
+     last build row and say there was more, which is the one thing this card
+     must not say. */
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
+/* The card is its own height and the holder is exactly the middle. */
+.board__card[data-mode="decision"] .property-card {
+  height: auto;
+  min-height: 0;
+  row-gap: calc(var(--cell) * 0.065);
+}
+
+/* Compact build rows, first.
+
+   The full read-only row has a name, a cost, a sentence and a "rent becomes"
+   foot. On a decision the player is choosing between them, not reading about
+   them, and the sentence is what keeps three rows from fitting. The row keeps
+   the two facts that matter - what it becomes, and what it costs - and gives
+   the rest of its height back to the card. */
+.board__card[data-mode="decision"] .builds {
+  gap: calc(var(--cell) * 0.055);
+  padding-top: calc(var(--cell) * 0.04);
+  padding-bottom: calc(var(--cell) * 0.04);
+}
+
+.board__card[data-mode="decision"] .build {
+  gap: calc(var(--cell) * 0.02);
+  padding: calc(var(--cell) * 0.04) calc(var(--cell) * 0.055);
+}
+
+.board__card[data-mode="decision"] .build__description {
+  display: none;
+}
+
+.board__card[data-mode="decision"] .build__foot {
+  padding-top: 0;
+}
+
+/* The advantage keeps one line in a decision. Two are still in the data, and
+   the full card shows both; this is the one place where the rectangle is fixed
+   and the prose has to give way rather than push a button off the edge. */
+.board__card[data-mode="decision"] .property-card__advantage-text {
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+
+.board__card[data-mode="decision"] .property-card__advantage {
+  padding-top: 3%;
+}
+
+/* ---------------------------------------------------------- the close button
+
+   Reading only. A decision has no way out except answering it, and a close
+   button on a card that cannot be closed is a lie - so `syncCard` hides it and
+   the stylesheet makes sure a hidden button is not a tiny empty hole. */
+
+.property-card__close {
+  position: absolute;
+  top: calc(var(--cell) * 0.045);
+  right: calc(var(--cell) * 0.045);
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: max(20px, calc(var(--cell) * 0.34));
+  height: max(20px, calc(var(--cell) * 0.34));
+  padding: 0;
+  border: 1px solid rgb(18 17 16 / 0.14);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cell-ground) 86%, transparent);
+  font-size: max(13px, calc(var(--cell) * 0.19));
+  line-height: 1;
+  color: var(--ink-soft);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.property-card__close:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 32%, transparent);
+}
+
+.property-card__close:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.property-card__close[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------- Pass, Done, Continue
+
+   One pill, three words. It sits directly under Buy, because the two answers to
+   an unowned square belong together, and it is quiet in proportion to what it
+   does: Pass and Done are secondary, and Continue - the acknowledgement of rent
+   or a weapon - is the only one that carries the accent, because it is the only
+   one with nothing to decide. */
+
+.property-card__next {
+  display: block;
+  width: 100%;
+  padding: 0.42em 0.7em;
+  border: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
+  border-radius: 6px;
+  background: transparent;
+  font-size: max(10px, calc(var(--cell) * 0.135));
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background 140ms ease-out, border-color 140ms ease-out;
+}
+
+.property-card__next:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  border-color: color-mix(in srgb, var(--ink) 42%, transparent);
+}
+
+.property-card__next:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.property-card__next[data-kind="rent"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--cell-ground);
+}
+
+.property-card__next[hidden] {
+  display: none;
+}
+
+/* --------------------------------------------------------------- the sell pill
+
+   The quietest control on the board. It is not part of a turn and it should not
+   look like it is: a line of small caps under the builds, with a hairline above
+   it, and no fill at all. The confirm step is the label changing, not a second
+   button appearing, so the card never moves under the finger that is using it. */
+
+.property-card__sell {
+  display: block;
+  width: 100%;
+  margin-top: calc(var(--cell) * 0.075);
+  padding: calc(var(--cell) * 0.06) 0.6em calc(var(--cell) * 0.02);
+  border: 0;
+  border-top: 1px solid rgb(18 17 16 / 0.09);
+  background: none;
+  font-size: max(8px, calc(var(--cell) * 0.108));
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--ink-soft);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.property-card__sell:hover {
+  color: var(--ink);
+}
+
+.property-card__sell[data-armed="true"] {
+  color: var(--ink);
+}
+
+.property-card__sell:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.property-card__sell[hidden] {
+  display: none;
+}
+
+/* Hidden is hidden. Several things below carry an author `display`, and an
+   author display beats the browser's own `[hidden]` rule - which is how a
+   button that is meant to be gone keeps a hole in the layout. */
+.builds[hidden] {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ the chip
+
+   THE CHIP, REDRAWN
+
+   First line: a coin disc in the civilization's own colour, the name, a small
+   TURN tag on the active seat, and the civilization in small caps.
+   Second line: the balance, in light Jost with tabular digits.
+
+   The disc is not decoration. It is the same `coinColor(civ)` the board coin,
+   the owner's ring and the flying rupee tokens use - one source of truth for
+   who a player is on this board, so a red coin never belongs to a blue chip.
+
+   NO OVERFLOW AT 360
+
+   Both chips share one row, each `flex: 1 1 0` with `min-width: 0`, and every
+   text child is allowed to ellipsis rather than push. A name is the last thing
+   to give way, but it is allowed to give way: a chip that overflows its border
+   is worse than a name with a dot at the end. */
+
+.board-who {
+  gap: 0.35rem;
+  align-items: stretch;
+}
+
+.who {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 0.32em;
+  row-gap: 0.12em;
+  padding: 0.34em 0.55em 0.3em;
+  border-radius: 3px;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.who__coin {
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  width: max(7px, 0.62em);
+  height: max(7px, 0.62em);
+  border-radius: 50%;
+  background: var(--coin, var(--ink));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--coin, var(--ink)) 55%, white),
+    0 1px 2px rgb(18 17 16 / 0.22);
+}
+
+.who__name {
+  grid-column: 2;
+  grid-row: 1;
+  font-weight: 300;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.who__turn {
+  grid-column: 3;
+  grid-row: 1;
+  padding: 0.08em 0.32em;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--coin, var(--ink)) 16%, transparent);
+  font-size: max(6.5px, 0.5rem);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  color: color-mix(in srgb, var(--coin, var(--ink)) 76%, var(--ink));
+  white-space: nowrap;
+}
+
+.who__turn[hidden] {
+  display: none;
+}
+
+.who__civ {
+  grid-column: 4;
+  grid-row: 1;
+  justify-self: end;
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  color: var(--ink-soft);
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.who--me .who__civ {
+  color: var(--ink);
+}
+
+.who__money {
+  grid-column: 1 / 4;
+  grid-row: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  margin-top: 0.08em;
+  font-size: 0.9rem;
+  font-weight: 300;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.who--me .who__money {
+  font-weight: 300;
+}
+
+.who__rupee {
+  font-size: 0.6em;
+  opacity: 0.55;
+}
+
+.who__weapons {
+  grid-column: 4;
+  grid-row: 2;
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  gap: 2px;
+  height: 8px;
+  min-width: 0;
+}
+
+.who--active {
+  border-color: color-mix(in srgb, var(--coin, var(--ink)) 58%, var(--line));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--coin, var(--ink)) 22%, transparent),
+    0 1px 4px rgb(18 17 16 / 0.08);
+}
+
+.who--active .who__name {
+  font-weight: 400;
+}
+
+/* On a phone the civilization name is the first thing to give way. The coin
+   already carries the civilization's colour, and the chip's one job is to keep
+   the player's name readable beside the TURN tag. Without this, a name and a
+   long civilization cannot both fit a 360px chip, and the name is what a
+   player is looking for. */
+@media (max-width: 430px) {
+  .who__civ {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------ what an action looks like
+
+   Six small pieces of motion, all 300-700ms, all driven from an event rather
+   than from a state difference. They are deliberately quiet: this is a board
+   game on a phone, and the point of the animation is to show where a number
+   went, not to be the thing you watch.
+
+   Every one of them is decorative. The information has already been written by
+   the time the animation starts, and reduced motion gets the information with a
+   fade instead of the travel. */
+
+.board__lift {
+  position: absolute;
+  z-index: 32;
+  padding: 0.1em 0.35em;
+  border-radius: 999px;
+  background: var(--centre-ground);
+  box-shadow: 0 1px 4px rgb(18 17 16 / 0.16);
+  font-size: max(9px, calc(var(--cell) * 0.125));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.board__lift--earn {
+  color: color-mix(in srgb, var(--ink) 55%, var(--accent, var(--ink)));
+}
+
+.board__rupee {
+  position: absolute;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: max(12px, calc(var(--cell) * 0.26));
+  height: max(12px, calc(var(--cell) * 0.26));
+  border-radius: 50%;
+  background: var(--cell-ground);
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  font-size: max(7px, calc(var(--cell) * 0.13));
+  font-weight: 600;
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgb(18 17 16 / 0.2);
+  pointer-events: none;
+}
+
+.board__passed {
+  position: absolute;
+  z-index: 31;
+  padding: 0.2em 0.55em;
+  border-radius: 999px;
+  background: var(--corner-ground);
+  font-size: max(7.5px, calc(var(--cell) * 0.1));
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cell-ground);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.board__banner {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  z-index: 34;
+  margin: 0;
+  padding: 0.5em 1.1em;
+  border-radius: 999px;
+  background: var(--corner-ground);
+  box-shadow: 0 4px 16px rgb(18 17 16 / 0.28);
+  font-size: max(11px, calc(var(--cell) * 0.165));
+  font-weight: 300;
+  letter-spacing: 0.04em;
+  color: var(--cell-ground);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.board__banner--mine {
+  background: var(--ink);
+}
+
+/* The ring draws itself clockwise from the top left. `clip-path` is animated on
+   the ::after rather than a conic gradient, because the border is already the
+   right colour and shape and only needs revealing. */
+.board__cell.is-just-bought::after {
+  animation: ring-sweep 620ms cubic-bezier(0.22, 0.7, 0.3, 1) both;
+}
+
+@keyframes ring-sweep {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* A pip filling, with a soft pulse. Scale only, so nothing around it moves. */
+.board__cell.is-just-built::before {
+  animation: pip-pop 460ms cubic-bezier(0.22, 0.7, 0.3, 1) both;
+  transform-origin: right center;
+}
+
+@keyframes pip-pop {
+  0%   { transform: scale(0.6); opacity: 0.4; }
+  55%  { transform: scale(1.25); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.board__cell.is-just-landed {
+  animation: land-pulse 400ms ease-out both;
+}
+
+@keyframes land-pulse {
+  0%   { box-shadow: inset 0 0 0 rgb(0 0 0 / 0); }
+  45%  { box-shadow: inset 0 0 calc(var(--cell) * 0.3) rgb(0 0 0 / 0.32); }
+  100% { box-shadow: inset 0 0 calc(var(--cell) * 0.18) rgb(0 0 0 / 0.26); }
+}
+
+/* The gentle refusal. A pill that cannot do what it was pressed for shakes
+   once, briefly, and stays exactly where it was. */
+.board__shake {
+  animation: pill-shake 260ms ease-in-out both;
+}
+
+@keyframes pill-shake {
+  0%, 100% { transform: translateX(0); }
+  25%      { transform: translateX(-3px); }
+  50%      { transform: translateX(3px); }
+  75%      { transform: translateX(-2px); }
+}
+
+/* Reduced motion: the information, no travel. */
+
+@media (prefers-reduced-motion: reduce) {
+  .board__dice,
+  .board__turn,
+  .board__cell[data-landed] {
+    transition: none;
+  }
+
+  .board__cell.is-just-bought::after,
+  .board__cell.is-just-built::before,
+  .board__cell.is-just-landed {
+    animation: none;
+  }
+
+  .board__banner,
+  .board__lift,
+  .board__rupee,
+  .board__passed {
+    animation: none;
+  }
 }

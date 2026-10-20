@@ -15,9 +15,9 @@
 import { el, button, focusFirst } from "./dom.js";
 import { masthead } from "./wordmark.js";
 import { board } from "./board.js";
-import { purseOf } from "./economy-ui.js";
-import { createLedger } from "./shared/ledger.js";
-import { choices, civById } from "./shared/civilizations.js";
+import { purseOf, figureOf } from "./economy-ui.js";
+import { createGame } from "./shared/game.js";
+import { choices, civById, coinColor } from "./shared/civilizations.js";
 import { NAME_MAX } from "./shared/identity.js";
 
 /* ------------------------------------------------------------------ welcome */
@@ -505,16 +505,17 @@ export function boardView(state, actions) {
   const room = state.room;
   const players = (room?.players || []).filter((p) => p.name);
 
-  /* THE LEDGER
-     ----------
+  /* THE GAME
+     --------
      Built once and kept on `state`, so leaving the board and coming back to it
      returns to the same game rather than to a fresh one. Nothing is saved
-     between visits - a refresh starts again - and that is stated in the ledger's
+     between visits - a refresh starts again - and that is stated in the game's
      own file rather than hidden here. */
-  if (!state.ledger || state.ledger.players.length !== players.length) {
-    state.ledger = createLedger(players);
+  if (!state.game || state.game.ledger.players.length !== players.length) {
+    state.game = createGame(players);
   }
-  const ledger = state.ledger;
+  const game = state.game;
+  const ledger = game.ledger;
 
   // The two identities with the matchup between them. The VS goes in as a real
   // child rather than as a ::before on one of the blocks, because it has to sit
@@ -522,22 +523,44 @@ export function boardView(state, actions) {
   // on the outside, reading as a suffix on the first name. With one player there
   // is no matchup and no VS is drawn.
   //
-  // The purse sits on the same block as the name it belongs to, and carries the
-  // seat in a data attribute: it is the only handle the board has back to the
-  // player, and `syncPurses` finds every purse on the page by that.
+  // THE CHIP
+  // --------
+  // A coin disc in the player's own civilization colour, the name, the
+  // civilization, and - on the active seat - the word TURN in small caps. The
+  // balance is its own line underneath: light digits, a rupee sign at six tenths
+  // the size and quieter, because the number is the thing and the sign is the
+  // label. The disc's colour comes from the same `coinColor` call the board coin
+  // and the owner's ring use, so the three cannot drift apart.
   const roster = el("div", { class: "board-who" },
     players
       .map((p, i) => {
         const seat = players.indexOf(p);
+        const civ = civById(p.civ);
+        const money = purseOf(ledger, seat);
         return [
           i > 0 ? el("span", { class: "who__vs", text: "VS" }) : null,
           el("div", {
             class: `who${room.seat === seat ? " who--me" : ""}`,
             "data-seat": String(seat),
+            "data-civ": p.civ || "",
+            style: { "--coin": coinColor(p.civ) || "var(--ink)" },
           }, [
+            el("span", { class: "who__coin", "aria-hidden": "true" }),
             el("span", { class: "who__name", text: p.name }),
-            el("span", { class: "who__civ", text: `${civById(p.civ)?.name ?? "Unchosen"}` }),
-            el("span", { class: "who__money", text: purseOf(ledger, seat) }),
+            el("span", { class: "who__civ", text: `${civ?.name ?? "Unchosen"}` }),
+            el("span", { class: "who__turn", hidden: true, text: "TURN" }),
+            el("span", {
+              class: "who__money",
+              "aria-label": money,
+            }, [
+              el("span", { class: "who__rupee", "aria-hidden": "true", text: "₹" }),
+              el("span", {
+                class: "who__figure",
+                "data-value": String(ledger.players.find((x) => x.seat === seat)?.money ?? 0),
+                text: figureOf(ledger.players.find((x) => x.seat === seat)?.money ?? 0),
+              }),
+            ]),
+            el("span", { class: "who__weapons", "aria-hidden": "true" }),
           ]),
         ];
       })
@@ -545,7 +568,7 @@ export function boardView(state, actions) {
       .filter(Boolean),
   );
 
-  const theBoard = board({ players, ledger });
+  const theBoard = board({ players, game, seat: Number.isInteger(room?.seat) ? room.seat : 0 });
   // The room is on the board itself, which is what lets a test - and anyone
   // with a screen reader - tell one game from another.
   theBoard.dataset.room = state.room?.roomId || "";

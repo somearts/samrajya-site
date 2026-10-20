@@ -164,6 +164,17 @@ export function chestCard({ drawable = false } = {}) {
     style: { "--accent": "var(--ink)" },
     "aria-live": "polite",
   }, [
+    drawable
+      ? null
+      : el("button", {
+          type: "button",
+          class: "property-card__close",
+          "aria-label": "Close",
+          title: "Close",
+          "data-action": "close",
+          text: "\u00d7",
+        }),
+
     el("div", { class: "property-card__head" }, [
       // No sigil here, and no "COMMUNITY CHEST" label where the price would go.
       // The head is one column and the title has it all. The label was removed
@@ -294,7 +305,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
  * luck has been said and the card has closed itself. `drawable` decides whether
  * a draw is offered at all.
  */
-export async function showChest(board, { drawable = false, onWeapon = null, onClose = null } = {}) {
+export async function showChest(
+  board,
+  { drawable = false, draw = null, collect = null, onWeapon = null, onClose = null } = {},
+) {
   const holder = board.querySelector(".board__card");
   if (!holder) return null;
 
@@ -322,16 +336,27 @@ export async function showChest(board, { drawable = false, onWeapon = null, onCl
   if (!drawable) {
     // Opened by hand: there is nothing to do here, and saying so with a
     // disabled pill is better than pretending a visit happened.
+    const close = card.querySelector('[data-action="close"]');
+    if (close) {
+      close.addEventListener("click", () => {
+        if (typeof onClose === "function") onClose();
+        holder.hidden = true;
+        holder.replaceChildren();
+        holder.dataset.property = "";
+        delete holder.dataset.cardKind;
+        board.dataset.property = "";
+      }, { once: true });
+    }
     return { drawn: null, resolved: true };
   }
 
-  const draw = card.querySelector('[data-action="draw"]');
+  const drawButton = card.querySelector('[data-action="draw"]');
   const result = card.querySelector(".chest-card__result");
   const slots = [...card.querySelectorAll(".chest-card__slot")];
 
   const drawn = await new Promise((resolve) => {
-    draw.addEventListener("click", async () => {
-      draw.disabled = true;
+    drawButton.addEventListener("click", async () => {
+      drawButton.disabled = true;
       card.dataset.phase = "drawing";
 
       /* The shuffle. */
@@ -352,7 +377,8 @@ export async function showChest(board, { drawable = false, onWeapon = null, onCl
         await wait(SHUFFLE_MS);
       }
 
-      const outcome = drawWeapon();
+      const outcome =
+        typeof draw === "function" ? await draw() : drawWeapon();
       card.dataset.phase = outcome === "bad-luck" ? "bad-luck" : "revealed";
       await reveal(card, slots, outcome, result, { still: still() });
       resolve(outcome);
@@ -372,11 +398,12 @@ export async function showChest(board, { drawable = false, onWeapon = null, onCl
 
   /* Something did: the player collects it, which is what makes it theirs. */
   await new Promise((resolve) => {
-    const collect = card.querySelector('[data-action="collect"]');
-    collect.addEventListener("click", async () => {
-      collect.disabled = true;
+    const collectButton = card.querySelector('[data-action="collect"]');
+    collectButton.addEventListener("click", async () => {
+      collectButton.disabled = true;
       card.dataset.phase = "collecting";
       await flyToName(board, card, drawn, { still: still() });
+      if (typeof collect === "function") await collect(drawn);
       if (typeof onWeapon === "function") await onWeapon(drawn);
       resolve(drawn);
     }, { once: true });

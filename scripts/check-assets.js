@@ -388,7 +388,7 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
   );
   check(
     "and it is thrown by pressing it, never on its own",
-    /makeThrowable\(die,/.test(boardJs) &&
+    /die\.addEventListener\("click"/.test(boardJs) &&
       /data-face="0"/.test(diceCode) &&
       /root\.addEventListener\("click"/.test(diceCode) &&
       /animation: dice-throw/.test(boardCss),
@@ -491,7 +491,9 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
     "the result is drawn before the animation starts, from a single draw",
     /const drawn = random\(\);/.test(diceCode) &&
       diceCode.indexOf("const drawn = random();") <
-        diceCode.indexOf('root.dataset.rolling = "true"'),
+        diceCode.indexOf("const chosen = DICE_FACES[") &&
+      diceCode.indexOf("const chosen = DICE_FACES[") <
+        diceCode.indexOf("return throwTo(root, chosen"),
     "a roll that searched for its face as it landed could be interrupted",
   );
   check(

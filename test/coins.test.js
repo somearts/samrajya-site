@@ -178,8 +178,14 @@ test("a hop is 160ms and a whole move is held inside its budget", () => {
 
 /* ---------------------------------------------------------------- the slots */
 
-test("one coin on a square stands in the middle of it", () => {
-  assert.deepEqual(slotAt(1, 0), [0, 0]);
+test("one coin on a square stands in the lower strip, clear of the name", () => {
+  const [x, y] = slotAt(1, 0);
+  assert.equal(x, 0);
+  assert.ok(y > 0.25, "it sits below the middle of the tile");
+  assert.ok(
+    y + COIN_DIAMETER / 2 <= 0.5,
+    `${(y + COIN_DIAMETER / 2).toFixed(2)} from the centre still clears the edge`,
+  );
 });
 
 test("two coins stand side by side, and not on top of each other", () => {
@@ -190,14 +196,22 @@ test("two coins stand side by side, and not on top of each other", () => {
   assert.ok(gap >= COIN_DIAMETER, `${gap.toFixed(2)} apart, which clears ${COIN_DIAMETER}`);
 });
 
-test("three stand in a triangle and four in a square", () => {
-  assert.equal(slotAt(3, 2)[1], 0.18, "the third is below the first");
-  assert.notEqual(slotAt(3, 0)[1], slotAt(3, 1)[1], "the first is on its own line");
-
+test("three and four stand in one row, and every pair still clears", () => {
+  const three = [0, 1, 2].map((n) => slotAt(3, n));
   const four = [0, 1, 2, 3].map((n) => slotAt(4, n));
+  assert.ok(three.every((p) => p[1] === three[0][1]), "three are on one line");
+  assert.ok(four.every((p) => p[1] === four[0][1]), "four are on one line");
   assert.equal(new Set(four.map((p) => p.join(","))).size, 4, "four places, four coins");
-  assert.equal(new Set(four.map((p) => p[0])).size, 2, "two columns");
-  assert.equal(new Set(four.map((p) => p[1])).size, 2, "two rows");
+  assert.ok(four[0][0] < four[1][0], "in order, left to right");
+  assert.ok(four[3][0] - four[0][0] + COIN_DIAMETER <= 1, "the row fits inside the tile");
+  for (const layout of [three, four]) {
+    for (let i = 0; i < layout.length; i += 1) {
+      for (let j = i + 1; j < layout.length; j += 1) {
+        const gap = Math.hypot(layout[i][0] - layout[j][0], layout[i][1] - layout[j][1]);
+        assert.ok(gap >= COIN_DIAMETER, `${gap.toFixed(2)} apart`);
+      }
+    }
+  }
 });
 
 test("and no layout ever puts two coins closer than they are wide", () => {
@@ -221,10 +235,10 @@ test("asking for a slot that is not there gives a real one, not a hole", () => {
   for (const [count, n] of [[2, 5], [3, 9], [4, 12], [1, 3]]) {
     const [x, y] = slotAt(count, n);
     assert.ok(Number.isFinite(x) && Number.isFinite(y), `${count}/${n} is a place`);
-    assert.ok(Math.abs(x) <= 0.25 && Math.abs(y) <= 0.25, `${count}/${n} is inside the cell`);
+    assert.ok(Math.abs(x) <= 0.5 && Math.abs(y) <= 0.5, `${count}/${n} is inside the cell`);
   }
-  // And past four coins the four-square layout is reused, so a fifth lands on a
-  // square's first corner rather than on top of it.
+  // And past four coins the four-coin layout is reused, so a fifth lands beside
+  // the others rather than on top of one.
   assert.deepEqual(slotAt(5, 0), slotAt(4, 0));
 });
 

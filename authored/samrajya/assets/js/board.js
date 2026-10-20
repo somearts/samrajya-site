@@ -1,7 +1,8 @@
 /* ==========================================================================
    SAMRAJYA - THE BOARD
 
-   Twenty-eight cells in a six-by-ten grid, and nothing else.
+   Twenty-eight cells in a six-by-ten grid, one die, two coins, and the turn
+   that moves them.
 
    THE GEOMETRY IS THE REQUIREMENT, so it is declared once, as a grid, and every
    cell is placed into it by the coordinates the data gives it:
@@ -10,53 +11,71 @@
    row  1    .  .  .  .  .  .
         2    .  .  .  .  .  .
         ...
-       10    .  .  .  .  .  .
+        10    .  .  .  .  .  .
 
    Every track is the same length, `--cell`, so all twenty-eight cells are the
    same square by construction - corners included. There is no code that could
-   make two of them differ, and nothing to keep in step. The earlier board was
-   8x8 with corner tracks at 16.85% and six 1fr tracks beside them, which made
-   the corners a third larger than the cells next to them and gave the top row
-   a different orientation from the sides; a square board cannot do that without
-   one of the two orientations being wrong, and it was.
+   make two of them differ, and nothing to keep in step.
 
-   Cells are numbered in the order a game travels them, starting at START in the
-   bottom-left and going clockwise - up the left column, across the top, down
-   the right, back along the bottom. That index and the cell's coordinates are
-   the same fact, and both come from the same record in shared/spaces.js, so
-   they cannot drift apart.
+   THE TURN IS NOT KEPT HERE
+   -------------------------
+   `shared/game.js` owns it. This file calls `applyAction`, plays the events it
+   returns, and draws the phase it lands in. It never decides whose turn it is,
+   never advances a seat, and never checks a rule a second time: when the card
+   says "one build per visit", that sentence came from the same function the
+   server will call in Phase 2.
 
-   WHAT IS IN A CELL NOW
-   --------------------
-   The four corners carry their mark, their name and the rule beneath it. A
-   property carries a pill in its set's colour and its name. A chest carries
-   its name in cream on the dark ground and no pill. The card artwork that
-   belongs behind the pill is the next piece of work and is not drawn here; the
-   cells have their ids, indices and art paths on them from the start, so
-   putting artwork in is adding a child rather than rebuilding the board.
+   The one place the board writes a turn fact is `paintPhase`, and it writes it
+   DOWN - the die's visibility, the turn line, the chip's ring - from the state
+   it was handed. Nothing here sets the active player except by asking the game
+   to continue a finished turn.
+
+   WHAT A TAP MEANS
+   ----------------
+   When the game is waiting for a throw, a tap on a square opens a read-only
+   card. It cannot change the turn, and the die steps aside while it is up so
+   the same tap cannot throw. When the game is waiting for a decision, the only
+   live things are the card's own buttons: a tap on another square is ignored,
+   because leaving without answering is not something a visit allows.
    ========================================================================== */
 
 import { el } from "./dom.js";
 import { cornerMark } from "./corner-art.js";
-import { dice, makeThrowable } from "./dice.js";
+import { dice, throwTo } from "./dice.js";
 // The layer draws the coins; the rules they obey - including the name a seat
 // goes by - are in coins.js, which imports nothing and is tested on its own.
 import { coins } from "./coin-layer.js";
 import { seatId } from "./coins.js";
-import { chestPending, renderWeapons, showChest } from "./chest-card.js";
-import { RAGNAROK } from "./shared/weapons.js";
-import { showCard, syncCard } from "./property-card.js";
-import { markBoard, rentMessage, syncPurses, toast } from "./economy-ui.js";
+import { renderWeapons, showChest } from "./chest-card.js";
+import { RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
+import { hideCard, showCard, syncCard } from "./property-card.js";
+import {
+  markBoard,
+  rentMessage,
+  syncActive,
+  syncPurses,
+  toast,
+} from "./economy-ui.js";
 import { turnPill } from "./turn.js";
 import { isPurchasable } from "./shared/properties.js";
 import {
-  buy as buySquare,
-  createLedger,
-  nameOfSeat,
-  payRent,
-  upgrade as upgradeSquare,
-} from "./shared/ledger.js";
+  ENABLE_SELL,
+  PHASE,
+  applyAction,
+  createGame,
+} from "./shared/game.js";
+import { rupees } from "./shared/economy.js";
 import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
+import {
+  banner,
+  cardAway,
+  flyRent,
+  lift,
+  passedLabel,
+  pipPulse,
+  ringDraw,
+  shake,
+} from "./board-fx.js";
 
 /**
  * The four corners, and the mark each one carries.
@@ -65,12 +84,6 @@ import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
  * the corner it names. The marks are the project's own - `corner-art.js` draws
  * all four as one-stroke instruments in a single weight, and they are not being
  * redrawn for a new size, only laid out again at it.
- *
- * The three that were renamed used to carry ids from a board that no longer
- * exists - `omega`, `akash-core`, `marketplace` - and were kept that way on the
- * argument that ids are wiring, not display. They are wiring, and they have been
- * rewritten everywhere they are used, so the argument held for a change nobody
- * asked for rather than for one worth making.
  */
 const CORNER_MARKS = Object.freeze({
   start: "start",
@@ -79,6 +92,7 @@ const CORNER_MARKS = Object.freeze({
   fight: "fight",
 });
 
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
 /**
  * The middle: a die, in the board's own colours.
@@ -141,26 +155,14 @@ function nameLines(cell) {
  * Any cell that is not a corner.
  *
  * A property carries a pill in its set's colour above its name. A chest carries
- * only its name, in cream on the dark ground, because a chest belongs to no set
- * and a pill in no set's colour would be saying something false about it.
- *
- * Properties are real buttons, so a property is reachable by keyboard and
- * announces itself as one; the cells have no handler yet and that is deliberate -
- * a button that does nothing is still a button the reader can find, and it is
- * the same element that will take the tap when there is one. Chests are
- * ordinary cells for now and become buttons the same way when they do.
+ * only its name, because a chest belongs to no set and a pill in no set's
+ * colour would be saying something false about it.
  */
 function plainCell(cell) {
   const isChest = cell.type === "chest";
 
-  // One style object, built once. It was two, and the second replaced the first:
-  // a `style` key written after the spread overwrites the gridColumn and
-  // gridRow that came with it, every property button lost its coordinates and
-  // the grid auto-placed them - which still puts 28 squares on 28 board
-  // positions, and still passes a count, and still leaves every pixel inside a
-  // cell. The cells were simply in the wrong places. A cell's position is not
-  // optional, so it is assembled alongside everything else the cell needs and
-  // handed over once.
+  // One style object, built once. A cell's position is not optional, so it is
+  // assembled alongside everything else the cell needs and handed over once.
   const style = {
     gridColumn: String(cell.col),
     gridRow: String(cell.row),
@@ -183,15 +185,8 @@ function plainCell(cell) {
   };
 
   if (isChest) {
-    // A chest's wash is black, set by the stylesheet, because a chest belongs
-    // to no set and has no colour of its own to tint with.
-    //
-    // Ragnarok is the exception, and it is now a button. The rule the other
-    // seven follow is that a square you cannot act on should not be a button,
-    // because a button that does nothing is still one a reader can find and
-    // press. Ragnarok has stopped being that: it opens a card, and a player can
-    // look at what the armoury is. The other three chests and the four corners
-    // still do nothing, and still are not buttons.
+    // Ragnarok is a button because it opens a card. The other three chests and
+    // the four corners still do nothing, and still are not buttons.
     if (cell.id !== RAGNAROK.id) {
       return el("div", props, [nameLines(cell)]);
     }
@@ -229,17 +224,14 @@ function plainCell(cell) {
 }
 
 /**
- * Build the board.
+ * Build the board and the game on it.
  *
- * Returns the element. It is built in one go rather than patched, because the
- * board does not change while it is on screen and there is nothing to
- * reconcile.
- *
- * `players` is the roster, and is only read for the turn pill: a board built
- * without one still renders, and the pill simply stays hidden rather than
- * naming a turn nobody has.
+ * `players` is the room's roster. `game` is optional and is how a game survives
+ * leaving the board and coming back; without one a fresh game is made. The
+ * game is kept on the element (`frame.game`) for the same reason the coin layer
+ * is: the board is built once and lives for the whole match.
  */
-export function board({ players = [], ledger: given = null } = {}) {
+export function board({ players = [], game: given = null, seat: mySeat = null } = {}) {
   const frame = el("div", {
     class: "board",
     role: "group",
@@ -247,14 +239,8 @@ export function board({ players = [], ledger: given = null } = {}) {
   });
 
   // Columns 2 to 5, rows 2 to 9 - the four by eight that is not part of the
-  // ring. Placed on lines rather than on a named area, because the grid's cells
-  // are placed individually now and there is no template for a name to sit in.
-  //
-  // It covers the gaps inside its own span on purpose. In the reference the
-  // middle is one unbroken field with a line of text on it, so the grid's lines
-  // do not cross it - they stop where the ring stops. Lines 2 to 4 across and
-  // lines 2 to 8 down are drawn only in the two side columns and the two end
-  // rows, which is what the reference draws.
+  // ring. It covers the gaps inside its own span on purpose, so the grid's
+  // lines stop where the ring stops.
   //
   // No longer aria-hidden: it used to hold only decoration, but it now holds the
   // die, and a die that says which number it came up is the one thing in here
@@ -274,8 +260,8 @@ export function board({ players = [], ledger: given = null } = {}) {
   frame.append(centreArea, ...cells);
 
   // The card's box. It is empty and hidden until a property is pressed; the
-  // stylesheet is what puts it in the upper middle, inside the rectangle the
-  // six tiles named in property-card.js bound off.
+  // stylesheet is what puts it in the upper middle, or across the whole middle
+  // when the game has stopped for a decision.
   const card = el("div", { class: "board__card", hidden: true });
   frame.append(card);
 
@@ -284,287 +270,444 @@ export function board({ players = [], ledger: given = null } = {}) {
   // to mean something a player asked for.
   const die = centreArea.querySelector(".board__dice");
 
-  // The turn pill, under the die. It is put in the middle rather than over the
-  // board so that it lands in the same two rows the die is in and can be
-  // positioned from the die's own edge. It advances when the die has LANDED,
-  // not when it is touched, so the pill never names a player who is still
-  // mid-throw.
+  // The turn line, under the die. It names the seat the game says is active;
+  // the stylesheet takes it away in every phase where a throw cannot happen.
   const turn = turnPill(players);
   centreArea.append(turn.node);
 
-  /* THE LEDGER
-     ---------
-     Who holds what and who has how much. Built here from the roster, or handed
-     in from outside so a game survives leaving the board and coming back to it.
+  /* ------------------------------------------------------------- the game */
 
-     It lives on the board element for the same reason the coin layer does: the
-     board is built once when the screen opens and is not rebuilt while it is
-     open, so this is a place that survives a whole game. Everything that reads
-     it - the card, the purses, the marks on the squares - is given the same
-     object rather than a copy of it.
+  let game = given || createGame(players);
+  let cardMode = "read";
+  let reading = false;
+  let busy = false;
 
-     WHOSE CARD IS IT?
-     The card answers to whoever's turn it is, read from the pill rather than
-     captured once, because a card left open across a throw has to belong to
-     the player who is about to act on it. */
-  const ledger = given || createLedger(players);
-  frame.ledger = ledger;
-
-  const seatNow = () => {
-    const seat = Number(turn.node?.dataset?.turn);
-    if (!Number.isInteger(seat)) return null;
-    // Looked up by seat rather than by index: they are the same thing here, and
-    // a lookup that says so is a lookup that survives the two ever differing.
-    return ledger.players.some((p) => p.seat === seat) ? seat : null;
-  };
-
-  /** Everything on screen that the ledger decides, repainted from the ledger. */
-  const refresh = () => {
-    const root = frame.closest(".board-screen") || document;
-    syncPurses(root, ledger);
-    markBoard(frame, ledger);
-    syncCard(frame, ctx);
-  };
-
-  const ctx = {
-    ledger,
-    get seat() {
-      return seatNow();
-    },
-
-    /* Buying and building.
-     *
-     * Both are one line: ask the ledger, and if it said yes, repaint. The
-     * ledger is what refuses, so this file never has to - and a refusal that
-     * came from somewhere else than the button being grey would be a rule the
-     * card and the ledger disagreed about.
-     *
-     * The card is NOT redrawn. `syncCard` rewrites the figures on the card
-     * already on screen, so a player can buy and then keep buying without the
-     * card turning away and back each time. */
-    onBuy: () => {
-      const id = frame.querySelector(".board__card")?.dataset.property;
-      const seat = seatNow();
-      if (!id || seat === null) return;
-      const verdict = buySquare(ledger, id, seat);
-      refresh();
-      if (!verdict.ok) toast(frame, verdict.why, { tone: "refused" });
-    },
-
-    onUpgrade: (n) => {
-      const id = frame.querySelector(".board__card")?.dataset.property;
-      const seat = seatNow();
-      if (!id || seat === null) return;
-      const verdict = upgradeSquare(ledger, id, seat);
-      refresh();
-      if (!verdict.ok) toast(frame, verdict.why, { tone: "refused" });
-      else toast(frame, `${nameOfSeat(ledger, seat)} built ${verdict.upgrade.name}.`, { tone: "good" });
-    },
-  };
-
-  // The coins. Every player has one, and they all start on Start, and the layer
-  // takes no taps so the squares underneath stay pressable.
-  const pieces = coins(frame, {
-    players,
-
-    /* WHAT A LANDING MEANS.
-
-       The coin layer knows where a coin stopped and knows nothing else. What
-       that square does about it is this file's business, because it is the only
-       place that knows what each square is for.
-
-       Ragnarok runs a draw. A property shows its card. Anything else - a
-       corner, or one of the three chests with nothing decided for them yet -
-       closes whatever was open and says nothing, which is the honest answer for
-       a square that has not been given a purpose. */
-    onLand: async ({ cell, player }) => {
-      const landingSeat = pieces.state.players.indexOf(player);
-
-      if (cell?.dataset.id === RAGNAROK.id) {
-        await showChest(frame, {
-          drawable: true,
-          onWeapon: (weaponId) => {
-            player.weapons.push(weaponId);
-            renderWeapons(document, landingSeat, player.weapons);
-          },
-        });
-        return;
-      }
-
-      /* RENT.
-
-         Paid on landing and not asked for: a square somebody holds charges
-         whoever steps on it, and making a player press a button to be charged
-         would be a rule the board did not say out loud.
-
-         Landing on your own square charges you nothing and a square nobody holds
-         charges you nothing - both are the same answer here, because in each
-         case there is nobody to pay. Only a refusal is worth saying out loud,
-         and the one refusal there is happens when the purse is short of the
-         rent, which is worth a player being told rather than discovering. */
-      if (landingSeat >= 0 && isPurchasable(cell?.dataset.id)) {
-        const id = cell.dataset.id;
-        const verdict = payRent(ledger, id, landingSeat);
-        if (verdict.paid) {
-          refresh();
-          toast(frame, rentMessage(ledger, verdict), { tone: "rent" });
-        } else if (!verdict.ok) {
-          refresh();
-          toast(frame, verdict.why, { tone: "refused" });
-        }
-      }
-
-      /* A CHEST WAITING ON A DRAW OUTRANKS A LANDING.
-
-         The tap handler and the throw handler both refuse to replace a chest
-         that has not been answered. This one did not, and it could: a throw
-         begun while a chest was open still moves a coin, and the square it lands
-         on would then close the chest mid-shuffle and take the draw with it.
-
-         The money above has already moved and that is correct - the landing
-         happened, and a rent is owed whether or not a card is on screen. What is
-         refused is only the card. */
-      if (chestPending(frame)) return;
-
-      await showCard(frame, cell && isPurchasable(cell.dataset.id) ? cell.dataset.id : "", ctx);
-    },
-  });
-  // The handle `theCoins()` reads, so `movePlayer` can be driven from outside
-  // this module. It is a reference to the same object the board is using - not a
-  // copy, and not a second set of coins.
-  frame.coins = pieces;
-
-  // And the turn, for the same reason. Handing the turn over is `next()`, and
-  // the only other way to do it is to throw the die - which also moves a coin,
-  // which is a great deal more than "hand the turn over" means. A check that
-  // wants to look at a square from the other player's side should not have to
-  // roll for it.
+  frame.game = game;
+  frame.ledger = game.ledger;
   frame.turn = turn;
 
-  /* THE ONE PLACE A ROLL BECOMES A MOVE
-     ----------------------------------
-     The die and the turn pill already work and are not rebuilt here. What this
-     adds is the one fact neither of them keeps: WHO threw.
+  /* A way to take one action from outside the board, with the die's generator
+     injectable. The checks use it to play a real turn to a square they chose;
+     nothing in the page calls it, and it takes the same lock a press does. */
+  frame.play = (action, rng) => run(action, { rng });
 
-     That has to be read at the moment of the roll, before `turn.next()` runs,
-     because advancing the turn is what changes the answer. Read afterwards the
-     pill is already naming the next player and the wrong coin moves - a bug that
-     would only show with two players on a board, and would look like the coins
-     were moving on their own.
+  const root = () => frame.closest(".board-screen") || document;
+  const holder = () => frame.querySelector(".board__card");
+  const idOnCard = () => holder()?.dataset.property || "";
+  const cellAt = (id) => frame.querySelector(`.board__cell[data-id="${id}"]`);
+  const isDecision = () => game.phase === PHASE.DECISION;
 
-     So the seat is captured on the way in and carried until the die lands. The
-     listeners are registered BEFORE makeThrowable's, so the capture happens
-     first on every tap. */
-  let rolling = null;
+  /** Everything on screen that the game decides, repainted from the game. */
+  const paint = ({ animate = true } = {}) => {
+    syncPurses(root(), game.ledger, { animate });
+    markBoard(frame, game.ledger);
+    syncActive(root(), game.active);
+    for (const piece of game.pieces) {
+      renderWeapons(root(), piece.seat, piece.weapons);
+    }
+    syncCard(frame, context());
+    paintPhase();
+  };
 
-  const capture = () => {
-    rolling = playerIdAtSeat(turn, players);
-    // A card left open from the last turn is closed as this one starts. Tapping
-    // a square by hand still opens one, which is the existing behaviour and is
-    // untouched - this only clears what the last roll left behind.
-    //
-    // Except a chest waiting on a draw. Clearing that would let a throw abandon
-    // a visit before it was answered, which is the one thing Ragnarok promises
-    // it will not do.
-    if (chestPending(frame)) return;
-    showCard(frame, "", ctx);
-    pieces.clearHighlight();
+  /**
+   * The die, the turn line, and the tab stops, all from pointer-events and from
+   * the phase. A decision has no die; neither does a read-only card, because a
+   * card that can be dismissed by a tap is not a card you can throw past.
+   */
+  const paintPhase = () => {
+    frame.dataset.phase = game.phase;
+    frame.dataset.active = game.active === null ? "" : String(game.active);
+    frame.dataset.reading = reading ? "true" : "false";
+    frame.dataset.cardMode = cardMode;
+    turn.set(game.active);
+    const rollable = game.phase === PHASE.AWAITING_ROLL && !reading && !busy;
+    die?.setAttribute("tabindex", rollable ? "0" : "-1");
+    die?.setAttribute("aria-hidden", String(!rollable));
+    frame.dataset.rollable = rollable ? "true" : "false";
+  };
+
+  /* --------------------------------------------------------------- the ctx */
+
+  /**
+   * What the card is allowed to ask for.
+   *
+   * The card itself calls `applyAction` indirectly through these; it never owns
+   * a rule. The seat and the mode are read at the moment of the click rather
+   * than captured when the card was drawn, so a card that outlives its turn
+   * cannot act as the player who opened it.
+   */
+  const context = () => ({
+    ledger: game.ledger,
+    game,
+    seat: game.active,
+    mode: cardMode,
+    sellEnabled: ENABLE_SELL,
+    onBuy: () => run({ type: "buy" }),
+    onPass: () => run({ type: "pass" }),
+    onUpgrade: () => run({ type: "upgrade" }),
+    onContinue: () => run({ type: "continue" }),
+    onSell: (id) => run({ type: "sell", id }),
+    onClose: () => closeRead(),
+  });
+
+  /* ----------------------------------------------------------- one action */
+
+  /**
+   * Do one action, play what it caused, and let the turn settle.
+   *
+   * `step` is the action itself. `run` is a person's action: it takes the input
+   * lock and then asks the game to settle wherever the action left it. The
+   * split matters for the events inside a chest, which are actions too but must
+   * not each take and release the lock.
+   */
+  async function run(action, { rng } = {}) {
+    if (busy) return null;
+    busy = true;
+    paintPhase();
+    try {
+      if (action.type === "roll") {
+        if (reading) closeRead();
+        pieces.clearHighlight();
+      }
+      const result = await step(action, { rng });
+      // A refused action changed nothing, so there is nothing to settle. Settling
+      // anyway would re-open the decision card and wipe the shake that is the
+      // refusal's whole visible answer.
+      const refusedHere = result?.events?.some(
+        (event) => event.type === "refused" && event.action === action.type,
+      );
+      if (!refusedHere) await settle();
+      return result;
+    } finally {
+      busy = false;
+      paintPhase();
+    }
+  }
+
+  /** One action, its events, and the repaint after them. No settling. */
+  async function step(action, { rng } = {}) {
+    const before = game;
+    let result;
+    try {
+      result = applyAction(game, action, rng);
+    } catch (error) {
+      toast(frame, error?.message || "The game could not do that.", { tone: "refused" });
+      return null;
+    }
+
+    const no = result.events.find((event) => event.type === "refused");
+    if (no && no.action === action.type) {
+      toast(frame, no.why, { tone: "refused" });
+      const target =
+        action.type === "buy"
+          ? holder()?.querySelector(".property-card__buy")
+          : action.type === "upgrade"
+            ? holder()?.querySelector(".build__button:not([disabled])")
+            : action.type === "sell"
+              ? holder()?.querySelector(".property-card__sell")
+              : die;
+      shake(target);
+      return result;
+    }
+    // A rent that could not be paid is a fact inside a successful throw, not a
+    // refused throw. The visit still happens, and the card still opens.
+    if (no) toast(frame, no.why, { tone: "refused" });
+
+    game = result.state;
+    frame.game = game;
+    frame.ledger = game.ledger;
+    paintPhase();
+    // The card is put in step with the new state BEFORE the animation runs, so
+    // a purchase stops offering itself at the instant it is accepted and the
+    // build rows show what they have become while the ring is still drawing.
+    // Waiting for the animation would leave a live Buy button under the finger.
+    syncCard(frame, context());
+
+    await playEvents(result.events);
+
+    // The coin already walked during `moved`; syncing here is what puts the
+    // weapons and the final slot on screen without moving anybody twice.
+    pieces.sync(game.pieces);
+    paint({ animate: true });
+
+    // A property decision that has just been answered takes its card away. A
+    // chest card closes itself, because it has a reveal to finish first.
+    if (
+      before.phase === PHASE.DECISION &&
+      game.phase !== PHASE.DECISION &&
+      cardMode === "decision" &&
+      holder()?.dataset.cardKind === "property"
+    ) {
+      await dismissCard();
+    }
+
+    return result;
+  }
+
+  /** Play the events in the order they happened. */
+  async function playEvents(events) {
+    for (const event of events) {
+      switch (event.type) {
+        case "moved": {
+          // The state has already left AWAITING_ROLL, so the die would be
+          // hidden by then. `data-throwing` keeps it up for exactly the length
+          // of its own throw, then the phase takes it away.
+          frame.dataset.throwing = "true";
+          await Promise.all([
+            pieces.walk(event.path, event.seat),
+            die ? throwTo(die, event.face) : Promise.resolve(),
+          ]);
+          delete frame.dataset.throwing;
+          break;
+        }
+
+        case "landed": {
+          const cell = cellAt(event.id);
+          if (cell) {
+            cell.classList.add("is-just-landed");
+            setTimeout(() => cell.classList.remove("is-just-landed"), 420);
+          }
+          break;
+        }
+
+        case "bought": {
+          // The ring is drawn before the purse is repainted, so the square
+          // changes hands on screen at the same moment the money leaves.
+          markBoard(frame, game.ledger);
+          ringDraw(cellAt(event.id));
+          // Count the purse while the price is lifting, not half a second
+          // later: a "-₹400" floating over a balance that still says the old
+          // figure is two answers to the same question.
+          paint({ animate: true });
+          lift(root(), frame, event.seat, `-${rupees(event.price)}`, { tone: "spend" });
+          toast(frame, `Bought ${event.name}`, { tone: "good" });
+          await wait(560);
+          break;
+        }
+
+        case "upgraded": {
+          markBoard(frame, game.ledger);
+          pipPulse(cellAt(event.id));
+          paint({ animate: true });
+          lift(root(), frame, event.seat, `-${rupees(event.cost)}`, { tone: "spend" });
+          toast(frame, `${event.name} built`, { tone: "good" });
+          await wait(420);
+          break;
+        }
+
+        case "sold": {
+          markBoard(frame, game.ledger);
+          paint({ animate: true });
+          lift(root(), frame, event.seat, `+${rupees(event.payout)}`, { tone: "earn" });
+          toast(frame, `Sold for ${rupees(event.payout)}`, { tone: "good" });
+          await wait(320);
+          break;
+        }
+
+        case "passed": {
+          await passedLabel(root(), frame, event.seat);
+          break;
+        }
+
+        case "rentPaid": {
+          await flyRent(root(), frame, event);
+          paint({ animate: true });
+          toast(frame, rentMessage(game.ledger, event), { tone: "rent" });
+          await wait(260);
+          break;
+        }
+
+        case "weaponDrawn":
+        case "weaponCollected":
+          // The chest card reveals and flies the weapon itself; the chip is
+          // repainted from the game's pieces at the end of the step.
+          break;
+
+        case "turnChanged": {
+          // The ring and the TURN tag move with the banner, not after it. The
+          // banner is naming the player whose chip is already emphasised; a
+          // banner over a chip that still says the old player is a lie for as
+          // long as it is on screen.
+          paint({ animate: true });
+          const mine = mySeat !== null && event.to === Number(mySeat);
+          await banner(frame, mine ? "Your turn" : `${event.name}\u2019s turn`, { mine });
+          break;
+        }
+
+        default:
+          break;
+      }
+    }
+  }
+
+  /* -------------------------------------------------------------- settling */
+
+  /**
+   * Walk the phases to wherever the turn is waiting.
+   *
+   * MOVING and RESOLVING are animation moments, and `continue` is the client
+   * saying "that has finished". TURN_END is the one action that changes the
+   * active seat; after it the next turn is ready for its throw. DECISION stops
+   * the walk and opens the card.
+   */
+  async function settle() {
+    for (let guard = 0; guard < 10; guard += 1) {
+      if (game.phase === PHASE.DECISION) {
+        await openDecision();
+        // A property decision waits for its player. A chest resolves inside
+        // `openDecision` (draw, collect, bad luck), so the walk carries on.
+        if (game.phase === PHASE.DECISION) return;
+        continue;
+      }
+      if (game.phase === PHASE.MOVING) {
+        await step({ type: "continue" });
+        continue;
+      }
+      if (game.phase === PHASE.RESOLVING) {
+        await wait(260);
+        await step({ type: "continue" });
+        continue;
+      }
+      if (game.phase === PHASE.TURN_END) {
+        await wait(220);
+        await step({ type: "continue" });
+        continue;
+      }
+      return;
+    }
+  }
+
+  /** Open the card the decision belongs to, and wait for the player. */
+  async function openDecision() {
+    const landing = game.landing;
+    if (!landing) return;
+
+    if (landing.kind === "chest") {
+      cardMode = "decision";
+      reading = false;
+      paintPhase();
+      await showChest(frame, {
+        drawable: true,
+        // The draw is an action. The card shuffles and reveals; the game
+        // chooses. There is no second random generator behind the glass.
+        draw: async () => {
+          const result = await step({ type: "drawWeapon" });
+          const drawn = result?.events.find((event) => event.type === "weaponDrawn");
+          return drawn?.weapon || BAD_LUCK;
+        },
+        collect: async () => {
+          await step({ type: "collectWeapon" });
+        },
+        onWeapon: () => paint({ animate: false }),
+      });
+      cardMode = "read";
+      frame.dataset.reading = "false";
+      // Bad luck leaves the visit open until it is acknowledged; collecting
+      // leaves it in RESOLVING. Either way the phase settles from here.
+      if (game.phase === PHASE.DECISION && game.landing?.kind === "chest") {
+        await step({ type: "continue" });
+      }
+      return;
+    }
+
+    if (!landing.id || !isPurchasable(landing.id)) return;
+    cardMode = "decision";
+    reading = false;
+    paintPhase();
+    await showCard(frame, landing.id, context());
+  }
+
+  /** Slide the decision card away and take it out of the holder. */
+  async function dismissCard() {
+    await cardAway(holder());
+    hideCard(frame);
+    cardMode = "read";
+    frame.dataset.cardMode = "read";
+  }
+
+  /* ------------------------------------------------------------------ cards */
+
+  function openRead(id) {
+    if (game.phase !== PHASE.AWAITING_ROLL) return;
+    reading = true;
+    cardMode = "read";
+    paintPhase();
+
+    if (id === RAGNAROK.id) {
+      showChest(frame, { drawable: false, onClose: () => closeRead() });
+      return;
+    }
+    if (!isPurchasable(id)) {
+      closeRead();
+      return;
+    }
+    showCard(frame, id, context());
+  }
+
+  function closeRead() {
+    reading = false;
+    cardMode = "read";
+    hideCard(frame);
+    paintPhase();
+  }
+
+  /* -------------------------------------------------------------- the die */
+
+  const rollIt = () => {
+    if (busy || reading) return;
+    if (game.phase !== PHASE.AWAITING_ROLL) return;
+    run({ type: "roll" });
   };
 
   if (die) {
-    die.addEventListener("click", capture);
+    die.addEventListener("click", rollIt);
     die.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
-      capture();
+      event.preventDefault();
+      rollIt();
     });
-
-    makeThrowable(die, (face) => {
-      const who = rolling;
-      rolling = null;
-      turn.next();
-      if (who) pieces.movePlayer(who, face);
-    });
-
-    /* THE DIE IS OFF WHILE A COIN IS IN THE AIR
-       ----------------------------------------
-       A second throw landing on top of a move in progress would move two coins
-       from one roll. The die is an SVG with a role, not a real button, so
-       `disabled` does nothing to it - what actually stops a throw is stopping
-       the event on its way in.
-
-       That is done on `centreArea` in the capture phase rather than on the die.
-       Listeners on the element itself fire in registration order whatever their
-       phase, so one added to the die would run first only by accident of being
-       added first; on an ancestor, the capture phase is guaranteed to run before
-       the die's own listeners, which is the property being relied on here. */
-    /* AND THE DIE IS OFF WHILE A CHEST IS WAITING ON A DRAW.
-
-       The same guard, for a second reason. `capture` above refuses to close a
-       pending chest, but that only stops the card being cleared - the throw
-       itself still ran, because the throw is `makeThrowable`'s business and its
-       callback does not know about chests. A throw begun over an unanswered
-       chest therefore advanced the turn and moved a coin, and a coin that landed
-       back on Ragnarok restarted the draw: the phase went from "drawing" to
-       "idle" and the answer a player had been waiting for was simply gone.
-
-       So the die does not throw at all while a chest is open. That is what the
-       card already claims when it says it cannot be dismissed before the draw is
-       answered, and this is the half of that claim the tap and key handlers could
-       not make on their own. */
-    const shut = () => pieces.isMoving() || chestPending(frame);
-
-    centreArea.addEventListener(
-      "click",
-      (event) => {
-        if (!shut()) return;
-        event.stopImmediatePropagation();
-        event.preventDefault();
-      },
-      true,
-    );
-    centreArea.addEventListener(
-      "keydown",
-      (event) => {
-        if (!shut()) return;
-        if (event.key !== "Enter" && event.key !== " ") return;
-        event.stopImmediatePropagation();
-        event.preventDefault();
-      },
-      true,
-    );
   }
 
-  // One handler for every property, on the board rather than twenty times on
-  // the cells. The cells that are not purchasable are not buttons at all, so
-  // pressing a corner or a chest cannot reach this.
+  /* ---------------------------------------------------------- the squares */
+
   for (const cell of cells) {
     if (!cell.matches?.("button[data-id]")) continue;
     cell.addEventListener("click", () => {
-      // A chest card that is waiting on a draw cannot be replaced. It is the one
-      // card on the board that has not finished saying what it has to say, and
-      // replacing it would let a visitor leave Ragnarok without drawing.
-      if (chestPending(frame)) return;
-
-      if (cell.dataset.id === RAGNAROK.id) {
-        // Opened by hand rather than by landing: read-only. The card says what
-        // the chest is and what a draw would give, with the button there and
-        // disabled, because a visit that did not happen is not a draw.
-        showChest(frame, { drawable: false });
-        return;
-      }
-
-      showCard(frame, cell.dataset.id, ctx);
+      if (busy || isDecision()) return;
+      if (game.phase !== PHASE.AWAITING_ROLL) return;
+      openRead(cell.dataset.id);
     });
   }
 
-  // The marks, the purses and the card are all derived from the ledger, so they
-  // are painted once here rather than waiting for the first purchase to paint
-  // them. Every square starts unowned and every purse at two thousand, and the
-  // board should say so before anything has happened to it.
-  markBoard(frame, ledger);
+  // A tap outside the card closes a read-only one. A tap on a cell both closes
+  // and opens, because the cell's own click runs after this; a decision card
+  // has no outside to close it, and ignores this entirely.
+  frame.addEventListener("pointerdown", (event) => {
+    if (!reading) return;
+    if (event.target.closest?.(".board__card")) return;
+    closeRead();
+  });
+
+  frame.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!reading) return;
+    closeRead();
+  });
+
+  /* ---------------------------------------------------------- the coins */
+
+  const pieces = coins(frame, { players, pieces: game.pieces });
+  frame.coins = pieces;
+
+  /* ------------------------------------------------------------ first paint */
+
+  paint({ animate: false });
+  if (game.phase === PHASE.DECISION) openDecision();
 
   return frame;
 }
+
+/* --------------------------------------------------------------- handles */
 
 /** The die on this board, or null. A handle for whoever throws it next. */
 export function theDice(root) {
@@ -574,10 +717,8 @@ export function theDice(root) {
 /**
  * The coins on this board, or null.
  *
- * The same kind of handle as `theDice` above, and for the same reason: `movePlayer`
- * is the one function a server will call when there is a server that knows who
- * rolled what, and something has to be able to reach it from outside the module
- * that built the board. A check reaches it the same way.
+ * The same kind of handle as `theDice` above, and for the same reason: a check
+ * reaches the layer the same way the old die did.
  */
 export function theCoins(root) {
   return (root || document).querySelector(".board")?.coins ?? null;
@@ -589,27 +730,17 @@ export function isCornerCell(cell) {
 }
 
 /**
- * Which player's coin the turn pill is currently naming.
+ * Which player's coin a seat names.
  *
- * The pill carries the seat it is on as `data-turn`, and this turns that seat
- * into the name that seat's coin knows - `seat-N`. It is a lookup and not a
- * second turn counter on purpose: there is exactly one thing on this board that
- * knows whose turn it is, and it is the pill.
- *
- * It cannot ask the roster for an id, and this is the whole reason the coins
- * are named after seats. The room deliberately does not send the client each
- * player's `id` - that is the identity token, and the design of it is that the
- * far end of the socket is not handed it back - so the roster arriving here
- * carries `name`, `civ`, `joined` and `role` and nothing else to identify
- * anybody by. Reading `player.id` and finding nothing would have made every
- * roll move no coin at all, which is exactly what happened the first time.
+ * The room deliberately does not send the client each player's `id` - that is
+ * the identity token - so the roster arriving here carries `name`, `civ`,
+ * `joined` and `role` and nothing else. The seat is the only name a coin can
+ * have, and it is the same seat the turn line counts on.
  */
 export function playerIdAtSeat(pill, players = []) {
   const seat = Number(pill?.node?.dataset?.turn);
   if (!Number.isInteger(seat)) return null;
   const named = (players || []).filter((p) => p && p.name);
-  // The same roster the pill counts on, so the seat means the same player in
-  // both places. A seat with no name is a seat nobody is sitting in.
   if (!named[seat]) return null;
   return seatId(seat);
 }

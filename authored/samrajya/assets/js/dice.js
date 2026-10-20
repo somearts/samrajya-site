@@ -146,15 +146,16 @@ export function prefersStill() {
 }
 
 /**
- * Throw the die and settle on a random face.
+ * Throw the die and settle on a face already chosen.
  *
- * Resolves with the face shown. `random` and `wait` are injectable so a check
- * can drive it deterministically instead of by chance and a clock.
+ * This is the half of `roll` that draws nothing: the game has rolled, the face
+ * is a fact, and the die is catching up. Kept separate so the screen can animate
+ * the same number the state machine already moved a coin by - a die and a coin
+ * that disagreed about the throw would be the worst kind of bug, because both
+ * would look right on their own.
  */
-export function roll(root, { random = Math.random, wait = defaultWait, ticks = TICKS } = {}) {
-  // One draw, uniformly across the six, and it is the answer.
-  const drawn = random();
-  const chosen = DICE_FACES[Math.min(5, Math.floor(drawn * DICE_FACES.length))];
+export function throwTo(root, chosen, { random = Math.random, wait = defaultWait, ticks = TICKS } = {}) {
+  if (!DICE_FACES.includes(chosen)) return Promise.resolve(showFace(root, 0));
 
   // A throw while one is in the air restarts it rather than queueing behind it,
   // so a second tap is never swallowed by the first.
@@ -190,6 +191,19 @@ export function roll(root, { random = Math.random, wait = defaultWait, ticks = T
       root.dataset.rolling = "false";
       return showFace(root, chosen);
     });
+}
+
+/**
+ * Throw the die and settle on a random face.
+ *
+ * Resolves with the face shown. `random` and `wait` are injectable so a check
+ * can drive it deterministically instead of by chance and a clock.
+ */
+export function roll(root, { random = Math.random, wait = defaultWait, ticks = TICKS } = {}) {
+  // One draw, uniformly across the six, and it is the answer.
+  const drawn = random();
+  const chosen = DICE_FACES[Math.min(5, Math.floor(drawn * DICE_FACES.length))];
+  return throwTo(root, chosen, { random, wait, ticks });
 }
 
 /** setTimeout as a promise, so the throw's waits are one thing. */

@@ -1,10 +1,12 @@
 ﻿/* ==========================================================================
    WHOSE TURN
 
-   A local counter, and the tests are mostly about the two ways it can be wrong:
-   advancing when the die has not landed yet, and naming a player who is not
-   playing. The honesty of it - that it is local, and says so - is checked too,
-   because a comment can rot and a comment that rots is worse than none.
+   The pill no longer counts a turn of its own. It is told which seat is active
+   by the game, and the tests are about the two ways that can be wrong: naming a
+   player who is not playing, and going on naming the last player after the seat
+   has stopped being valid. The honesty of it - that the turn is the game's, and
+   this is only where it is written down - is checked too, because a comment can
+   rot and a comment that rots is worse than none.
    ========================================================================== */
 
 import test from "node:test";
@@ -57,49 +59,44 @@ test("with nobody playing, there is no turn to name", () => {
   const turn = pill([]);
   assert.equal(turn.node.hidden, true);
   assert.equal(turn.node.textContent, "");
-  // And it stays quiet rather than inventing one when something moves.
-  turn.next();
+  // And it stays quiet rather than inventing one when the seat is set.
+  turn.set(0);
   assert.equal(turn.node.hidden, true);
   assert.equal(turn.node.textContent, "");
 });
 
-test("a player who has not chosen a name is not playing", () => {
+test("a seat that is not playing is not named", () => {
   const turn = pill([{ name: null }, { name: "Smith" }, { name: "" }]);
+  turn.set(0);
+  assert.equal(turn.node.hidden, true);
+  assert.equal(turn.node.textContent, "");
+
+  turn.set(1);
   assert.equal(turn.node.hidden, false);
   assert.equal(turn.node.dataset.name, "Smith");
+  assert.equal(turn.node.dataset.turn, "1");
+
+  turn.set(2);
+  assert.equal(turn.node.hidden, true);
 });
 
-test("the first player in the roster has the first turn", () => {
+test("setting the seat names exactly that seat", () => {
   const turn = pill(roster("Sam", "Smith"));
+  turn.set(0);
   assert.equal(turn.node.textContent, "Sam\u2019s turn");
   assert.equal(turn.node.dataset.turn, "0");
   assert.equal(turn.node.dataset.name, "Sam");
+
+  turn.set(1);
+  assert.equal(turn.node.textContent, "Smith\u2019s turn");
+  assert.equal(turn.node.dataset.turn, "1");
 });
 
-test("every throw hands it to the next player, and it wraps", () => {
-  const turn = pill(roster("Sam", "Smith"));
-  const shown = () => turn.node.textContent;
-
-  // Written as a table rather than as a run of calls, because counting "and
-  // then two more" by eye is how this went wrong the first time.
-  const expected = [
-    "Sam\u2019s turn",   // before anything is thrown
-    "Smith\u2019s turn", // one throw
-    "Sam\u2019s turn",   // two
-    "Smith\u2019s turn", // three
-    "Sam\u2019s turn",   // four - back to the start, and round again
-  ];
-  for (const want of expected) {
-    assert.equal(shown(), want);
-    turn.next();
-  }
-});
-
-test("three players take three turns each, in order", () => {
+test("three players can each be named, in any order the game hands them", () => {
   const turn = pill(roster("Sam", "Smith", "Alex"));
-  const seats = [turn.node.dataset.turn];
-  for (let i = 0; i < 6; i += 1) {
-    turn.next();
+  const seats = [];
+  for (const seat of [0, 1, 2, 0, 1, 2, 0]) {
+    turn.set(seat);
     seats.push(turn.node.dataset.turn);
   }
   assert.deepEqual(seats, ["0", "1", "2", "0", "1", "2", "0"]);
@@ -108,7 +105,7 @@ test("three players take three turns each, in order", () => {
 test("one player alone keeps the turn, which is the honest answer", () => {
   const turn = pill(roster("Sam"));
   for (let i = 0; i < 5; i += 1) {
-    turn.next();
+    turn.set(0);
     assert.equal(turn.node.textContent, "Sam\u2019s turn");
   }
 });

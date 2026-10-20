@@ -1,49 +1,36 @@
 /* ==========================================================================
    SAMRAJYA - THE PROPERTY CARD
 
-   What a property says about itself when it is tapped.
+   What a property says about itself, and - when you have landed on it - what it
+   lets you do.
 
-   WHERE IT SITS, AND WHY IT IS WRITTEN THAT WAY
-   ----------------------------------------------
-   The card lives in the rectangle that HALLEY'S COMET, KUIPER BELT and PLUTO
-   bound on the left and EARTH 137, ORION'S BELT and EPOCH bound on the right -
-   that is, columns two to five of rows two to four. Not the whole middle, and
-   not lower down, because the die is already in the lower band and two things
-   in one field would be one too many.
+   TWO WAYS TO SEE A CARD
+   ----------------------
+   Reading and deciding are different acts and they get different cards:
 
-   The position is written in cells and lines rather than as a percentage, so it
-   lands on the same square at every board size, and the stylesheet is the only
-   place that knows where it is. This file draws the card and puts it there.
+     read       opened by tapping a square. It explains the square, closes with
+                a small x or a tap outside, and offers nothing that changes the
+                turn. The die steps aside while it is up.
+     decision   opened by the game when a throw stops on a square that needs an
+                answer. There is no x, because leaving without answering is not
+                a thing a turn allows. The die and the turn line are gone and the
+                card owns the middle of the board.
 
-   THE TURN
-   --------
-   Appearing, it turns in on its vertical axis. Changing to another property, it
-   turns away and back - out to ninety degrees, the content swapped, in from
-   the other side - so a change reads as a different card rather than as the
-   same card having had its text overwritten. Both are drawn with the Web
-   Animations API rather than with CSS classes, because the two halves have to
-   happen in order and a class cannot say "and then".
+   The same card is drawn either way, because it is the same property. What
+   changes is the row of actions: Buy and Pass, or Done, or Continue, or nothing
+   at all. `syncCard` is the one place that decides, and it asks shared/game.js
+   rather than remembering a rule of its own.
 
-   Nothing here is ever positioned by anything other than absolutely
-   positioned boxes, so no card can move the board, and no card can push the
-   die out of its band.
+   WHY IT IS NOT REDRAWN ON EVERY CHANGE
+   -------------------------------------
+   A card that was rebuilt after every purchase would swing on its hinge each
+   time - and a player who has bought three times would have watched it three
+   times for no reason. So it is drawn once and `syncCard` rewrites its figures
+   in place. The one thing a card must not do while you are using it is move.
 
-   THE ECONOMY ON THE CARD
-   -----------------------
-   The card now carries three things it did not: who holds the square, what it
-   charges right now, and the three things that square can be built into.
-
-   It is drawn once and then SYNCED, never redrawn. `syncCard` recomputes every
-   number on it from the ledger and writes it into the nodes already on screen.
-   Redrawing instead would be simpler to write and wrong to use: a redraw is a
-   turn animation, so every purchase would swing the card away and back and the
-   upgrade cards would jump - and a player who has bought three times would have
-   watched it three times for no reason. The one thing a card must not do while
-   you are using it is move.
-
-   Every figure on it is derived at the moment it is written. There is no
-   stored price on the card and no remembered rent: the rent line is `rentAt`
-   called again, so it cannot be stale by even one purchase.
+   Every figure on it is derived at the moment it is written. There is no stored
+   price on the card and no remembered rent: the rent line is `rentAt` called
+   again, so it cannot be stale by even one purchase.
    ========================================================================== */
 
 import { el } from "./dom.js";
@@ -54,13 +41,14 @@ import { upgradesOf, rupees, rupeesBare } from "./shared/economy.js";
 import {
   MAX_UPGRADE,
   canBuy,
-  canUpgrade,
   levelOf,
   moneyOf,
   nameOfSeat,
   ownerOf,
   rentAt,
+  saleValue,
 } from "./shared/ledger.js";
+import { upgradeOffer } from "./shared/game.js";
 
 /** How long a turn takes. Short enough not to wait for, long enough to see. */
 const TURN_MS = 320;
@@ -128,6 +116,17 @@ export function propertyCard(property, ctx) {
     style: { "--accent": property.color || "var(--ink)" },
     "aria-live": "polite",
   }, [
+    // Reading only. A decision has no way out except answering it, and a close
+    // button on a card that cannot be closed is a lie.
+    el("button", {
+      type: "button",
+      class: "property-card__close",
+      "aria-label": "Close",
+      title: "Close",
+      text: "×",
+      onclick: () => ctx?.onClose?.(),
+    }),
+
     el("div", { class: "property-card__head" }, [
       artwork(property) || monogram(property),
       el("div", { class: "property-card__title" }, [
@@ -168,19 +167,26 @@ export function propertyCard(property, ctx) {
       el("p", { class: "property-card__advantage-text", text: property.advantage }),
     ]),
 
-    // The Buy button. Drawn here for a square nobody holds and taken away for
-    // one somebody does, because there is nothing to buy when it is taken -
-    // `syncCard` decides which, and it decides again on every change.
+    // The Buy button. Shown only on a decision about an unowned square, and
+    // taken away for every other card.
     el("div", { class: "property-card__buy-slot" }, [
       el("button", {
         type: "button",
         class: "property-card__buy",
-        onclick: () => ctx?.onBuy?.(),
       }, [
         el("span", { class: "property-card__buy-label" }),
         el("span", { class: "property-card__buy-cost" }),
       ]),
     ]),
+
+    // Pass, Done, Continue. One pill, one label, and the decision says which
+    // word it wears. It is directly under Buy when there is a Buy, because the
+    // two answers belong together.
+    el("button", {
+      type: "button",
+      class: "property-card__next",
+      hidden: true,
+    }, [el("span", { class: "property-card__next-label" })]),
 
     isSet ? null : el("span", { class: "property-card__noset", hidden: true }),
   ]);
@@ -237,15 +243,34 @@ function buildCard(property) {
   ]);
 }
 
+/* ---------------------------------------------------------------------- selling */
+
+/**
+ * Sell a square back to the bank from the read-only card.
+ *
+ * Two presses, because it is irreversible and it is quiet: the first arms the
+ * pill and says what it will pay, the second does it. The arming expires, so a
+ * pill left alone is not a trap for the next tap.
+ */
+let sellTimer = null;
+
+function sellPill(ctx) {
+  return el("button", {
+    type: "button",
+    class: "property-card__sell",
+    hidden: true,
+  }, [el("span", { class: "property-card__sell-label" })]);
+}
+
 /* ---------------------------------------------------------------------- sync */
 
 /**
- * Put every derived figure on the open card back in step with the ledger.
+ * Put every derived figure on the open card back in step with the game.
  *
  * Called after anything changes the game, and safe to call when no card is
- * open - which is most of the time. It writes only text and the `disabled`
- * attribute; it never adds or removes a node except the Buy button, which is
- * the one thing on the card that appears and disappears.
+ * open - which is most of the time. It writes only text, the `disabled`
+ * attribute and the actions' own labels; it never adds or removes a node except
+ * the Buy and Sell slots, which are the two things that appear and disappear.
  */
 export function syncCard(board, ctx) {
   const holder = board?.querySelector(".board__card");
@@ -253,7 +278,7 @@ export function syncCard(board, ctx) {
   const card = holder?.querySelector(".property-card");
   if (!card || !id || holder.dataset.cardKind !== "property") return;
 
-  const { ledger, seat } = ctx || {};
+  const { ledger, seat, game, mode = "read" } = ctx || {};
   if (!ledger) return;
 
   /* --- who holds it, and what it charges --- */
@@ -272,8 +297,7 @@ export function syncCard(board, ctx) {
 
   // The rent line does not repeat the status line. The status says whose square
   // this is; this says what the square is actually worth right now, which is the
-  // only number that changes when somebody builds. On a bare square it is the
-  // figure nobody can act on yet, and saying so is more useful than repeating it.
+  // only number that changes when somebody builds.
   card.querySelector(".property-card__rent").textContent =
     owner === null
       ? `Charges ${rupees(rent)} to whoever takes it`
@@ -281,12 +305,28 @@ export function syncCard(board, ctx) {
         ? `Not built • rent ${rupees(rent)}`
         : `Built ${level} of ${MAX_UPGRADE} • rent ${rupees(rent)}`;
 
+  const decision = game?.landing?.id === id ? game.landing : null;
+  const kind = decision?.kind || "";
+  const deciding = mode === "decision" && Boolean(decision);
+  // Once the decision has been answered the card stays up just long enough to
+  // slide away, and for those two hundred milliseconds it must not offer the
+  // answer again. The phase has already left DECISION by then.
+  const answered = deciding && game?.phase !== "DECISION";
+
+  /* --- the close button --- */
+
+  const close = card.querySelector(".property-card__close");
+  close.hidden = deciding;
+  close.style.display = deciding ? "none" : "";
+
   /* --- the Buy button --- */
 
   const slot = card.querySelector(".property-card__buy-slot");
-  if (owner !== null) {
-    // Taken. There is nothing to buy, so the button goes away rather than
-    // sitting there greyed out explaining a purchase that cannot happen.
+  const buying = deciding && !answered && kind === "buy" && owner === null;
+  if (!buying) {
+    // Taken, or not for sale on this visit. There is nothing to buy, so the
+    // button goes away rather than sitting there greyed out explaining a
+    // purchase that cannot happen.
     slot.hidden = true;
     slot.style.display = "none";
   } else {
@@ -298,7 +338,12 @@ export function syncCard(board, ctx) {
     slot.style.removeProperty("display");
 
     const button = slot.querySelector(".property-card__buy");
-    button.disabled = !verdict.ok;
+    // Not `disabled`: an unaffordable Buy is still a thing to press, because
+    // pressing it is how the game says why - the refusal shakes the pill and
+    // writes the sentence. A disabled button would swallow the press and leave
+    // the player with a grey rectangle and no explanation. `aria-disabled`
+    // still tells a screen reader the purchase cannot go through.
+    button.disabled = false;
     button.setAttribute("aria-disabled", String(!verdict.ok));
     slot.querySelector(".property-card__buy-label").textContent =
       affordable ? "Buy" : "Not enough";
@@ -311,45 +356,143 @@ export function syncCard(board, ctx) {
       ? rupeesBare(price)
       : `${rupees(price - money)} short`;
     button.title = affordable ? `Buy for ${rupees(price)}` : verdict.why;
+    button.onclick = () => ctx?.onBuy?.();
   }
 
-  /* --- the three builds --- */
+  /* --- Pass, Done, Continue --- */
 
-  const steps = upgradesOf(id);
-  for (const node of holder.querySelectorAll(".build")) {
-    const n = Number(node.dataset.build) - 1;
-    const step = steps[n];
-    const verdict = canUpgrade(ledger, id, seat);
-
-    // The button is enabled for exactly one build: the one the square is ready
-    // for. The other two are shown, priced and explained, and are not live -
-    // which is what makes the order visible rather than merely enforced.
-    const next = level === n && verdict.ok;
-
-    node.dataset.state = next ? "next" : level > n ? "done" : "locked";
-    node.querySelector(".build__becomes").textContent = `Rent becomes ${rupees(step.rentAfter)}`;
-
-    const button = node.querySelector(".build__button");
-    const label = node.querySelector(".build__button-label");
-    button.disabled = !next;
-    button.setAttribute("aria-disabled", String(!next));
-    label.textContent = next ? "Upgrade" : level > n ? "Built" : "Locked";
-
-    node.querySelector(".build__cost-figure").textContent = String(step.cost);
-
-    // Only the reachable build carries a handler at all. An inert button is not
-    // merely disabled for now - there is nothing behind it to become live later
-    // without the card being synced, and sync is what puts this back.
-    if (next) button.onclick = () => ctx?.onUpgrade?.(n);
-    else button.onclick = null;
+  const next = card.querySelector(".property-card__next");
+  const words = { buy: "Pass", own: "Done", rent: "Continue" };
+  if (deciding && words[kind] && !answered) {
+    next.hidden = false;
+    next.dataset.kind = kind;
+    next.querySelector(".property-card__next-label").textContent = words[kind];
+    next.onclick = () => {
+      if (kind === "buy" || kind === "own") ctx?.onPass?.();
+      else ctx?.onContinue?.();
+    };
+  } else {
+    next.hidden = true;
+    delete next.dataset.kind;
+    next.onclick = null;
   }
+
+  /* --- the three builds ---
+
+     A build is live on exactly one visit: the visit that landed on your own
+     square, before this visit spent its one build. The rows that are not live
+     still say why, because a row that is merely grey is a question rather than
+     an answer. */
+
+  const builds = holder.querySelector(".builds");
+  if (builds) {
+    // Somebody else's square has no build rows on a decision: the only thing to
+    // decide is whether you have read the rent. Hiding them is also what lets
+    // that card fit without a scroll.
+    const showBuilds = !deciding || kind !== "rent";
+    builds.hidden = !showBuilds;
+    builds.style.display = showBuilds ? "" : "none";
+
+    const offer =
+      deciding && kind === "own" && owner === seat
+        ? upgradeOffer(game, id)
+        : { ok: false, why: "" };
+    const spent = Boolean(game?.visit?.bought || (game?.visit?.upgrades || 0) >= 1);
+
+    const steps = upgradesOf(id);
+    for (const node of holder.querySelectorAll(".build")) {
+      const n = Number(node.dataset.build) - 1;
+      const step = steps[n];
+      const nextLevel = level === n;
+      const can = nextLevel && offer.ok;
+      let label;
+
+      if (level > n) label = "Built";
+      else if (owner !== seat) label = "Locked";
+      else if (!nextLevel) label = "Build the previous level first";
+      else if (mode !== "decision" || kind !== "own") {
+        // Reading a square: the answer is always the same, and it is not a
+        // refusal - it is the rule that building happens on a landing.
+        label = "Land here again to build";
+      } else if (spent) label = "Land here again to build";
+      else if (can) label = "Upgrade";
+      else if (/more/.test(offer.why || "")) label = "Can't afford";
+      else label = "Locked";
+
+      node.dataset.state = can ? "next" : label === "Built" ? "done" : "locked";
+      node.querySelector(".build__becomes").textContent = `Rent becomes ${rupees(step.rentAfter)}`;
+
+      const button = node.querySelector(".build__button");
+      const name = node.querySelector(".build__button-label");
+      button.disabled = !can;
+      button.setAttribute("aria-disabled", String(!can));
+      button.title = can ? "" : offer.why || label;
+      name.textContent = label;
+
+      // Only the reachable build carries a handler at all. An inert button is
+      // not merely disabled for now - there is nothing behind it to become live
+      // later without the card being synced, and sync is what puts this back.
+      if (can) button.onclick = () => ctx?.onUpgrade?.(n);
+      else button.onclick = null;
+
+      node.querySelector(".build__cost-figure").textContent = String(step.cost);
+    }
+  }
+
+  /* --- selling, and only while the turn is waiting for a throw --- */
+
+  const sell = holder.querySelector(".property-card__sell");
+  if (sell) {
+    const value = saleValue(ledger, id);
+    const canSell =
+      mode !== "decision" &&
+      owner === seat &&
+      game?.phase === "AWAITING_ROLL" &&
+      ctx?.sellEnabled !== false;
+    if (!canSell) {
+      sell.hidden = true;
+      sell.style.display = "none";
+      sell.dataset.armed = "";
+    } else {
+      sell.hidden = false;
+      sell.style.removeProperty("display");
+      if (sell.dataset.armed !== "true") {
+        sell.querySelector(".property-card__sell-label").textContent = `Sell for ${rupees(value)}`;
+      }
+      sell.onclick = () => {
+        if (sell.dataset.armed !== "true") {
+          sell.dataset.armed = "true";
+          sell.querySelector(".property-card__sell-label").textContent =
+            `Confirm sale • ${rupees(value)}`;
+          clearTimeout(sellTimer);
+          sellTimer = setTimeout(() => {
+            sell.dataset.armed = "";
+            sell.querySelector(".property-card__sell-label").textContent =
+              `Sell for ${rupees(value)}`;
+          }, 4000);
+          return;
+        }
+        sell.dataset.armed = "";
+        clearTimeout(sellTimer);
+        ctx?.onSell?.(id);
+      };
+    }
+  }
+
+  /* The decision card fills the middle, and the middle must not scroll. The
+     stylesheet decides the rectangle; this only records which card is in it. */
+  holder.dataset.mode = mode;
+  holder.dataset.decision = kind;
 }
+
+/** What the sell pill would pay, via the ledger's own arithmetic. */
 
 /* --------------------------------------------------------------- on the board */
 
 /**
  * Show a property's card on the board, or take the current one away.
  *
+ * `ctx.mode` is "read" by default and "decision" when the game has stopped here.
  * Returns a promise that settles when the card has finished turning, so a caller
  * can wait for it - and so a check can wait for it too.
  */
@@ -367,16 +510,22 @@ export function showCard(board, id, ctx = null) {
     // the NEXT property card open in the chest's rectangle, which is the kind of
     // thing that only shows up on the square after the one you were looking at.
     delete holder.dataset.cardKind;
+    delete holder.dataset.mode;
     return Promise.resolve(null);
   }
 
+  const mode = ctx?.mode === "decision" ? "decision" : "read";
   const turning = holder.dataset.property && holder.dataset.property !== id;
   board.dataset.property = id;
 
-  // The card and the three builds together, and both written in one go so the
+  // The card, the builds and the quiet sell pill, written in one go so the
   // builds can never appear beside an empty card on a slow frame.
   const draw = () => {
-    holder.replaceChildren(propertyCard(property, ctx), buildCard(property));
+    holder.replaceChildren(
+      propertyCard(property, ctx),
+      buildCard(property),
+      sellPill(ctx),
+    );
     holder.hidden = false;
     holder.dataset.property = id;
     // Back to the top, every time. The holder is the thing that scrolls, and it
@@ -457,5 +606,8 @@ export function hideCard(board) {
   holder.replaceChildren();
   holder.hidden = true;
   delete holder.dataset.cardKind;
+  delete holder.dataset.mode;
+  delete holder.dataset.decision;
+  clearTimeout(sellTimer);
   return Promise.resolve();
 }
