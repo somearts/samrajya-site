@@ -104,3 +104,9 @@ class_name = "GameRoom"
 [[env.preview.migrations]]
 tag = "v1"
 new_sqlite_classes = ["GameRoom"]
+
+# The preview is a test URL, so it may be handed a die face and a position to
+# make the end-to-end suite deterministic. Production sets no such var, and the
+# server refuses the test action without it.
+[env.preview.vars]
+ALLOW_TEST_RNG = "1"

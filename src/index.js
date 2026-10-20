@@ -89,8 +89,8 @@ async function route(request, url, env) {
     return toRoom(env, code, "create", request.method, request.headers, body);
   }
 
-  /* --- /samrajya/api/rooms/:code/(join|state|live) ------------------------ */
-  const match = rest.match(/^rooms\/([a-z2-9]{4,32})(?:\/(join|state|live))?$/);
+  /* --- /samrajya/api/rooms/:code/(join|state|live|action) ----------------- */
+  const match = rest.match(/^rooms\/([a-z2-9]{4,32})(?:\/(join|state|live|action))?$/);
   if (!match) return json({ error: "No such game." }, 404);
 
   const [, code, action = "state"] = match;

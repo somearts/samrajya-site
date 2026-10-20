@@ -146,6 +146,38 @@ export function createGame(players = [], { opening = STARTING_MONEY } = {}) {
   };
 }
 
+/* --------------------------------------------------------------- wire form */
+
+/**
+ * A state that can cross a wire.
+ *
+ * The ledger's `properties` is a `Map`, which JSON turns into an empty object, so
+ * it is written as its entries. `restoreGame` puts it back. Nothing else in a
+ * state needs translating: pieces, landing, visit and lastRoll are plain.
+ */
+export function serializeGame(state) {
+  if (!state) return null;
+  return {
+    ...state,
+    ledger: {
+      ...state.ledger,
+      properties: [...(state.ledger?.properties?.entries?.() || [])],
+    },
+  };
+}
+
+/** The live state, rebuilt from `serializeGame`. */
+export function restoreGame(data) {
+  if (!data) return null;
+  return {
+    ...data,
+    ledger: {
+      ...data.ledger,
+      properties: new Map(data.ledger?.properties || []),
+    },
+  };
+}
+
 /* -------------------------------------------------------------------- copies */
 
 /**
@@ -288,6 +320,13 @@ export function applyAction(state, action, rng = Math.random) {
   const active = state.active;
   const piece = pieceAt(next, active);
   const actor = action.seat ?? active;
+
+  /* Every accepted action takes the next number, even one that emits no event -
+     a `continue` that only changes the phase is still a move the server must be
+     able to recognise by its number, so it cannot share a number with the action
+     that opened the phase. A refused action returns the original state and the
+     number goes with it. */
+  next.seq = (state.seq || 0) + 1;
 
   /* Every accepted action takes the next number, and EVERY event from that
      action carries the same one. One action is one number, however many things

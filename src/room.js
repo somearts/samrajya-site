@@ -29,6 +29,7 @@
 
 import { isIdentity, cleanName } from "../shared/identity.js";
 import { isCiv, nameOf } from "../shared/civilizations.js";
+import { applyAction, createGame, restoreGame, serializeGame } from "../shared/game.js";
 
 /** A refusal the caller can show a person. */
 class Refusal extends Error {
@@ -100,6 +101,8 @@ export class GameRoom {
           return await this.#state(method, request);
         case "/live":
           return await this.#live(method, request);
+        case "/action":
+          return await this.#action(method, body, request);
         default:
           return json({ error: "Not found.", code: "NOT_FOUND" }, 404);
       }
@@ -232,6 +235,130 @@ export class GameRoom {
     return json(this.#view(identityOf(request)));
   }
 
+  /* ----------------------------------------------------------------- action */
+
+  /**
+   * One move, decided here.
+   *
+   * The browser is a renderer. It sends an action and the seat it is acting for
+   * (from the identity header), and this object applies the SAME `applyAction`
+   * the client uses, persists the result, and tells everyone. A refusal is a
+   * sentence, not a state change.
+   *
+   * The die is rolled here. A browser cannot be trusted to roll its own die, so
+   * the server supplies the random source - except in the preview, where a test
+   * action may hand one over so the end-to-end suite is deterministic.
+   */
+  async #action(method, body, request) {
+    if (method !== "POST") return json({ error: "Use POST." }, 405);
+    const identity = requireIdentity(request);
+    await this.#load();
+    if (!this.room) return json({ error: "No such game.", code: "NO_ROOM" }, 404);
+
+    /* --- start: the one action allowed before the game exists ---------------- */
+
+    if (body?.type === "start") {
+      if (this.room.players[0].id !== identity) {
+        return json({ error: "Only the first player can start the game.", code: "NOT_HOST" }, 409);
+      }
+      if (this.room.status !== "LOBBY") {
+        return json({ error: "That game has already started.", code: "ALREADY_STARTED" }, 409);
+      }
+      if (!this.room.players[1].joined) {
+        return json({ error: "Waiting for the second player.", code: "WAITING" }, 409);
+      }
+      this.room.game = createGame(this.room.players);
+      this.room.status = "PLAYING";
+      this.room.updatedAt = Date.now();
+      await this.#persist();
+      this.#broadcast();
+      return json({ ok: true, room: this.#view(identity) });
+    }
+
+    const seat = this.#seatOf(identity);
+    if (seat === -1) {
+      return json({ error: "You are not seated in this game.", code: "NOT_SEATED" }, 409);
+    }
+    if (this.room.status !== "PLAYING" || !this.room.game) {
+      return json({ error: "That game has not started.", code: "NOT_STARTED" }, 409);
+    }
+
+    /* --- the test hook -------------------------------------------------------
+
+       The preview may be handed a position or a purse so the end-to-end suite is
+       deterministic. It is refused unless the environment says so, and it is not
+       an action a player can use in production. */
+    if (body?.type === "debug") {
+      if (this.env?.ALLOW_TEST_RNG !== "1") {
+        return json({ error: "That is not something the game can do.", code: "REFUSED" }, 409);
+      }
+      const game = this.room.game;
+      if (body.reset) {
+        // A clean slate for a test: a fresh ledger and every piece back on Start.
+        this.room.game = createGame(this.room.players);
+        this.room.updatedAt = Date.now();
+        await this.#persist();
+        this.#broadcastGame([]);
+        return json({
+          ok: true,
+          seq: this.room.game.seq,
+          state: serializeGame(this.room.game),
+          events: [],
+        });
+      }
+      const piece = game.pieces.find((p) => p.seat === seat);
+      if (Number.isInteger(body.position) && piece) piece.position = body.position;
+      if (Number.isInteger(body.active)) {
+        game.active = body.active;
+        game.phase = "AWAITING_ROLL";
+      }
+      if (Number.isFinite(body.money)) {
+        const player = game.ledger.players.find((p) => p.seat === seat);
+        if (player) player.money = Math.max(0, Math.trunc(body.money));
+      }
+      if (body.owner && typeof body.owner === "object") {
+        const sheet = game.ledger.properties.get(String(body.owner.id));
+        if (sheet) {
+          sheet.owner = body.owner.seat ?? null;
+          sheet.upgradeLevel = Number.isInteger(body.owner.level) ? body.owner.level : 0;
+        }
+      }
+      this.room.updatedAt = Date.now();
+      await this.#persist();
+      this.#broadcastGame([]);
+      return json({ ok: true, seq: game.seq, state: serializeGame(game), events: [] });
+    }
+
+    /* --- a real action ------------------------------------------------------- */
+    const action = { ...body, seat };
+    // The die and the chest draw are the two things that need a number. Both
+    // come from the server, except in the preview, where the end-to-end suite
+    // may hand one over so a branch can be seen rather than waited for.
+    const rng =
+      (action.type === "roll" || action.type === "drawWeapon") &&
+      this.env?.ALLOW_TEST_RNG === "1" &&
+      typeof action.rng === "number"
+        ? () => action.rng
+        : Math.random;
+
+    const result = applyAction(this.room.game, action, rng);
+    const no = result.events.find((event) => event.type === "refused");
+    if (no) {
+      return json({ error: no.why, code: "REFUSED" }, 409);
+    }
+
+    this.room.game = result.state;
+    this.room.updatedAt = Date.now();
+    await this.#persist();
+    this.#broadcastGame(result.events);
+    return json({
+      ok: true,
+      seq: result.state.seq,
+      state: serializeGame(result.state),
+      events: result.events,
+    });
+  }
+
   /* ------------------------------------------------------------------- live */
 
   /**
@@ -304,6 +431,39 @@ export class GameRoom {
     }
   }
 
+  /**
+   * Tell everyone watching that the GAME changed, with the events that changed it.
+   *
+   * This is the message the board animates from: it carries the new state, its
+   * number, and the events in order. A board that is the one that acted already
+   * has this state (its own response arrived first), and recognises the number
+   * and ignores it; a board that is watching animates the events and then paints
+   * the state. That is how the two screens agree without either asking.
+   */
+  #broadcastGame(events = []) {
+    if (!this.room) return;
+    let sockets = [];
+    try {
+      sockets = this.ctx.getWebSockets();
+    } catch {
+      return;
+    }
+    for (const socket of sockets) {
+      try {
+        socket.send(
+          JSON.stringify({
+            type: "snapshot",
+            seq: this.room.game?.seq ?? 0,
+            state: this.room.game ? serializeGame(this.room.game) : null,
+            events,
+          }),
+        );
+      } catch {
+        // A socket that closed between the list and the send. Nothing to do.
+      }
+    }
+  }
+
   /* --------------------------------------------------------------- the socket */
 
   /**
@@ -328,20 +488,31 @@ export class GameRoom {
   }
 
   async #load() {
-    this.room = (await this.state.storage.get("room")) || null;
+    const raw = (await this.state.storage.get("room")) || null;
+    if (!raw) {
+      this.room = null;
+      return null;
+    }
     // Rooms made before this phase carry `token` where a `civ` is now expected.
     // The old field is dropped rather than translated: a tiger is not a
     // civilisation, and pretending otherwise would show a player somebody
     // else's idea of who they are. Such a room simply reads as unchosen, and
     // starting a new one is a button away.
-    if (this.room) {
-      this.room = { ...this.room, players: this.room.players.map((p) => ({ ...p, civ: p.civ ?? null })) };
-    }
+    this.room = {
+      ...raw,
+      players: raw.players.map((p) => ({ ...p, civ: p.civ ?? null })),
+      // The game is stored in its wire form (the ledger's Map as entries) so
+      // what is persisted is exactly what a socket would have been sent.
+      game: raw.game ? restoreGame(raw.game) : null,
+    };
     return this.room;
   }
 
   async #persist() {
-    await this.state.storage.put("room", this.room);
+    await this.state.storage.put("room", {
+      ...this.room,
+      game: this.room.game ? serializeGame(this.room.game) : null,
+    });
   }
 
   /** What one caller is allowed to see, and nothing more. */
@@ -351,9 +522,11 @@ export class GameRoom {
       roomId: this.room.roomId,
       status: this.room.status,
       seat: seat === -1 ? null : seat,
-      // The board game attaches its own state here. It is not written yet, and
-      // the client is written so that its absence is expected, not a failure.
-      board: null,
+      // The game, in its wire form, and the number of the last accepted action.
+      // Null until the game has started; the client treats that as "waiting",
+      // not as a failure.
+      seq: this.room.game?.seq ?? 0,
+      board: this.room.game ? serializeGame(this.room.game) : null,
       players: this.room.players.map((p) => ({
         name: p.name,
         civ: p.civ,
