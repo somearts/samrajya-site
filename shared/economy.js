@@ -277,3 +277,31 @@ export function isPriced(id) {
 export function upgradesOf(id) {
   return PRICING[String(id ?? "")] ? [...PRICING[String(id ?? "")].upgrades] : [];
 }
+
+/* ------------------------------------------------------------------ printing */
+
+/**
+ * How a sum of money is written on the board.
+ *
+ * Indian grouping, because this is an Indian game: 2000 is two thousand and
+ * never 2,000, and 125000 is 1,25,000. A number a player has to read twice is a
+ * number they will misread.
+ *
+ * The rupee sign is written here rather than imported from spaces.js, and that
+ * is not an oversight. spaces.js is where CURRENCY lives, but properties.js
+ * imports spaces.js and imports this file, so importing the other way would
+ * close a cycle. One character is a cheaper way to break it than a second
+ * source of truth for the currency.
+ */
+const GROUPING = new Intl.NumberFormat("en-IN");
+
+export function rupees(amount) {
+  const value = Math.trunc(Number(amount));
+  return `₹${GROUPING.format(Number.isFinite(value) ? value : 0)}`;
+}
+
+/** A price with no grouping, for the places that have room for a bare number. */
+export function rupeesBare(amount) {
+  const value = Math.trunc(Number(amount));
+  return `₹${Number.isFinite(value) ? value : 0}`;
+}

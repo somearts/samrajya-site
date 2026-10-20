@@ -45,9 +45,17 @@ import { coins } from "./coin-layer.js";
 import { seatId } from "./coins.js";
 import { chestPending, renderWeapons, showChest } from "./chest-card.js";
 import { RAGNAROK } from "./shared/weapons.js";
-import { showCard } from "./property-card.js";
+import { showCard, syncCard } from "./property-card.js";
+import { markBoard, rentMessage, syncPurses, toast } from "./economy-ui.js";
 import { turnPill } from "./turn.js";
 import { isPurchasable } from "./shared/properties.js";
+import {
+  buy as buySquare,
+  createLedger,
+  nameOfSeat,
+  payRent,
+  upgrade as upgradeSquare,
+} from "./shared/ledger.js";
 import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
 
 /**
@@ -231,7 +239,7 @@ function plainCell(cell) {
  * without one still renders, and the pill simply stays hidden rather than
  * naming a turn nobody has.
  */
-export function board({ players = [] } = {}) {
+export function board({ players = [], ledger: given = null } = {}) {
   const frame = el("div", {
     class: "board",
     role: "group",
@@ -284,6 +292,76 @@ export function board({ players = [] } = {}) {
   const turn = turnPill(players);
   centreArea.append(turn.node);
 
+  /* THE LEDGER
+     ---------
+     Who holds what and who has how much. Built here from the roster, or handed
+     in from outside so a game survives leaving the board and coming back to it.
+
+     It lives on the board element for the same reason the coin layer does: the
+     board is built once when the screen opens and is not rebuilt while it is
+     open, so this is a place that survives a whole game. Everything that reads
+     it - the card, the purses, the marks on the squares - is given the same
+     object rather than a copy of it.
+
+     WHOSE CARD IS IT?
+     The card answers to whoever's turn it is, read from the pill rather than
+     captured once, because a card left open across a throw has to belong to
+     the player who is about to act on it. */
+  const ledger = given || createLedger(players);
+  frame.ledger = ledger;
+
+  const seatNow = () => {
+    const seat = Number(turn.node?.dataset?.turn);
+    if (!Number.isInteger(seat)) return null;
+    // Looked up by seat rather than by index: they are the same thing here, and
+    // a lookup that says so is a lookup that survives the two ever differing.
+    return ledger.players.some((p) => p.seat === seat) ? seat : null;
+  };
+
+  /** Everything on screen that the ledger decides, repainted from the ledger. */
+  const refresh = () => {
+    const root = frame.closest(".board-screen") || document;
+    syncPurses(root, ledger);
+    markBoard(frame, ledger);
+    syncCard(frame, ctx);
+  };
+
+  const ctx = {
+    ledger,
+    get seat() {
+      return seatNow();
+    },
+
+    /* Buying and building.
+     *
+     * Both are one line: ask the ledger, and if it said yes, repaint. The
+     * ledger is what refuses, so this file never has to - and a refusal that
+     * came from somewhere else than the button being grey would be a rule the
+     * card and the ledger disagreed about.
+     *
+     * The card is NOT redrawn. `syncCard` rewrites the figures on the card
+     * already on screen, so a player can buy and then keep buying without the
+     * card turning away and back each time. */
+    onBuy: () => {
+      const id = frame.querySelector(".board__card")?.dataset.property;
+      const seat = seatNow();
+      if (!id || seat === null) return;
+      const verdict = buySquare(ledger, id, seat);
+      refresh();
+      if (!verdict.ok) toast(frame, verdict.why, { tone: "refused" });
+    },
+
+    onUpgrade: (n) => {
+      const id = frame.querySelector(".board__card")?.dataset.property;
+      const seat = seatNow();
+      if (!id || seat === null) return;
+      const verdict = upgradeSquare(ledger, id, seat);
+      refresh();
+      if (!verdict.ok) toast(frame, verdict.why, { tone: "refused" });
+      else toast(frame, `${nameOfSeat(ledger, seat)} built ${verdict.upgrade.name}.`, { tone: "good" });
+    },
+  };
+
   // The coins. Every player has one, and they all start on Start, and the layer
   // takes no taps so the squares underneath stay pressable.
   const pieces = coins(frame, {
@@ -300,24 +378,68 @@ export function board({ players = [] } = {}) {
        closes whatever was open and says nothing, which is the honest answer for
        a square that has not been given a purpose. */
     onLand: async ({ cell, player }) => {
+      const landingSeat = pieces.state.players.indexOf(player);
+
       if (cell?.dataset.id === RAGNAROK.id) {
-        const seat = pieces.state.players.indexOf(player);
         await showChest(frame, {
           drawable: true,
           onWeapon: (weaponId) => {
             player.weapons.push(weaponId);
-            renderWeapons(document, seat, player.weapons);
+            renderWeapons(document, landingSeat, player.weapons);
           },
         });
         return;
       }
-      await showCard(frame, cell && isPurchasable(cell.dataset.id) ? cell.dataset.id : "");
+
+      /* RENT.
+
+         Paid on landing and not asked for: a square somebody holds charges
+         whoever steps on it, and making a player press a button to be charged
+         would be a rule the board did not say out loud.
+
+         Landing on your own square charges you nothing and a square nobody holds
+         charges you nothing - both are the same answer here, because in each
+         case there is nobody to pay. Only a refusal is worth saying out loud,
+         and the one refusal there is happens when the purse is short of the
+         rent, which is worth a player being told rather than discovering. */
+      if (landingSeat >= 0 && isPurchasable(cell?.dataset.id)) {
+        const id = cell.dataset.id;
+        const verdict = payRent(ledger, id, landingSeat);
+        if (verdict.paid) {
+          refresh();
+          toast(frame, rentMessage(ledger, verdict), { tone: "rent" });
+        } else if (!verdict.ok) {
+          refresh();
+          toast(frame, verdict.why, { tone: "refused" });
+        }
+      }
+
+      /* A CHEST WAITING ON A DRAW OUTRANKS A LANDING.
+
+         The tap handler and the throw handler both refuse to replace a chest
+         that has not been answered. This one did not, and it could: a throw
+         begun while a chest was open still moves a coin, and the square it lands
+         on would then close the chest mid-shuffle and take the draw with it.
+
+         The money above has already moved and that is correct - the landing
+         happened, and a rent is owed whether or not a card is on screen. What is
+         refused is only the card. */
+      if (chestPending(frame)) return;
+
+      await showCard(frame, cell && isPurchasable(cell.dataset.id) ? cell.dataset.id : "", ctx);
     },
   });
   // The handle `theCoins()` reads, so `movePlayer` can be driven from outside
   // this module. It is a reference to the same object the board is using - not a
   // copy, and not a second set of coins.
   frame.coins = pieces;
+
+  // And the turn, for the same reason. Handing the turn over is `next()`, and
+  // the only other way to do it is to throw the die - which also moves a coin,
+  // which is a great deal more than "hand the turn over" means. A check that
+  // wants to look at a square from the other player's side should not have to
+  // roll for it.
+  frame.turn = turn;
 
   /* THE ONE PLACE A ROLL BECOMES A MOVE
      ----------------------------------
@@ -345,7 +467,7 @@ export function board({ players = [] } = {}) {
     // a visit before it was answered, which is the one thing Ragnarok promises
     // it will not do.
     if (chestPending(frame)) return;
-    showCard(frame, "");
+    showCard(frame, "", ctx);
     pieces.clearHighlight();
   };
 
@@ -375,10 +497,26 @@ export function board({ players = [] } = {}) {
        phase, so one added to the die would run first only by accident of being
        added first; on an ancestor, the capture phase is guaranteed to run before
        the die's own listeners, which is the property being relied on here. */
+    /* AND THE DIE IS OFF WHILE A CHEST IS WAITING ON A DRAW.
+
+       The same guard, for a second reason. `capture` above refuses to close a
+       pending chest, but that only stops the card being cleared - the throw
+       itself still ran, because the throw is `makeThrowable`'s business and its
+       callback does not know about chests. A throw begun over an unanswered
+       chest therefore advanced the turn and moved a coin, and a coin that landed
+       back on Ragnarok restarted the draw: the phase went from "drawing" to
+       "idle" and the answer a player had been waiting for was simply gone.
+
+       So the die does not throw at all while a chest is open. That is what the
+       card already claims when it says it cannot be dismissed before the draw is
+       answered, and this is the half of that claim the tap and key handlers could
+       not make on their own. */
+    const shut = () => pieces.isMoving() || chestPending(frame);
+
     centreArea.addEventListener(
       "click",
       (event) => {
-        if (!pieces.isMoving()) return;
+        if (!shut()) return;
         event.stopImmediatePropagation();
         event.preventDefault();
       },
@@ -387,7 +525,7 @@ export function board({ players = [] } = {}) {
     centreArea.addEventListener(
       "keydown",
       (event) => {
-        if (!pieces.isMoving()) return;
+        if (!shut()) return;
         if (event.key !== "Enter" && event.key !== " ") return;
         event.stopImmediatePropagation();
         event.preventDefault();
@@ -415,9 +553,15 @@ export function board({ players = [] } = {}) {
         return;
       }
 
-      showCard(frame, cell.dataset.id);
+      showCard(frame, cell.dataset.id, ctx);
     });
   }
+
+  // The marks, the purses and the card are all derived from the ledger, so they
+  // are painted once here rather than waiting for the first purchase to paint
+  // them. Every square starts unowned and every purse at two thousand, and the
+  // board should say so before anything has happened to it.
+  markBoard(frame, ledger);
 
   return frame;
 }

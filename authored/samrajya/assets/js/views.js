@@ -15,6 +15,8 @@
 import { el, button, focusFirst } from "./dom.js";
 import { masthead } from "./wordmark.js";
 import { board } from "./board.js";
+import { purseOf } from "./economy-ui.js";
+import { createLedger } from "./shared/ledger.js";
 import { choices, civById } from "./shared/civilizations.js";
 import { NAME_MAX } from "./shared/identity.js";
 
@@ -503,25 +505,47 @@ export function boardView(state, actions) {
   const room = state.room;
   const players = (room?.players || []).filter((p) => p.name);
 
+  /* THE LEDGER
+     ----------
+     Built once and kept on `state`, so leaving the board and coming back to it
+     returns to the same game rather than to a fresh one. Nothing is saved
+     between visits - a refresh starts again - and that is stated in the ledger's
+     own file rather than hidden here. */
+  if (!state.ledger || state.ledger.players.length !== players.length) {
+    state.ledger = createLedger(players);
+  }
+  const ledger = state.ledger;
+
   // The two identities with the matchup between them. The VS goes in as a real
   // child rather than as a ::before on one of the blocks, because it has to sit
   // BETWEEN them and a pseudo-element belongs to one block - which would put it
   // on the outside, reading as a suffix on the first name. With one player there
   // is no matchup and no VS is drawn.
+  //
+  // The purse sits on the same block as the name it belongs to, and carries the
+  // seat in a data attribute: it is the only handle the board has back to the
+  // player, and `syncPurses` finds every purse on the page by that.
   const roster = el("div", { class: "board-who" },
     players
-      .map((p, i) => [
-        i > 0 ? el("span", { class: "who__vs", text: "VS" }) : null,
-        el("div", { class: `who${room.seat === players.indexOf(p) ? " who--me" : ""}` }, [
-          el("span", { class: "who__name", text: p.name }),
-          el("span", { class: "who__civ", text: `${civById(p.civ)?.name ?? "Unchosen"}` }),
-        ]),
-      ])
+      .map((p, i) => {
+        const seat = players.indexOf(p);
+        return [
+          i > 0 ? el("span", { class: "who__vs", text: "VS" }) : null,
+          el("div", {
+            class: `who${room.seat === seat ? " who--me" : ""}`,
+            "data-seat": String(seat),
+          }, [
+            el("span", { class: "who__name", text: p.name }),
+            el("span", { class: "who__civ", text: `${civById(p.civ)?.name ?? "Unchosen"}` }),
+            el("span", { class: "who__money", text: purseOf(ledger, seat) }),
+          ]),
+        ];
+      })
       .flat()
       .filter(Boolean),
   );
 
-  const theBoard = board({ players });
+  const theBoard = board({ players, ledger });
   // The room is on the board itself, which is what lets a test - and anyone
   // with a screen reader - tell one game from another.
   theBoard.dataset.room = state.room?.roomId || "";

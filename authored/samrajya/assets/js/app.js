@@ -29,6 +29,10 @@ const state = {
   error: null,
   errors: {},
   room: null,
+  // The game's money and holdings. Made when the board first opens and kept
+  // afterwards, so leaving the board and coming back is the same game. See
+  // shared/ledger.js - none of this is persisted anywhere yet.
+  ledger: null,
   draft: {
     name: "",
     civ: "",

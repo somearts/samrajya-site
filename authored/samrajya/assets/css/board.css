@@ -191,6 +191,73 @@
   background: var(--cell-ground);
 }
 
+/* --------------------------------------------------------------- ownership
+
+   WHO HOLDS THIS SQUARE
+
+   A 2px ring in the holder's own coin colour at 40%, drawn as an ::after
+   OVERLAY rather than as a border on the cell.
+
+   That choice is the whole reason this works. A real border would be laid out
+   inside the square's box, so every name and pill on every square would shift
+   inwards the moment a square changed hands - and on a board where the coins are
+   also moving, a name that moves because somebody bought something is a board
+   that looks like it is moving for no reason. An overlay draws on top of the
+   tile and displaces nothing at all.
+
+   It is a ring and not a wash because the square has to stay readable. At 40%
+   over cream it reads as somebody's without competing with a name set in ink
+   over the same square, and the pill - which is the one saturated thing on the
+   tile - is still the loudest mark on it.
+
+   The pips are the same idea for how far the square is built: three marks along
+   the bottom edge, in the same colour, counting to the level. `--pips` is set by
+   economy-ui.js, which walks all twenty squares, so building costs one custom
+   property to repaint rather than three nodes. */
+.board__cell[data-owner]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 2px solid color-mix(in srgb, var(--owner) 40%, transparent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* No pips on a square nobody has built anything on: an unowned square has
+   `--pips: 0`, and zero of anything is simply nothing. */
+.board__cell::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--cell) * 0.045);
+  z-index: 2;
+  width: calc(var(--cell) * 0.34);
+  height: max(2px, calc(var(--cell) * 0.028));
+  transform: translateX(-50%);
+  pointer-events: none;
+
+  /* One mark per build. The stripes are drawn here rather than as child nodes
+     so that twenty squares cost twenty custom properties and nothing else. */
+  background: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--owner, var(--ink)) 62%, transparent) 0,
+    color-mix(in srgb, var(--owner, var(--ink)) 62%, transparent) calc(var(--cell) * 0.085),
+    transparent calc(var(--cell) * 0.085),
+    transparent calc(var(--cell) * 0.115)
+  );
+  background-size: calc(var(--pips, 0) * var(--cell) * 0.115) 100%;
+  background-repeat: no-repeat;
+  opacity: min(1, var(--pips, 0));
+}
+
+/* A square with no pips has no ring either, so it is not drawn at all. `opacity`
+   on the element is the cheapest way to say nothing: no width to reserve, no
+   layout to move when the level changes. */
+.board__cell:not([data-owner])::before {
+  content: none;
+}
+
 /* --------------------------------------------------------------- the coins
 
    A coin layer sits over the grid and takes no taps: `pointer-events: none` is
@@ -716,6 +783,126 @@
   color: var(--ink);
 }
 
+/* ------------------------------------------------- the standing, and buying
+
+   THE CARD GREW, AND THIS IS WHERE IT WAS ALLOWED TO
+
+   Everything the economy added - the standing, the rent, the Buy button - is
+   inside the card box the property popup has always occupied. That box was three
+   rows of cells high, and had to stay that way, on the reasoning that a card
+   drawn over the middle of the board must not sit on the rows beneath it and
+   eventually on the die.
+
+   The reasoning was right and the arithmetic was not: three rows is a hundred and
+   seventy-four pixels at the smallest size, the card wants two hundred and forty,
+   and what paid for the difference was the last line of the advantage text.
+
+   So the card grows now, and the thing that keeps it off the die is the HOLDER's
+   height rather than the card's - see the property holder below, which is capped
+   at the die's own top edge. The builds still go below the card rather than
+   inside it, which is what makes the holder taller than the card and why it
+   scrolls instead of being a fixed box. */
+
+.property-card {
+  grid-template-rows: auto auto auto 1fr auto;
+}
+
+/* The status and the rent, set as two lines of one small block rather than as
+   two separate things with a margin between them: they are one fact - who holds
+   this and what it costs - and a gap between them would read as a gap between
+   the question and the answer. */
+.property-card__standing {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 3%;
+  border-bottom: 1px solid rgb(18 17 16 / 0.09);
+}
+
+.property-card__status {
+  margin: 0;
+  font-size: max(9.1px, calc(var(--cell) * 0.1235));
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+.property-card__rent {
+  margin: 0;
+  font-size: max(8.3px, calc(var(--cell) * 0.1126));
+  line-height: 1.2;
+  color: var(--ink-soft);
+}
+
+/* The Buy button.
+
+   Large on purpose, and in the property's own accent rather than in the board's
+   action colour: it is the one thing on the card a player is being asked to
+   decide, and tying it to the square's colour says "this one" before the words
+   are read.
+
+   The shortfall is shown IN the button rather than under it. A greyed button
+   with a reason next to it is two things to read on a card that is already the
+   busiest thing on the screen, and a reason that fits in the button is a
+   reason that is not going to wrap into the die. */
+.property-card__buy-slot {
+  padding-top: 4%;
+}
+
+.property-card__buy-slot[hidden] {
+  display: none;
+}
+
+.property-card__buy {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.5em;
+  width: 100%;
+  padding: 0.42em 0.6em;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  font-size: max(10.5px, calc(var(--cell) * 0.1422));
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--cell-ground);
+  cursor: pointer;
+  transition: filter 140ms ease-out, opacity 140ms ease-out;
+}
+
+.property-card__buy:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.property-card__buy:active:not(:disabled) {
+  filter: brightness(0.94);
+}
+
+.property-card__buy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Out of reach: the button stays exactly the size it was and keeps its place in
+   the card, because a layout that reflows when a player cannot afford something
+   is a layout that moves the words they were reading. */
+.property-card__buy:disabled,
+.property-card__buy[aria-disabled="true"] {
+  border-color: color-mix(in srgb, var(--accent) 26%, var(--card-inset));
+  background: color-mix(in srgb, var(--accent) 8%, var(--card-inset));
+  color: color-mix(in srgb, var(--accent) 62%, var(--ink));
+  cursor: default;
+}
+
+.property-card__buy-label {
+  font-weight: 600;
+}
+
+.property-card__buy-cost {
+  opacity: 0.8;
+}
+
 /* ----------------------------------------------------------------- ragnarok
 
    THE TALL HOLDER
@@ -725,7 +912,285 @@
    written as a FRACTION of the middle rather than in cells, so it keeps the same
    proportion of the board at every size and cannot grow into the ring however
    small a cell gets. It starts at the top of the middle, where a property card
-   starts, and runs to about two thirds of the way down it. */
+   starts, and runs to about two thirds of the way down it.
+
+   THE PROPERTY HOLDER IS TALL TOO, NOW
+
+   The same treatment, for the same reason. A property popup is a card and three
+   build rows below it, and that is more than three rows of cells - but it is
+   still capped, because the die is there.
+
+   WHAT IT IS CAPPED AT, AND WHY THE CARD STOPPED BEING PINNED
+
+   Both of these were written wrong the first time, and one measurement at three
+   hundred and ninety by eight hundred and fifty is what showed it.
+
+   The cap was a flat fraction of the board. The holder started twenty pixels
+   short of the die it was supposed to be avoiding, and spent those twenty
+   pixels on nothing.
+
+   The card was pinned to exactly three rows, on the reasoning that adding the
+   builds below it should not move anything a player was already reading. But
+   the card did not only gain things below it - it gained the owner, the rent and
+   the Buy button INSIDE it - and three rows is a hundred and seventy-four pixels
+   at the size above, against the two hundred and four the card now wants. So the
+   pin did not preserve the old card; it sliced the advantage text through the
+   middle of a sentence to keep a promise about arithmetic that was no longer
+   true.
+
+   So the card is three rows at its shortest and grows when its contents need it.
+   The holder is capped at the one distance that means anything here: from its own
+   top down to the top of the die, written out of the cell and the die's own size
+   so it follows both wherever they go. Whatever still does not fit scrolls. The
+   card and the Buy button are always the first thing on screen; the builds
+   follow under them.
+
+   THE FADE
+
+   The scrollbar is hidden, because a strip of browser chrome down the middle of
+   the board is worse than no affordance at all - so the fade along the bottom
+   edge is the affordance. It is painted with a mask rather than with a gradient
+   element, which is why the build rows carry matching bottom padding: the fade
+   has to land on that padding and not on the last button, whether or not there
+   is anything to scroll. */
+.board__card[data-card-kind="property"] {
+  height: auto;
+  /* Seven cells and five and a half lines: the middle starts one cell and two
+     lines into the board, the holder one gap further in, and the die's top is
+     eight cells and seven and a half lines down, less half the die. One line
+     short of that, so rounding at another size cannot put it over. */
+  max-height: calc(
+    7 * var(--cell) + 4.5 * var(--hair) - var(--die-half) - var(--card-gap)
+  );
+  --scroll-fade: calc(var(--cell) * 0.26);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  /* An opacity stencil, not a colour: black is fully shown, transparent is not. */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--scroll-fade)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    #000 calc(100% - var(--scroll-fade)),
+    transparent
+  );
+}
+
+.board__card[data-card-kind="property"]::-webkit-scrollbar {
+  display: none;
+}
+
+.board__card[data-card-kind="property"] .property-card {
+  /* Three rows at its shortest, and taller when it has to be. The holder around
+     it grows and scrolls; the board never does. */
+  height: auto;
+  min-height: calc(var(--cell) * 3 + var(--hair) * 2 - var(--card-gap) * 2);
+
+  /* The row gap stops being a percentage here, and that is the whole reason the
+     Buy button used to hang out of the bottom of the card.
+
+     A percentage row gap resolves against the height of the grid's content box.
+     On a card with a fixed height that is a number, and 4% was a number. On a
+     card that sizes itself to its contents the height is not known while the
+     rows are being measured, so the gaps measure as nothing and the rows take
+     the whole height - and then the gaps are charged afterwards, on top, and
+     push the last row past the bottom edge. Which is exactly what a half-drawn
+     Buy button looks like.
+
+     A gap in cells is the same air at every size and can be known up front. The
+     column gap stays a percentage, because the width is never in doubt. */
+  row-gap: calc(var(--cell) * 0.1);
+  column-gap: 4%;
+}
+
+/* Room under the last build for the fade to fall on. Invisible when it is not
+   needed, and the difference between a button that fades at the end of a scroll
+   and one that does not. */
+.board__card[data-card-kind="property"] .builds {
+  padding-bottom: var(--scroll-fade);
+}
+
+/* THE THREE BUILDS
+
+   Drawn in the chest's own vocabulary: the same inset ground, the same 6px
+   radius, the same hairline, the same pill proportions. They are the same idea
+   as the three weapon cards on a Ragnarok chest - three panels saying what is on
+   the table and what each one costs - so they are made to match.
+
+   What is not copied is their shape. The weapon cards are three portrait columns
+   standing side by side inside one card; these are three rows beneath a card
+   that already fills the middle of the board, so they run the width instead.
+   Same look, same voice, the arrangement the space actually allows. */
+.builds {
+  display: grid;
+  gap: calc(var(--cell) * 0.07);
+  padding-top: calc(var(--cell) * 0.07);
+  pointer-events: auto;
+}
+
+.builds__label {
+  margin: 0 0 1px 2px;
+  font-size: max(7.8px, calc(var(--cell) * 0.104));
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.build {
+  display: grid;
+  gap: calc(var(--cell) * 0.035);
+  padding: calc(var(--cell) * 0.055);
+  border-radius: 6px;
+  background: var(--card-inset);
+  border: 1px solid rgb(18 17 16 / 0.08);
+  transition: border-color 200ms ease-out, background 200ms ease-out;
+}
+
+.build__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5em;
+}
+
+/* Three pips, which is how the chest card shows a weapon's colour. Here they say
+   which of the three builds this is - one lit, two unlit, and so on - so a card
+   you have already built twice reads at a glance as the second one. */
+.build__step {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 2px;
+}
+
+.build__pip {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 16%, transparent);
+}
+
+.build__name {
+  margin: 0;
+  min-width: 0;
+  font-size: max(10px, calc(var(--cell) * 0.1354));
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+.build__cost {
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  margin: 0;
+  font-size: max(10.5px, calc(var(--cell) * 0.1422));
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.build__cost-rupee {
+  font-size: 0.72em;
+  opacity: 0.7;
+}
+
+.build__description {
+  margin: 0;
+  font-size: max(8.6px, calc(var(--cell) * 0.1166));
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.build__foot {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 0.5em;
+  padding-top: calc(var(--cell) * 0.02);
+}
+
+.build__becomes {
+  margin: 0;
+  min-width: 0;
+  font-size: max(8.3px, calc(var(--cell) * 0.1126));
+  line-height: 1.2;
+  color: var(--ink-soft);
+}
+
+.build__button {
+  padding: 0.3em 0.7em;
+  border: 1px solid var(--ink);
+  border-radius: 5px;
+  background: var(--ink);
+  font-size: max(8.8px, calc(var(--cell) * 0.1193));
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: var(--cell-ground);
+  cursor: pointer;
+  transition: filter 140ms ease-out, opacity 140ms ease-out;
+}
+
+.build__button:hover:not(:disabled) {
+  filter: brightness(1.25);
+}
+
+.build__button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* --- the three states a build card can be in --- */
+
+/* Built. Lit, and said to be built, because a build somebody paid for should not
+   look like one they were refused. */
+.build[data-state="done"] {
+  border-color: color-mix(in srgb, var(--ink) 34%, transparent);
+}
+
+.build[data-state="done"] .build__pip:nth-child(-n + 3) {
+  background: var(--ink);
+}
+
+.build[data-state="done"] .build__button {
+  border-color: color-mix(in srgb, var(--ink) 24%, transparent);
+  background: color-mix(in srgb, var(--ink) 8%, var(--card-inset));
+  color: color-mix(in srgb, var(--ink) 52%, var(--card-inset));
+  cursor: default;
+}
+
+/* The next one. The only build card on the popup with a dark button on it, so
+   "what can I do right now" is one glance rather than three readings. */
+.build[data-state="next"] {
+  border-color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 4%, var(--card-inset));
+}
+
+.build[data-state="next"] .build__pip:nth-child(1) {
+  background: var(--ink);
+}
+
+/* Locked: somebody else's square, or a build out of order. Still fully legible -
+   it is still telling you what the square can become and what it will cost - but
+   plainly not live. */
+.build[data-state="locked"] {
+  opacity: 0.58;
+}
+
+.build[data-state="locked"] .build__button {
+  border-color: color-mix(in srgb, var(--ink) 20%, transparent);
+  background: transparent;
+  color: color-mix(in srgb, var(--ink) 48%, var(--card-inset));
+  cursor: default;
+}
+
+.build[data-state="locked"] .build__button:disabled,
+.build[data-state="done"] .build__button:disabled {
+  cursor: default;
+}
 
 .board__card[data-card-kind="chest"] {
   /* The extra --hair is the board's own one-pixel padding.
@@ -1354,4 +1819,82 @@ button.board__cell--chest:focus-visible {
 
 .who--me .who__civ {
   color: var(--ink);
+}
+
+/* THE PURSE
+   ---------
+   On its own line under the name and the civilization, because a purse that
+   shared a line with a name would either shorten the name or shorten itself, and
+   the name is the one that cannot be shortened.
+
+   It is the one number on the header that changes during play, so it is the one
+   thing here given full weight rather than the small caps of the label above it:
+   a player glancing at the top of the board mid-turn is looking for their own
+   money, and it should be the most legible thing in the block.
+
+   `font-variant-numeric: tabular-nums` because it changes in place. Without it
+   every purchase re-flows the digits sideways, and a purse that jitters as it
+   falls is much harder to read than one that does not. */
+.who__money {
+  flex: 1 0 100%;
+  margin-top: 0.2em;
+  font-size: 0.86rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.who--me .who__money {
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ the toast
+
+   Rent is paid without being asked for, so it is confirmed without being waited
+   for: one line, over the lower middle of the board, gone in a couple of
+   seconds, and never in the way of anything.
+
+   It sits where the die is but below it in z-order and below it on the page, and
+   it takes no taps - a confirmation that could be pressed would be a control,
+   and there is nothing here to control. */
+.board__toasts {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--cell) * 0.06);
+  z-index: 6;
+  transform: translateX(-50%);
+  max-width: 92%;
+  pointer-events: none;
+}
+
+.board__toast {
+  margin: 0;
+  padding: 0.4em 0.75em;
+  border-radius: 4px;
+  background: var(--corner-ground);
+  box-shadow: 0 2px 8px rgb(18 17 16 / 0.25);
+  font-size: 0.72rem;
+  letter-spacing: 0.03em;
+  text-align: center;
+  color: var(--cell-ground);
+}
+
+/* Money moved. Said in the holder's own coin colour where one is to hand, which
+   is the same colour the ring on their squares is - so a payment identifies
+   itself by the same fact that ownership does. */
+.board__toast--rent,
+.board__toast--good {
+  background: var(--owner, var(--corner-ground));
+}
+
+/* Something was refused. Said in the same neutral ink as everything else rather
+   than in a warning colour: a rent nobody could pay is a fact about the game,
+   not an error the player committed. */
+.board__toast--refused {
+  background: var(--corner-ground);
+  box-shadow:
+    0 2px 8px rgb(18 17 16 / 0.3),
+    0 0 0 1px color-mix(in srgb, var(--cell-ground) 22%, transparent);
 }

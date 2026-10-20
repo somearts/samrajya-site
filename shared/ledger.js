@@ -69,8 +69,17 @@ const yes = (data = {}) => ({ ok: true, why: "", ...data });
 export function createLedger(players = [], { opening = STARTING_MONEY } = {}) {
   return {
     opening,
-    players: players.map((p) => ({
-      seat: Number.isInteger(p?.seat) ? p.seat : 0,
+    players: players.map((p, n) => ({
+      /* THE SEAT IS THE ROSTER POSITION unless the caller says otherwise.
+
+         The room does not send a player's `id` back to the browser, and it does
+         not send a seat either - so a roster arriving here has names and civs
+         and nothing else to tell one entry from another. Defaulting every entry
+         to seat 0 looked harmless and was not: two players became one player and
+         a phantom, the second purse read zero, and every card belonged to
+         nobody. The index is the only fact the roster actually carries, and it
+         is the same fact the coins and the turn pill already use. */
+      seat: Number.isInteger(p?.seat) ? p.seat : n,
       name: p?.name || "",
       civ: p?.civ || "",
       money: opening,

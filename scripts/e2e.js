@@ -573,6 +573,7 @@ try {
         art: card.querySelector(".property-card__art--none")
           ? null : card.querySelector(".property-card__art-svg")?.dataset.art || null,
         box: box(card),
+        holder: box(holder),
         allowed,
         die: box(board.querySelector(".board__dice")),
       };
@@ -594,9 +595,20 @@ try {
 
       const b = card.box;
       const a = card.allowed;
-      note(`${label}: inside the rectangle the six tiles bound`,
-        b.left >= a.l - 0.5 && b.right <= a.r + 0.5 &&
-        b.top >= a.top - 0.5 && b.bottom <= a.bottom + 0.5,
+
+      /* THE CARD IS NO LONGER THREE ROWS TALL.
+      
+         It was, and it was checked that way: inside the rectangle the six tiles
+         bound, on every side. It cannot be any more, because it now carries the
+         owner, the rent and the Buy button as well as everything it carried
+         before, and the only way to keep it three rows was to cut the advantage
+         text off at the bottom edge.
+      
+         So what is checked here is what the rectangle was always a proxy for: the
+         card is in the middle, it starts at the top of the middle, it does not
+         run out of the middle sideways, and the popup does not reach the die. */
+      note(`${label}: inside the rectangle the six tiles bound, side to side`,
+        b.left >= a.l - 0.5 && b.right <= a.r + 0.5 && b.top >= a.top - 0.5,
         `card ${b.left.toFixed(0)}..${b.right.toFixed(0)} / ${b.top.toFixed(0)}..${b.bottom.toFixed(0)}` +
         `  allowed ${a.l.toFixed(0)}..${a.r.toFixed(0)} / ${a.top.toFixed(0)}..${a.bottom.toFixed(0)}`);
 
@@ -604,23 +616,23 @@ try {
       // deliberately sits at a half pixel - it is centred - so demanding exact
       // equality here would be an assertion that can never pass, and the one
       // thing worth checking is that no side is noticeably tighter than another.
+      // Side to side only, now: the card is flush with the top of the middle and
+      // runs as far down as its contents need, so there is no bottom margin to
+      // compare anything with.
       const gapL = b.left - a.l;
       const gapR = a.r - b.right;
       const gapT = b.top - a.top;
-      const gapB = a.bottom - b.bottom;
-      const gaps = [gapL, gapR, gapT, gapB];
-      note(`${label}: with an even margin on every side, so it floats`,
-        Math.min(...gaps) >= 2 && Math.max(...gaps) - Math.min(...gaps) <= 2.5,
-        `${gapL.toFixed(1)} / ${gapR.toFixed(1)} / ${gapT.toFixed(1)} / ${gapB.toFixed(1)}`);
-      note(`${label}: and it does not reach the lower rows`,
-        b.bottom < a.bottom - 2,
-        `bottom ${b.bottom.toFixed(0)} against ${a.bottom.toFixed(0)}`);
+      note(`${label}: with an even margin on the left and right, so it floats`,
+        Math.min(gapL, gapR, gapT) >= 2 && Math.abs(gapL - gapR) <= 2.5,
+        `${gapL.toFixed(1)} / ${gapR.toFixed(1)} / ${gapT.toFixed(1)}`);
       note(`${label}: no text is clipped`, card.clipped.length === 0 &&
         !card.clippedName && !card.advantageClipped,
         card.clipped.length ? card.clipped.join(" / ") : "nothing clipped");
-      note(`${label}: and the die is still below it`,
-        card.die.top >= a.bottom - 0.5,
-        `die ${card.die.top.toFixed(0)}..${card.die.bottom.toFixed(0)}`);
+      // The popup is a sheet that scrolls now, and the one thing it must never do
+      // is scroll over the die - the die is how the turn continues.
+      note(`${label}: and the popup stops above the die`,
+        card.holder.bottom <= card.die.top + 0.5,
+        `popup ${card.holder.bottom.toFixed(0)} against die ${card.die.top.toFixed(0)}`);
     }
 
     // A second property, to prove it turns rather than redrawing in place.
@@ -980,14 +992,17 @@ try {
     await page.eval(`
       (async () => {
         const b = document.querySelector(".board");
-        // Forced to a weapon. This sequence then spends three seconds finding
-        // out that the card cannot be dismissed, and a draw of bad luck would
-        // have closed the card out from under the question being asked.
-        const real = Math.random;
+        // Forced to a weapon, and forced for the WHOLE shuffle.
+        //
+        // This used to put Math.random back after 200ms, which was 700ms too
+        // early: drawWeapon() is called once the 900ms shuffle has finished, so
+        // the draw was always a real one. Since ten per cent of draws are bad
+        // luck, this check failed about once in ten runs and looked like a bug
+        // in the card every time. The real generator is kept on the window and
+        // restored after the reveal has been read.
+        window.__realRandom = Math.random;
         Math.random = () => 0.15;
         b.querySelector('[data-action="draw"]').click();
-        await new Promise((r) => setTimeout(r, 200));
-        Math.random = real;
         return true;
       })()
     `);
@@ -1013,8 +1028,10 @@ try {
       locked.phase === "drawing" && stayedPut.afterSquare && stayedPut.afterSame && stayedPut.stillChest,
       `phase ${locked.phase}; survived a square ${stayedPut.afterSquare}, itself ${stayedPut.afterSame}, a throw ${stayedPut.stillChest}`);
 
-    // Let the draw finish, then collect.
+    // Let the draw finish, then collect. The forced generator is put back here,
+    // once the draw has actually happened.
     await sleep(1600);
+    await page.eval(`(() => { if (window.__realRandom) Math.random = window.__realRandom; return true; })()`);
     const chestRevealed = await page.json(READ_CHEST);
     note(`${label}: a weapon says what it is and what it reaches`,
       /^You drew the /.test(chestRevealed.drew) &&
@@ -1531,6 +1548,362 @@ try {
 
     await shot(page, `${W}-board-${label}`);
   }
+
+  /* ------------------------------------------------------------ the economy
+
+     The whole property economy, driven through the page a player is looking
+     at: buy a square, watch the purse and the board and the card all move, build
+     it three times refusing the middle one out of order, then hand the turn over
+     and see the same square as the other player's - and land on it and be
+     charged.
+
+     Everything here reads the rendered page. The ledger is reachable from
+     outside the module because board.js publishes it the way it publishes the
+     coin layer, and the checks below read the DOM rather than the ledger, so a
+     rule that works and a screen that does not show it still fails. */
+
+  heading("THE ECONOMY");
+
+  /* WHOSE TURN THIS RUNS ON.
+
+     The board was opened long before this section, and the coin checks threw
+     the die a good many times, so the turn is wherever it happened to stop.
+     Rather than assume a seat and then assert against it, hand the turn back to
+     the first seat and read the roster from the page. Everything below is then
+     written against the player who is actually up, which is also the only way
+     this section keeps working if the opening seat ever changes. */
+  const listed = await host.json(`
+    return (() => {
+      const b = document.querySelector(".board");
+      while (b.turn.node.dataset.turn !== "0") b.turn.next();
+      return [...document.querySelectorAll(".who")].map(w => ({
+        seat: w.dataset.seat,
+        name: w.querySelector(".who__name").textContent,
+        money: w.querySelector(".who__money").textContent,
+      }));
+    })()
+  `);
+
+  const BUYER = listed.find((s) => s.seat === "0");
+  const OTHER = listed.find((s) => s.seat === "1");
+
+  note("the board hands the turn back to the first seat",
+    listed.length === 2 && BUYER?.name && OTHER?.name,
+    listed.map((s) => `${s.seat}:${s.name}`).join(" "));
+
+  /* --- what the header says before anything has happened --- */
+
+  await host.eval(`document.querySelector('.board__cell[data-id="moon"]').click()`);
+  await sleep(900);
+
+  const opening = await host.json(`
+    return (() => {
+      const who = [...document.querySelectorAll(".who")];
+      const card = document.querySelector(".board__card .property-card");
+      const builds = [...document.querySelectorAll(".build")];
+      return {
+        purses: who.map(w => w.querySelector(".who__money")?.textContent || ""),
+        seats: who.map(w => w.dataset.seat),
+        status: card?.querySelector(".property-card__status")?.textContent || "",
+        rentLine: card?.querySelector(".property-card__rent")?.textContent || "",
+        buyShown: card?.querySelector(".property-card__buy-slot")?.hidden === false,
+        buyLabel: card?.querySelector(".property-card__buy-label")?.textContent || "",
+        buyCost: card?.querySelector(".property-card__buy-cost")?.textContent || "",
+        buyDisabled: card?.querySelector(".property-card__buy")?.disabled ?? null,
+        // A card that is shorter than its own contents slices them off at the
+        // bottom edge - which is how a sentence lost its last two words while
+        // every check still passed.
+        cardClips: card ? card.scrollHeight > card.clientHeight + 1 : null,
+        buildCount: builds.length,
+        buildNames: builds.map(b => b.querySelector(".build__name")?.textContent || ""),
+        buildCosts: builds.map(b => b.querySelector(".build__cost-figure")?.textContent || ""),
+        buildBecomes: builds.map(b => b.querySelector(".build__becomes")?.textContent || ""),
+        buildStates: builds.map(b => b.dataset.state || ""),
+        buildLabels: builds.map(b => b.querySelector(".build__button-label")?.textContent || ""),
+        buildDisabled: builds.map(b => b.querySelector(".build__button")?.disabled),
+        owner: document.querySelector('.board__cell[data-id="moon"]')?.dataset.owner ?? "",
+        built: document.querySelector('.board__cell[data-id="moon"]')?.dataset.built ?? "",
+      };
+    })()
+  `);
+
+  note("both players are shown two thousand", opening.purses.join(" ") === "₹2,000 ₹2,000", opening.purses.join(" "));
+  note("and each purse knows its own seat", opening.seats.join(" ") === "0 1", opening.seats.join(" "));
+  note("an unowned square says so, and says what it costs",
+    opening.status === "Unowned • ₹200", opening.status);
+  note("and says what it would charge", /20/.test(opening.rentLine), opening.rentLine);
+  note("with a Buy button, live, at the right price",
+    opening.buyShown && opening.buyLabel === "Buy" && opening.buyCost === "₹200" &&
+    opening.buyDisabled === false,
+    `${opening.buyLabel} ${opening.buyCost}, disabled=${opening.buyDisabled}`);
+
+  note("and three builds, named and priced",
+    opening.buildCount === 3 &&
+    opening.buildNames.join(" / ") === "Lunar Outpost / Lunar Colony / Lunar Dominion" &&
+    opening.buildCosts.join(" ") === "100 150 200",
+    opening.buildNames.map((n, i) => `${n} ${opening.buildCosts[i]}`).join(" | "));
+  note("each saying what the rent would become",
+    opening.buildBecomes.join(" / ") === "Rent becomes ₹80 / Rent becomes ₹240 / Rent becomes ₹500",
+    opening.buildBecomes.join(" / "));
+
+  // Not "the first one is live": nobody holds this square, so there is nothing
+  // to build on it yet. The three are still shown, named and priced - they are
+  // what the square could become - but all three are shut until it is bought.
+  note("and on a square nobody holds, no build is live at all",
+    opening.buildStates.join(" ") === "locked locked locked" &&
+    opening.buildDisabled.join(" ") === "true true true" &&
+    opening.buildLabels.join(" ") === "Locked Locked Locked",
+    `${opening.buildStates.join(" ")} | ${opening.buildDisabled.join(" ")} | ${opening.buildLabels.join(" ")}`);
+
+  note("and an unheld square carries no mark", opening.owner === "" && opening.built === "",
+    `owner "${opening.owner}", built "${opening.built}"`);
+
+  // Said as a fact about the card rather than as a pixel count: whatever it has
+  // to say, it has to be tall enough to say it. It was not, and the advantage
+  // text lost its last two words with nothing failing.
+  note("and the card is tall enough for everything it says", opening.cardClips === false,
+    `clips its own contents: ${opening.cardClips}`);
+
+  /* --- buying --- */
+
+  await host.eval(`document.querySelector(".property-card__buy").click()`);
+  await sleep(500);
+
+  const bought = await host.json(`
+    return (() => {
+      const cell = document.querySelector('.board__cell[data-id="moon"]');
+      const card = document.querySelector(".board__card .property-card");
+      const ring = getComputedStyle(cell, "::after");
+      return {
+        purses: [...document.querySelectorAll(".who__money")].map(w => w.textContent),
+        status: card?.querySelector(".property-card__status")?.textContent || "",
+        rentLine: card?.querySelector(".property-card__rent")?.textContent || "",
+        buyHidden: card?.querySelector(".property-card__buy-slot")?.hidden !== false,
+        owner: cell.dataset.owner ?? "",
+        built: cell.dataset.built ?? "",
+        ringWidth: ring.borderTopWidth,
+        ringStyle: ring.borderTopStyle,
+        ownerColour: cell.style.getPropertyValue("--owner"),
+        states: [...document.querySelectorAll(".build")].map(b => b.dataset.state),
+        labels: [...document.querySelectorAll(".build__button-label")].map(b => b.textContent),
+      };
+    })()
+  `);
+
+  note("buying takes the money out of the purse",
+    bought.purses.join(" ") === "₹1,800 ₹2,000", bought.purses.join(" "));
+  note("the card now says you own it",
+    bought.status === "You own this", bought.status);
+  note("and that nothing has been built on it yet",
+    /Not built/.test(bought.rentLine) && /20/.test(bought.rentLine), bought.rentLine);
+  note("and the Buy button is gone, because there is nothing left to buy",
+    bought.buyHidden === true, `hidden=${bought.buyHidden}`);
+
+  note("and the square is marked in the buyer's own colour",
+    bought.owner === "0" && bought.built === "0" && /^#[0-9A-F]{6}$/i.test(bought.ownerColour),
+    `owner seat ${bought.owner}, colour ${bought.ownerColour}`);
+  note("with a thin ring drawn on it",
+    bought.ringStyle === "solid" && parseFloat(bought.ringWidth) >= 1.5 && parseFloat(bought.ringWidth) <= 2.5,
+    `${bought.ringStyle} ${bought.ringWidth}`);
+
+  note("and the first build is now the live one",
+    bought.states.join(" ") === "next locked locked" && bought.labels[0] === "Upgrade",
+    `${bought.states.join(" ")} | ${bought.labels.join(" ")}`);
+
+  /* --- building, in order --- */
+
+  await host.eval(`document.querySelector('.build[data-build="1"] .build__button').click()`);
+  await sleep(350);
+  const built1 = await host.json(`
+    return (() => ({
+      purses: [...document.querySelectorAll(".who__money")].map(w => w.textContent),
+      rent: document.querySelector(".property-card__rent")?.textContent || "",
+      built: document.querySelector('.board__cell[data-id="moon"]')?.dataset.built,
+      labels: [...document.querySelectorAll(".build__button-label")].map(b => b.textContent),
+      states: [...document.querySelectorAll(".build")].map(b => b.dataset.state),
+    }))()
+  `);
+
+  note("building takes the money", built1.purses.join(" ") === "₹1,700 ₹2,000", built1.purses.join(" "));
+  note("and raises the rent the card quotes",
+    built1.rent.includes("₹80") && built1.rent.includes("Built 1 of 3"), built1.rent);
+  note("and is recorded on the square", built1.built === "1", `built ${built1.built}`);
+  note("and the next build is the live one, with the last one now Built",
+    built1.states.join(" ") === "done next locked" &&
+    built1.labels.join(" ") === "Built Upgrade Locked",
+    `${built1.states.join(" ")} | ${built1.labels.join(" ")}`);
+
+  // The one that must not be reachable: the third build, before the second.
+  const jumped = await host.json(`
+    return (() => {
+      const third = document.querySelector('.build[data-build="3"] .build__button');
+      return { disabled: third.disabled, label: third.querySelector(".build__button-label").textContent };
+    })()
+  `);
+  note("and the third build cannot be reached before the second",
+    jumped.disabled === true && jumped.label === "Locked",
+    `disabled=${jumped.disabled}, "${jumped.label}"`);
+
+  await host.eval(`
+    (async () => {
+      document.querySelector('.build[data-build="2"] .build__button').click();
+      await new Promise(r => setTimeout(r, 120));
+      document.querySelector('.build[data-build="3"] .build__button').click();
+      return true;
+    })()
+  `);
+  await sleep(400);
+
+  const built3 = await host.json(`
+    return (() => ({
+      purses: [...document.querySelectorAll(".who__money")].map(w => w.textContent),
+      rent: document.querySelector(".property-card__rent")?.textContent || "",
+      built: document.querySelector('.board__cell[data-id="moon"]')?.dataset.built,
+      labels: [...document.querySelectorAll(".build__button-label")].map(b => b.textContent),
+      states: [...document.querySelectorAll(".build")].map(b => b.dataset.state),
+      offers: [...document.querySelectorAll(".build")].filter(b => b.querySelector(".build__button").disabled === false).length,
+    }))()
+  `);
+
+  note("building the last two costs 150 and 200",
+    built3.purses.join(" ") === "₹1,350 ₹2,000", built3.purses.join(" "));
+  note("and Moon now charges its full 500",
+    built3.rent.includes("₹500") && built3.rent.includes("Built 3 of 3"), built3.rent);
+  note("and every build on it is Built, and none of them is live",
+    built3.states.join(" ") === "done done done" &&
+    built3.labels.join(" ") === "Built Built Built" && built3.offers === 0,
+    `${built3.states.join(" ")} | ${built3.labels.join(" ")} | ${built3.offers} live`);
+  note("and the square says it is built to the top", built3.built === "3", `built ${built3.built}`);
+
+  await shot(host, `${W}-economy-owned`);
+
+  /* --- the other player's side of the same square --- */
+
+  // Hand the turn over. Not by throwing: a throw also moves a coin, and a coin
+  // that landed on Ragnarok would open a chest and stop the rest of this.
+  await host.eval(`
+    (() => {
+      const b = document.querySelector(".board");
+      b.turn.next();
+      return b.turn.node.dataset.turn;
+    })()
+  `);
+  await host.eval(`document.querySelector('.board__cell[data-id="moon"]').click()`);
+  await sleep(900);
+
+  const theirs = await host.json(`
+    return (() => {
+      const card = document.querySelector(".board__card .property-card");
+      return {
+        turn: document.querySelector(".board__turn")?.dataset.turn,
+        status: card?.querySelector(".property-card__status")?.textContent || "",
+        buyHidden: card?.querySelector(".property-card__buy-slot")?.hidden !== false,
+        offers: [...document.querySelectorAll(".build")].filter(b => b.querySelector(".build__button").disabled === false).length,
+        states: [...document.querySelectorAll(".build")].map(b => b.dataset.state),
+      };
+    })()
+  `);
+
+  note("the turn passes to the other seat", theirs.turn === "1", `turn ${theirs.turn}`);
+  note("and the same square now names who holds it, and what it charges",
+    theirs.status === `Owned by ${BUYER.name} • Rent ₹500`, theirs.status);
+  // The opponent sees the builds as BUILT rather than as locked. They are built;
+  // saying so is what tells the other player why the rent is 500, and "locked"
+  // would suggest they could build here if they had the money.
+  note("with no way to buy it and no way to build on it",
+    theirs.buyHidden === true && theirs.offers === 0 &&
+    theirs.states.join(" ") === "done done done",
+    `buy hidden ${theirs.buyHidden}, ${theirs.offers} live, ${theirs.states.join(" ")}`);
+
+  await shot(host, `${W}-economy-theirs`);
+
+  /* --- rent, paid by landing on it --- */
+
+  await host.eval(`
+    (async () => {
+      const c = document.querySelector(".board").coins;
+      c.reset();
+      await new Promise(r => setTimeout(r, 250));
+      await c.movePlayer("seat-1", 1);   // one step from Start is Moon
+      return true;
+    })()
+  `);
+  await sleep(1600);
+
+  const paid = await host.json(`
+    return (() => {
+      const toast = document.querySelector(".board__toast");
+      return {
+        purses: [...document.querySelectorAll(".who__money")].map(w => w.textContent).join(" "),
+        toast: toast?.textContent || "",
+        status: document.querySelector(".property-card__status")?.textContent || "",
+      };
+    })()
+  `);
+
+  note("landing on a held square is charged rent, and the purses both move",
+    paid.purses === "₹1,850 ₹1,500",
+    `₹1,350 / ₹2,000  ->  ${paid.purses}`);
+  note("and it says so, in words, without being asked",
+    paid.toast === `${OTHER.name} paid ₹500 rent to ${BUYER.name}`, paid.toast || "no toast");
+  note("and the card it opened still names the holder",
+    paid.status.startsWith(`Owned by ${BUYER.name}`), paid.status);
+
+  await shot(host, `${W}-economy-rent`);
+
+  /* --- a square nobody can afford --- */
+
+  const broke = await host.json(`
+    return (() => {
+      const l = document.querySelector(".board").ledger;
+      l.players.find(p => p.seat === 1).money = 10;   // spent down on purpose
+      document.querySelector('.board__cell[data-id="quasar"]').click();
+      return { money: l.players.find(p => p.seat === 1).money };
+    })()
+  `);
+  await sleep(900);
+
+  const cannot = await host.json(`
+    return (() => {
+      const card = document.querySelector(".board__card .property-card");
+      return {
+        money: document.querySelector(".board").ledger.players.find(p => p.seat === 1).money,
+        status: card?.querySelector(".property-card__status")?.textContent || "",
+        label: card?.querySelector(".property-card__buy-label")?.textContent || "",
+        cost: card?.querySelector(".property-card__buy-cost")?.textContent || "",
+        reason: card?.querySelector(".property-card__buy")?.title || "",
+        disabled: card?.querySelector(".property-card__buy")?.disabled,
+        // Whether the button is one line of text or four ragged ones.
+        buttonHeight: card ? +card.querySelector(".property-card__buy").getBoundingClientRect().height.toFixed(1) : 0,
+        scrollTop: document.querySelector(".board__card")?.scrollTop ?? null,
+        owner: document.querySelector('.board__cell[data-id="quasar"]')?.dataset.owner ?? "",
+      };
+    })()
+  `);
+
+  note("a square a player cannot afford is shown but not offered",
+    cannot.label === "Not enough" && cannot.disabled === true && /short/.test(cannot.cost),
+    `"${cannot.label}" ${cannot.cost}, disabled=${cannot.disabled}`);
+  // Four words, not a sentence: the full reason is a title on the button, and the
+  // button itself stays the height of the one above it rather than wrapping into
+  // four ragged lines in a pill two hundred pixels wide.
+  note("and says by how much, on the button itself",
+    cannot.cost === "₹1,190 short", cannot.cost);
+  note("and keeps the full reason where a reader can still find it",
+    cannot.reason === "You need 1190 more to take it.", cannot.reason);
+  note("and the button is still one line tall", cannot.buttonHeight < 40,
+    `${cannot.buttonHeight}px`);
+  // A new square opens at the top of the card, not wherever the last one was
+  // left scrolled to - the name and the price are the first things on it.
+  note("and the card opens at the top, whatever the last one was scrolled to",
+    cannot.scrollTop === 0, `scrollTop ${cannot.scrollTop}`);
+  note("and nothing was taken and nothing changed hands",
+    cannot.money === 10 && cannot.owner === "",
+    `money ${cannot.money}, owner "${cannot.owner}"`);
+  note("and the square it quoted is the dearest on the board",
+    cannot.status === "Unowned • ₹1200", cannot.status);
+
+  await shot(host, `${W}-economy-cannot`);
 
   /* ------------------------------------------------------- back out again */
 

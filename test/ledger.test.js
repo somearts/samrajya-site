@@ -59,6 +59,20 @@ test("both players start with two thousand", () => {
   assert.equal(playerAt(game, 1).name, "Sakshi");
 });
 
+test("a roster with no seats gets the seats it is standing in", () => {
+  // The room sends names and civs and no seat at all, so the roster's own order
+  // has to be the seat. Getting this wrong made two players into one: both on
+  // seat 0, the second purse reading zero, and every card belonging to nobody.
+  const game = createLedger([
+    { name: "Sam", civ: "aztec" },
+    { name: "Sakshi", civ: "ancient-egyptian" },
+  ]);
+  assert.deepEqual(game.players.map((p) => p.seat), [0, 1]);
+  assert.equal(moneyOf(game, 0), 2000);
+  assert.equal(moneyOf(game, 1), 2000, "the second player is not a phantom");
+  assert.equal(playerAt(game, 1).name, "Sakshi");
+});
+
 test("nothing is owned and nothing is built when the game opens", () => {
   const game = twoPlayers();
   for (const id of PRICED_IDS) {
