@@ -473,6 +473,49 @@ try {
       await sleep(1500);
     }
 
+    /* Answer whatever a turn put on the board and wait for the next throw to
+       be allowed. A throw can open a buy card, an upgrade card, a rent card or
+       a chest, and none of those is the end of the visit. The die loops below
+       need the turn actually finished, not merely the die stopped. */
+    await page.eval(`
+      window.__finishVisit = async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const b = document.querySelector(".board");
+        for (let i = 0; i < 320; i++) {
+          if (b.dataset.reading === "true") {
+            b.querySelector(".property-card__close")?.click();
+            await wait(60);
+            continue;
+          }
+          const g = b.game;
+          if (g?.phase === "DECISION") {
+            const holder = b.querySelector(".board__card");
+            const chest = holder?.querySelector(".chest-card");
+            if (chest) {
+              const draw = chest.querySelector('[data-action="draw"]');
+              if (draw && !draw.disabled) { draw.click(); await wait(60); continue; }
+              const collect = chest.querySelector('[data-action="collect"]');
+              if (collect && !collect.disabled) { collect.click(); await wait(60); continue; }
+            } else {
+              const next = holder?.querySelector(".property-card__next");
+              if (next && !next.hidden && getComputedStyle(next).display !== "none") {
+                next.click();
+                await wait(90);
+                continue;
+              }
+            }
+          }
+          if (
+            g?.phase === "AWAITING_ROLL" &&
+            b.dataset.rollable === "true" &&
+            b.dataset.moving !== "true"
+          ) return true;
+          await wait(60);
+        }
+        return false;
+      };
+    `);
+
     /* ------------------------------------------------ the card, pressed on
 
        Done before anything else is measured, because a card sitting in the
@@ -950,18 +993,37 @@ try {
       };
     `;
 
-    const landOnRagnarok = async (seat) => page.eval(`
+    /* Land on Ragnarok the way a turn does: the active piece is put back on
+       Start (setup only), then a real roll of four is played. The roll, the
+       walk, the landing and the chest are all the game's own. */
+    const landOnRagnarok = async () => page.eval(`
       (async () => {
         const b = document.querySelector(".board");
-        b.coins.reset();
-        b.coins.movePlayer("${seat}", 4);
+        const g = b.game;
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        // The previous chest's turn may still be finishing. A throw into a busy
+        // board is refused, which would leave nothing to draw.
+        if (b.dataset.reading === "true") {
+          b.querySelector(".property-card__close")?.click();
+        }
+        for (let i = 0; i < 120; i++) {
+          if (b.game.phase === "AWAITING_ROLL" && b.dataset.rollable === "true") break;
+          await wait(50);
+        }
+        const piece = g.pieces.find((p) => p.seat === g.active);
+        piece.position = 0;
+        b.coins.sync(g.pieces);
+        /* Started, not awaited. A landing on a chest is settled by the draw,
+           and the turn only returns after the chest is answered - so awaiting
+           this promise here would wait for the click the checks make next. */
+        b.play({ type: "roll" }, () => 0.55);
         return true;
       })()
     `);
     const settle = () => sleep(2600);
 
     // Landed on it: drawable.
-    await landOnRagnarok("seat-0");
+    await landOnRagnarok();
     await settle();
     const chestLanded = await page.json(READ_CHEST);
 
@@ -1054,7 +1116,7 @@ try {
       !collected.open, `open ${collected.open}`);
 
     /* Bad luck. Forced, so the branch is seen rather than waited for. */
-    await landOnRagnarok("seat-0");
+    await landOnRagnarok();
     await settle();
     await page.eval(`
       (async () => {
@@ -1143,8 +1205,8 @@ try {
       };
     `);
 
-    note(`${label}: the die arrives with no number on it`,
-      dieBefore.face === "0" && dieBefore.shown === 0,
+    note(`${label}: the die shows the one face it last threw`,
+      /^[1-6]$/.test(dieBefore.face) && dieBefore.shown === 1,
       `face ${dieBefore.face}, ${dieBefore.shown} faces showing, says "${dieBefore.label}"`);
     note(`${label}: and it is about half the size it was`,
       dieBefore.width <= dieBefore.cell * 0.7 && dieBefore.width >= dieBefore.cell * 0.5,
@@ -1193,8 +1255,10 @@ try {
         rolling: d.dataset.rolling,
         label: d.getAttribute("aria-label"),
         shown: [...d.querySelectorAll(".dice__face")].filter((f) => !f.hasAttribute("hidden")).length,
-        // A throw must not move a single thing.
-        moved: Math.abs(after.left - before.left) + Math.abs(after.top - before.top),
+        // A throw must not move the die's centre. The box itself may shrink
+        // when the turn ends and the die steps aside, but it must not jump.
+        moved: Math.abs((after.left + after.width / 2) - (before.left + before.width / 2)) +
+               Math.abs((after.top + after.height / 2) - (before.top + before.height / 2)),
         boardMoved: JSON.stringify([document.documentElement.scrollWidth - document.documentElement.clientWidth,
                                      document.documentElement.scrollHeight - document.documentElement.clientHeight]) !==
                      JSON.stringify([0, 0]) ? "yes" : "no",
@@ -1210,6 +1274,10 @@ try {
       thrown.moved < 0.6 && thrown.boardMoved === "no",
       `die moved ${thrown.moved.toFixed(2)}px`);
 
+    // That throw was a real turn: finish whatever it opened before throwing
+    // again.
+    await page.eval("window.__finishVisit()");
+
     // Six more presses. Asserting any two results DIFFER would be flaky - a repeat
     // is a legitimate outcome, one time in six - so what is checked is that every
     // press really throws and really lands on a face, and that the results are
@@ -1219,22 +1287,9 @@ try {
       const d = b.querySelector(".board__dice");
       const faces = [];
 
-      /* Answer any chest a throw put up, so the next press is not into a locked
-         die. See the same helper further down for why this is needed. */
-      const finishVisit = async () => {
-        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-        const card = () => b.querySelector(".chest-card");
-        if (!card()) return;
-        const draw = card().querySelector('[data-action="draw"]');
-        if (draw && !draw.disabled) draw.click();
-        for (let i = 0; i < 80; i++) {
-          const collect = card()?.querySelector('[data-action="collect"]');
-          if (collect && !collect.disabled) { collect.click(); break; }
-          if (!card()) break;
-          await wait(50);
-        }
-        for (let i = 0; i < 60 && card(); i++) await wait(50);
-      };
+      /* Answer any visit a throw put up, so the next press is not into a locked
+         die. See window.__finishVisit for why this is needed. */
+      const finishVisit = () => window.__finishVisit();
 
       for (let n = 0; n < 6; n++) {
         d.dispatchEvent(new MouseEvent("click", { bubbles: true }));
@@ -1295,23 +1350,9 @@ try {
          the way a player would: draw, then collect. Forcing a weapon rather than
          letting the draw fall where it may keeps the loop about the turn cycle
          and not about the odds. */
-      const finishVisit = async () => {
-        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-        const card = () => board.querySelector(".chest-card");
-        if (!card()) return false;
-
-        const draw = card().querySelector('[data-action="draw"]');
-        if (draw && !draw.disabled) draw.click();
-
-        for (let i = 0; i < 80; i++) {
-          const collect = card()?.querySelector('[data-action="collect"]');
-          if (collect && !collect.disabled) { collect.click(); break; }
-          if (!card()) break;
-          await wait(50);
-        }
-        for (let i = 0; i < 60 && card(); i++) await wait(50);
-        return true;
-      };
+      /* Finish whatever a throw put on the board: a buy card, an upgrade card,
+         a rent card or a chest. See window.__finishVisit. */
+      const finishVisit = () => window.__finishVisit();
 
       for (let i = 0; i < 4; i++) {
         turns.push({ text: pill.textContent, seat: pill.dataset.turn, name: pill.dataset.name });
@@ -1433,8 +1474,15 @@ try {
       trio.roster.height < trio.roster.blocks[0].h * 2.2,
       `${trio.roster.height.toFixed(0)}px tall`);
 
-    // Put it back to blank so the shots show the board as it is found.
-    await page.eval(`document.querySelector(".board__card").hidden = true`);
+    // Put it back to blank so the shots show the board as it is found. The
+    // landing mark is a mark of where the last throw stopped, not a wash of
+    // the square's set, so it is cleared before the washes are compared.
+    await page.eval(`(() => {
+      const b = document.querySelector(".board");
+      b.querySelector(".board__card").hidden = true;
+      b.coins.clearHighlight();
+      return true;
+    })()`);
     await sleep(200);
 
     const b = await boardReport(page);
@@ -1518,7 +1566,9 @@ try {
       const offY = b.diceBox.top + b.diceBox.h / 2 - targetY;
       note(
         `${name} and it is centred in the rectangle MOON, LAGRANGE, MILKY WAY and RAMA describe`,
-        Math.abs(offX) <= 1 && Math.abs(offY) <= 1,
+        // A pixel out of a whole rectangle is a rounding artefact, not an
+        // off-centre die.
+        Math.abs(offX) <= 1.5 && Math.abs(offY) <= 1.5,
         `${offX.toFixed(2)}px across, ${offY.toFixed(2)}px down from the middle of a ` +
           `${(r.x1 - r.x0).toFixed(0)}x${(r.y1 - r.y0).toFixed(0)} rectangle`,
       );
@@ -1552,10 +1602,9 @@ try {
   /* ------------------------------------------------------------ the economy
 
      The whole property economy, driven through the page a player is looking
-     at: buy a square, watch the purse and the board and the card all move, build
-     it three times refusing the middle one out of order, then hand the turn over
-     and see the same square as the other player's - and land on it and be
-     charged.
+     at, in the order a player lives it: land on a square nobody holds, buy it,
+     come back and build once, be charged rent on it, try to buy something you
+     cannot afford, read it, sell it, and fit the same card on a smaller phone.
 
      Everything here reads the rendered page. The ledger is reachable from
      outside the module because board.js publishes it the way it publishes the
@@ -1564,346 +1613,968 @@ try {
 
   heading("THE ECONOMY");
 
-  /* WHOSE TURN THIS RUNS ON.
+  /* A clean economy for the section. Nothing before this point spends money or
+     buys a square, but resetting here makes the section independent of how many
+     turns the board checks happened to take. This is setup, not a rule: every
+     turn below is played through the game's own action. */
+  await host.eval(`(() => {
+    const b = document.querySelector(".board");
+    const g = b.game;
+    for (const p of g.ledger.players) p.money = g.ledger.opening;
+    for (const square of g.ledger.properties.values()) {
+      square.owner = null;
+      square.upgradeLevel = 0;
+    }
+    for (const piece of g.pieces) piece.position = 0;
+    b.coins.sync(g.pieces);
+    return true;
+  })()`);
 
-     The board was opened long before this section, and the coin checks threw
-     the die a good many times, so the turn is wherever it happened to stop.
-     Rather than assume a seat and then assert against it, hand the turn back to
-     the first seat and read the roster from the page. Everything below is then
-     written against the player who is actually up, which is also the only way
-     this section keeps working if the opening seat ever changes. */
-  const listed = await host.json(`
-    return (() => {
-      const b = document.querySelector(".board");
-      while (b.turn.node.dataset.turn !== "0") b.turn.next();
-      return [...document.querySelectorAll(".who")].map(w => ({
-        seat: w.dataset.seat,
-        name: w.querySelector(".who__name").textContent,
-        money: w.querySelector(".who__money").textContent,
-      }));
-    })()
+  await host.eval(`window.__econ = {
+    board() { return document.querySelector(".board"); },
+    place(index) {
+      const b = this.board();
+      const g = b.game;
+      const piece = g.pieces.find((p) => p.seat === g.active);
+      piece.position = index;
+      b.coins.sync(g.pieces);
+      return piece.position;
+    },
+    async roll(face) {
+      await this.board().play({ type: "roll" }, () => (face - 0.5) / 6);
+      return true;
+    },
+    async ensure(seat) {
+      const b = this.board();
+      for (let i = 0; i < 4 && b.game.active !== seat; i++) {
+        if (b.game.phase !== "AWAITING_ROLL") await window.__finishVisit();
+        this.place(0);
+        await this.roll(1);
+        await window.__finishVisit();
+      }
+      return b.game.active;
+    },
+  };`);
+
+  const roster = await host.json(`
+    const g = document.querySelector(".board").game;
+    return g.ledger.players.map((p) => ({ seat: p.seat, name: p.name }));
+  `);
+  const BUYER = roster.find((p) => p.seat === 0)?.name || "seat 0";
+  const OTHER = roster.find((p) => p.seat === 1)?.name || "seat 1";
+  const TURN_OF = (name) => `${name}\u2019s turn`;
+
+  await host.setViewport(390, 850, DSF);
+  await sleep(400);
+  await host.eval("window.__econ.ensure(0)");
+
+  const setup = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    return {
+      phase: g.phase,
+      active: g.active,
+      money: g.ledger.players.map((p) => p.money),
+      owned: [...g.ledger.properties.values()].filter((s) => s.owner !== null).length,
+      turn: b.querySelector(".board__turn").textContent,
+      rollable: b.dataset.rollable,
+    };
+  `);
+  note("the economy begins on the first seat's turn",
+    setup.phase === "AWAITING_ROLL" && setup.active === 0 &&
+      setup.turn === TURN_OF(BUYER) && setup.rollable === "true",
+    `phase ${setup.phase}, seat ${setup.active}, "${setup.turn}", rollable ${setup.rollable}`);
+  note("both purses hold two thousand", setup.money.join(" ") === "2000 2000", setup.money.join(" "));
+  note("and nobody holds a square yet", setup.owned === 0, `${setup.owned} owned`);
+
+  /* --- landing on a square nobody holds -------------------------------- */
+
+  await host.eval("window.__econ.place(0)");
+  await host.eval("window.__econ.roll(6)"); // Start + 6 is Pluto, price 400.
+
+  const unowned = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const card = h.querySelector(".property-card");
+    const centre = b.querySelector("#board-center");
+    const rect = (n) => n ? n.getBoundingClientRect().toJSON() : null;
+    const builds = [...h.querySelectorAll(".build")];
+    return {
+      phase: g.phase,
+      active: g.active,
+      kind: g.landing?.kind,
+      property: h.dataset.property,
+      mode: h.dataset.mode,
+      reading: b.dataset.reading,
+      rollable: b.dataset.rollable,
+      turn: b.querySelector(".board__turn").textContent,
+      dieOpacity: getComputedStyle(b.querySelector(".board__dice")).opacity,
+      holder: rect(h),
+      centre: rect(centre),
+      card: rect(card),
+      buildsBox: rect(h.querySelector(".builds")),
+      holderClient: h.clientHeight,
+      holderScroll: h.scrollHeight,
+      cardClient: card.clientHeight,
+      cardScroll: card.scrollHeight,
+      closeHidden: h.querySelector(".property-card__close").hidden,
+      buyHidden: h.querySelector(".property-card__buy-slot").hidden,
+      buyLabel: h.querySelector(".property-card__buy-label").textContent,
+      buyCost: h.querySelector(".property-card__buy-cost").textContent,
+      buyDisabled: h.querySelector(".property-card__buy").disabled,
+      buyAria: h.querySelector(".property-card__buy").getAttribute("aria-disabled"),
+      buyBox: rect(h.querySelector(".property-card__buy")),
+      nextText: h.querySelector(".property-card__next-label").textContent,
+      nextHidden: h.querySelector(".property-card__next").hidden,
+      nextBox: rect(h.querySelector(".property-card__next")),
+      builds: builds.map((n) => ({
+        state: n.dataset.state,
+        label: n.querySelector(".build__button-label").textContent,
+        disabled: n.querySelector(".build__button").disabled,
+      })),
+      purse: Object.fromEntries([...document.querySelectorAll(".who")].map((w) => [
+        w.dataset.seat,
+        w.querySelector(".who__money").textContent.replace(/\\s+/g, ""),
+      ])),
+      owner: b.querySelector('.board__cell[data-id="pluto"]').dataset.owner ?? "",
+    };
   `);
 
-  const BUYER = listed.find((s) => s.seat === "0");
-  const OTHER = listed.find((s) => s.seat === "1");
+  note("landing on a square nobody holds opens a decision card",
+    unowned.phase === "DECISION" && unowned.kind === "buy" &&
+      unowned.mode === "decision" && unowned.property === "pluto",
+    `phase ${unowned.phase}, kind ${unowned.kind}, mode ${unowned.mode}, ${unowned.property}`);
+  note("the die and the turn line step aside for it",
+    unowned.dieOpacity === "0" && unowned.rollable === "false" &&
+      unowned.turn === TURN_OF(BUYER),
+    `die ${unowned.dieOpacity}, rollable ${unowned.rollable}, "${unowned.turn}"`);
+  note("there is no close button on a decision",
+    unowned.closeHidden === true, `hidden ${unowned.closeHidden}`);
+  note("Buy is live at the square's price, with Pass directly under it",
+    unowned.buyHidden === false && unowned.buyLabel === "Buy" &&
+      unowned.buyCost === "\u20b9400" && unowned.buyDisabled === false &&
+      unowned.buyAria === "false" && unowned.nextText === "Pass" &&
+      unowned.nextHidden === false &&
+      unowned.buyBox.bottom <= unowned.nextBox.top + 1,
+    `${unowned.buyLabel} ${unowned.buyCost}, disabled ${unowned.buyDisabled}; ` +
+      `Buy ends ${unowned.buyBox.bottom.toFixed(1)}, Pass starts ${unowned.nextBox.top.toFixed(1)}`);
+  note("the three builds are shown and shut, because nobody owns it",
+    unowned.builds.length === 3 &&
+      unowned.builds.every((b) => b.state === "locked" && b.label === "Locked" && b.disabled),
+    unowned.builds.map((b) => `${b.state}:${b.label}`).join(" | "));
+  note("a square nobody holds carries no ownership mark",
+    unowned.owner === "", `owner "${unowned.owner}"`);
+  note("and both purses are still two thousand",
+    unowned.purse["0"] === "\u20b92,000" && unowned.purse["1"] === "\u20b92,000",
+    `${unowned.purse["0"]} ${unowned.purse["1"]}`);
+  note("the decision card fills the whole 4x8 middle, inset only by the card gap",
+    unowned.holder.left >= unowned.centre.left - 1 &&
+      unowned.holder.right <= unowned.centre.right + 1 &&
+      unowned.holder.top >= unowned.centre.top - 1 &&
+      unowned.holder.bottom <= unowned.centre.bottom + 1 &&
+      Math.abs(unowned.holder.width - unowned.centre.width) <= 12,
+    `card ${unowned.holder.left.toFixed(0)}..${unowned.holder.right.toFixed(0)} / ` +
+      `${unowned.holder.top.toFixed(0)}..${unowned.holder.bottom.toFixed(0)}; ` +
+      `middle ${unowned.centre.left.toFixed(0)}..${unowned.centre.right.toFixed(0)} / ` +
+      `${unowned.centre.top.toFixed(0)}..${unowned.centre.bottom.toFixed(0)}`);
+  note("and its card and builds fit without a scroll at 390x850",
+    unowned.holderScroll <= unowned.holderClient + 1 &&
+      unowned.cardScroll <= unowned.cardClient + 1 &&
+      unowned.buildsBox.bottom <= unowned.holder.bottom + 1,
+    `holder ${unowned.holderClient}/${unowned.holderScroll}, ` +
+      `card ${unowned.cardClient}/${unowned.cardScroll}, ` +
+      `builds end ${unowned.buildsBox.bottom.toFixed(1)} vs ${unowned.holder.bottom.toFixed(1)}`);
+  await shot(host, "phase1-unowned-390");
 
-  note("the board hands the turn back to the first seat",
-    listed.length === 2 && BUYER?.name && OTHER?.name,
-    listed.map((s) => `${s.seat}:${s.name}`).join(" "));
+  /* --- buying, and the visit ending ------------------------------------ */
 
-  /* --- what the header says before anything has happened --- */
-
-  await host.eval(`document.querySelector('.board__cell[data-id="moon"]').click()`);
-  await sleep(900);
-
-  const opening = await host.json(`
-    return (() => {
-      const who = [...document.querySelectorAll(".who")];
-      const card = document.querySelector(".board__card .property-card");
-      const builds = [...document.querySelectorAll(".build")];
-      return {
-        purses: who.map(w => w.querySelector(".who__money")?.textContent || ""),
-        seats: who.map(w => w.dataset.seat),
-        status: card?.querySelector(".property-card__status")?.textContent || "",
-        rentLine: card?.querySelector(".property-card__rent")?.textContent || "",
-        buyShown: card?.querySelector(".property-card__buy-slot")?.hidden === false,
-        buyLabel: card?.querySelector(".property-card__buy-label")?.textContent || "",
-        buyCost: card?.querySelector(".property-card__buy-cost")?.textContent || "",
-        buyDisabled: card?.querySelector(".property-card__buy")?.disabled ?? null,
-        // A card that is shorter than its own contents slices them off at the
-        // bottom edge - which is how a sentence lost its last two words while
-        // every check still passed.
-        cardClips: card ? card.scrollHeight > card.clientHeight + 1 : null,
-        buildCount: builds.length,
-        buildNames: builds.map(b => b.querySelector(".build__name")?.textContent || ""),
-        buildCosts: builds.map(b => b.querySelector(".build__cost-figure")?.textContent || ""),
-        buildBecomes: builds.map(b => b.querySelector(".build__becomes")?.textContent || ""),
-        buildStates: builds.map(b => b.dataset.state || ""),
-        buildLabels: builds.map(b => b.querySelector(".build__button-label")?.textContent || ""),
-        buildDisabled: builds.map(b => b.querySelector(".build__button")?.disabled),
-        owner: document.querySelector('.board__cell[data-id="moon"]')?.dataset.owner ?? "",
-        built: document.querySelector('.board__cell[data-id="moon"]')?.dataset.built ?? "",
-      };
-    })()
+  const moneyBefore = await host.eval(`
+    document.querySelector(".board").game.ledger.players.map((p) => p.money).join(" ")
   `);
 
-  note("both players are shown two thousand", opening.purses.join(" ") === "₹2,000 ₹2,000", opening.purses.join(" "));
-  note("and each purse knows its own seat", opening.seats.join(" ") === "0 1", opening.seats.join(" "));
-  note("an unowned square says so, and says what it costs",
-    opening.status === "Unowned • ₹200", opening.status);
-  note("and says what it would charge", /20/.test(opening.rentLine), opening.rentLine);
-  note("with a Buy button, live, at the right price",
-    opening.buyShown && opening.buyLabel === "Buy" && opening.buyCost === "₹200" &&
-    opening.buyDisabled === false,
-    `${opening.buyLabel} ${opening.buyCost}, disabled=${opening.buyDisabled}`);
+  await host.eval(`document.querySelector(".property-card__buy").click(); true;`);
+  await sleep(300);
 
-  note("and three builds, named and priced",
-    opening.buildCount === 3 &&
-    opening.buildNames.join(" / ") === "Lunar Outpost / Lunar Colony / Lunar Dominion" &&
-    opening.buildCosts.join(" ") === "100 150 200",
-    opening.buildNames.map((n, i) => `${n} ${opening.buildCosts[i]}`).join(" | "));
-  note("each saying what the rent would become",
-    opening.buildBecomes.join(" / ") === "Rent becomes ₹80 / Rent becomes ₹240 / Rent becomes ₹500",
-    opening.buildBecomes.join(" / "));
+  const afterBuy = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const builds = [...h.querySelectorAll(".build")];
+    return {
+      phase: g.phase,
+      active: g.active,
+      turn: b.querySelector(".board__turn").textContent,
+      turnHidden: b.querySelector(".board__turn").hidden,
+      cardHidden: h.hidden,
+      money: g.ledger.players.map((p) => p.money),
+      square: g.ledger.properties.get("pluto"),
+      ownerMark: b.querySelector('.board__cell[data-id="pluto"]').dataset.owner ?? "",
+      buyHidden: h.querySelector(".property-card__buy-slot").hidden,
+      nextHidden: h.querySelector(".property-card__next").hidden,
+      builds: builds.map((n) => ({
+        state: n.dataset.state,
+        label: n.querySelector(".build__button-label").textContent,
+        disabled: n.querySelector(".build__button").disabled,
+      })),
+    };
+  `);
 
-  // Not "the first one is live": nobody holds this square, so there is nothing
-  // to build on it yet. The three are still shown, named and priced - they are
-  // what the square could become - but all three are shut until it is bought.
-  note("and on a square nobody holds, no build is live at all",
-    opening.buildStates.join(" ") === "locked locked locked" &&
-    opening.buildDisabled.join(" ") === "true true true" &&
-    opening.buildLabels.join(" ") === "Locked Locked Locked",
-    `${opening.buildStates.join(" ")} | ${opening.buildDisabled.join(" ")} | ${opening.buildLabels.join(" ")}`);
+  note("Buy takes the price out of the buyer's purse and gives them the square",
+    afterBuy.money[0] === Number(moneyBefore.split(" ")[0]) - 400 &&
+      afterBuy.square.owner === 0 && afterBuy.square.upgradeLevel === 0 &&
+      afterBuy.ownerMark === "0",
+    `money ${afterBuy.money.join(" ")}, owner ${afterBuy.square.owner}, ` +
+      `level ${afterBuy.square.upgradeLevel}, mark "${afterBuy.ownerMark}"`);
+  note("the card stops offering the answer the instant it is accepted",
+    afterBuy.buyHidden === true && afterBuy.nextHidden === true,
+    `Buy hidden ${afterBuy.buyHidden}, Pass hidden ${afterBuy.nextHidden}`);
+  note("and the build rows lock immediately, before the card slides away",
+    !afterBuy.cardHidden &&
+      afterBuy.builds[0].label === "Land here again to build" &&
+      afterBuy.builds[1].label === "Build the previous level first" &&
+      afterBuy.builds[2].label === "Build the previous level first" &&
+      afterBuy.builds.every((b) => b.disabled && b.state === "locked"),
+    `${afterBuy.cardHidden ? "card gone" : "card up"}: ` +
+      afterBuy.builds.map((b) => b.label).join(" | "));
+  note("and the turn line does not move before TURN_END",
+    afterBuy.active === 0 && afterBuy.turn === TURN_OF(BUYER) && !afterBuy.turnHidden,
+    `active ${afterBuy.active}, "${afterBuy.turn}"`);
+  await shot(host, "phase1-after-buy-390");
 
-  note("and an unheld square carries no mark", opening.owner === "" && opening.built === "",
-    `owner "${opening.owner}", built "${opening.built}"`);
+  await host.eval("window.__finishVisit()");
+  await sleep(700);
 
-  // Said as a fact about the card rather than as a pixel count: whatever it has
-  // to say, it has to be tall enough to say it. It was not, and the advantage
-  // text lost its last two words with nothing failing.
-  note("and the card is tall enough for everything it says", opening.cardClips === false,
-    `clips its own contents: ${opening.cardClips}`);
+  const handed = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    return {
+      phase: g.phase,
+      active: g.active,
+      turn: b.querySelector(".board__turn").textContent,
+      turnHidden: b.querySelector(".board__turn").hidden,
+      cardHidden: h.hidden,
+      rollable: b.dataset.rollable,
+      dieOpacity: getComputedStyle(b.querySelector(".board__dice")).opacity,
+      purse: Object.fromEntries([...document.querySelectorAll(".who")].map((w) => [
+        w.dataset.seat,
+        w.querySelector(".who__money").textContent.replace(/\\s+/g, ""),
+      ])),
+    };
+  `);
 
-  /* --- buying --- */
+  note("answering the visit ends the turn and hands it on",
+    handed.phase === "AWAITING_ROLL" && handed.active === 1 &&
+      handed.turn === TURN_OF(OTHER) && !handed.turnHidden,
+    `phase ${handed.phase}, active ${handed.active}, "${handed.turn}"`);
+  note("the card is gone and the die is back for the next player",
+    handed.cardHidden === true && handed.rollable === "true" && handed.dieOpacity === "1",
+    `card hidden ${handed.cardHidden}, rollable ${handed.rollable}, die ${handed.dieOpacity}`);
+  note("and the chips show what the ledger holds",
+    handed.purse["0"] === "\u20b91,600" && handed.purse["1"] === "\u20b92,000",
+    `${handed.purse["0"]} ${handed.purse["1"]}`);
 
-  await host.eval(`document.querySelector(".property-card__buy").click()`);
+  /* --- landing on your own square: one upgrade ------------------------ */
+
+  // Back to seat 0. The filler turn lands on the still-unowned Moon and passes.
+  await host.eval("window.__econ.ensure(0)");
+  await host.eval("window.__econ.place(0)");
+  await host.eval("window.__econ.roll(6)"); // Pluto, now the buyer's.
+
+  const own = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const builds = [...h.querySelectorAll(".build")];
+    return {
+      phase: g.phase,
+      active: g.active,
+      kind: g.landing?.kind,
+      money: g.ledger.players.map((p) => p.money),
+      level: g.ledger.properties.get("pluto").upgradeLevel,
+      closeHidden: h.querySelector(".property-card__close").hidden,
+      nextText: h.querySelector(".property-card__next-label").textContent,
+      nextHidden: h.querySelector(".property-card__next").hidden,
+      buyHidden: h.querySelector(".property-card__buy-slot").hidden,
+      builds: builds.map((n) => ({
+        state: n.dataset.state,
+        label: n.querySelector(".build__button-label").textContent,
+        disabled: n.querySelector(".build__button").disabled,
+        cost: n.querySelector(".build__cost-figure").textContent,
+      })),
+    };
+  `);
+
+  note("landing on your own square offers exactly one level to build",
+    own.phase === "DECISION" && own.kind === "own" && own.active === 0 &&
+      own.builds[0].state === "next" && own.builds[0].label === "Upgrade" &&
+      !own.builds[0].disabled &&
+      own.builds[1].label === "Build the previous level first" &&
+      own.builds[2].label === "Build the previous level first" &&
+      own.nextText === "Done" && !own.nextHidden && own.buyHidden,
+    `${own.builds.map((b) => `${b.state}:${b.label}`).join(" | ")}, next ${own.nextText}`);
+  note("and the card has no close button, so the visit must be answered",
+    own.closeHidden === true, `hidden ${own.closeHidden}`);
+  await shot(host, "phase1-own-upgrade-390");
+
+  const upgradeCost = Number(own.builds[0].cost);
+  const moneyBeforeUpgrade = own.money[0];
+  await host.eval(`document.querySelector(".build__button:not([disabled])").click(); true;`);
+  await sleep(700);
+
+  const upgraded = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const builds = [...h.querySelectorAll(".build")];
+    return {
+      phase: g.phase,
+      active: g.active,
+      money: g.ledger.players.map((p) => p.money),
+      square: g.ledger.properties.get("pluto"),
+      builds: builds.map((n) => ({
+        state: n.dataset.state,
+        label: n.querySelector(".build__button-label").textContent,
+        disabled: n.querySelector(".build__button").disabled,
+      })),
+      live: [...h.querySelectorAll(".build__button:not([disabled])")].length,
+      nextText: h.querySelector(".property-card__next-label").textContent,
+      nextHidden: h.querySelector(".property-card__next").hidden,
+      rentLine: h.querySelector(".property-card__rent").textContent,
+    };
+  `);
+
+  note("one upgrade costs the figure the row quoted and raises the level by one",
+    upgraded.money[0] === moneyBeforeUpgrade - upgradeCost &&
+      upgraded.square.upgradeLevel === 1 && upgraded.active === 0,
+    `paid ${moneyBeforeUpgrade - upgraded.money[0]} of ${upgradeCost}, ` +
+      `level ${upgraded.square.upgradeLevel}`);
+  note("and every build row is shut for the rest of this visit",
+    upgraded.live === 0 && upgraded.builds[0].label === "Built" &&
+      upgraded.builds[1].label === "Land here again to build" &&
+      upgraded.builds[2].label === "Build the previous level first" &&
+      upgraded.builds.every((b) => b.disabled),
+    `${upgraded.live} live: ${upgraded.builds.map((b) => b.label).join(" | ")}`);
+  note("Done is still there, and the card says what the square now charges",
+    upgraded.nextText === "Done" && !upgraded.nextHidden &&
+      /1 of 3/.test(upgraded.rentLine),
+    `${upgraded.nextText}; "${upgraded.rentLine}"`);
+
+  const secondUpgrade = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const before = {
+      money: g.ledger.players.map((p) => p.money),
+      level: g.ledger.properties.get("pluto").upgradeLevel,
+    };
+    const result = await b.play({ type: "upgrade" });
+    const refused = result?.events.find((e) => e.type === "refused");
+    return {
+      why: refused?.why || "",
+      before,
+      after: {
+        money: g.ledger.players.map((p) => p.money),
+        level: g.ledger.properties.get("pluto").upgradeLevel,
+      },
+      phase: g.phase,
+    };
+  `);
+
+  note("a second upgrade in the same visit is refused and moves nothing",
+    secondUpgrade.why.length > 0 &&
+      secondUpgrade.after.money.join(" ") === secondUpgrade.before.money.join(" ") &&
+      secondUpgrade.after.level === secondUpgrade.before.level &&
+      secondUpgrade.phase === "DECISION",
+    `"${secondUpgrade.why}"; money ${secondUpgrade.after.money.join(" ")}, ` +
+      `level ${secondUpgrade.after.level}`);
+
+  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  await host.eval("window.__finishVisit()");
   await sleep(500);
 
-  const bought = await host.json(`
-    return (() => {
-      const cell = document.querySelector('.board__cell[data-id="moon"]');
-      const card = document.querySelector(".board__card .property-card");
-      const ring = getComputedStyle(cell, "::after");
-      return {
-        purses: [...document.querySelectorAll(".who__money")].map(w => w.textContent),
-        status: card?.querySelector(".property-card__status")?.textContent || "",
-        rentLine: card?.querySelector(".property-card__rent")?.textContent || "",
-        buyHidden: card?.querySelector(".property-card__buy-slot")?.hidden !== false,
-        owner: cell.dataset.owner ?? "",
-        built: cell.dataset.built ?? "",
-        ringWidth: ring.borderTopWidth,
-        ringStyle: ring.borderTopStyle,
-        ownerColour: cell.style.getPropertyValue("--owner"),
-        states: [...document.querySelectorAll(".build")].map(b => b.dataset.state),
-        labels: [...document.querySelectorAll(".build__button-label")].map(b => b.textContent),
-      };
-    })()
+  /* --- rent, paid by landing on somebody else's square ----------------- */
+
+  const beforeRent = await host.eval(`
+    document.querySelector(".board").game.ledger.players.map((p) => p.money).join(" ")
   `);
 
-  note("buying takes the money out of the purse",
-    bought.purses.join(" ") === "₹1,800 ₹2,000", bought.purses.join(" "));
-  note("the card now says you own it",
-    bought.status === "You own this", bought.status);
-  note("and that nothing has been built on it yet",
-    /Not built/.test(bought.rentLine) && /20/.test(bought.rentLine), bought.rentLine);
-  note("and the Buy button is gone, because there is nothing left to buy",
-    bought.buyHidden === true, `hidden=${bought.buyHidden}`);
+  // Started, not awaited: the rupees are only in the air for about a second,
+  // and the check below catches them there.
+  await host.eval(`window.__econ.place(0); window.__econ.roll(6); true;`);
 
-  note("and the square is marked in the buyer's own colour",
-    bought.owner === "0" && bought.built === "0" && /^#[0-9A-F]{6}$/i.test(bought.ownerColour),
-    `owner seat ${bought.owner}, colour ${bought.ownerColour}`);
-  note("with a thin ring drawn on it",
-    bought.ringStyle === "solid" && parseFloat(bought.ringWidth) >= 1.5 && parseFloat(bought.ringWidth) <= 2.5,
-    `${bought.ringStyle} ${bought.ringWidth}`);
-
-  note("and the first build is now the live one",
-    bought.states.join(" ") === "next locked locked" && bought.labels[0] === "Upgrade",
-    `${bought.states.join(" ")} | ${bought.labels.join(" ")}`);
-
-  /* --- building, in order --- */
-
-  await host.eval(`document.querySelector('.build[data-build="1"] .build__button').click()`);
-  await sleep(350);
-  const built1 = await host.json(`
-    return (() => ({
-      purses: [...document.querySelectorAll(".who__money")].map(w => w.textContent),
-      rent: document.querySelector(".property-card__rent")?.textContent || "",
-      built: document.querySelector('.board__cell[data-id="moon"]')?.dataset.built,
-      labels: [...document.querySelectorAll(".build__button-label")].map(b => b.textContent),
-      states: [...document.querySelectorAll(".build")].map(b => b.dataset.state),
-    }))()
-  `);
-
-  note("building takes the money", built1.purses.join(" ") === "₹1,700 ₹2,000", built1.purses.join(" "));
-  note("and raises the rent the card quotes",
-    built1.rent.includes("₹80") && built1.rent.includes("Built 1 of 3"), built1.rent);
-  note("and is recorded on the square", built1.built === "1", `built ${built1.built}`);
-  note("and the next build is the live one, with the last one now Built",
-    built1.states.join(" ") === "done next locked" &&
-    built1.labels.join(" ") === "Built Upgrade Locked",
-    `${built1.states.join(" ")} | ${built1.labels.join(" ")}`);
-
-  // The one that must not be reachable: the third build, before the second.
-  const jumped = await host.json(`
-    return (() => {
-      const third = document.querySelector('.build[data-build="3"] .build__button');
-      return { disabled: third.disabled, label: third.querySelector(".build__button-label").textContent };
-    })()
-  `);
-  note("and the third build cannot be reached before the second",
-    jumped.disabled === true && jumped.label === "Locked",
-    `disabled=${jumped.disabled}, "${jumped.label}"`);
-
-  await host.eval(`
-    (async () => {
-      document.querySelector('.build[data-build="2"] .build__button').click();
-      await new Promise(r => setTimeout(r, 120));
-      document.querySelector('.build[data-build="3"] .build__button').click();
+  let flight = null;
+  for (let i = 0; i < 80; i++) {
+    flight = await host.json(`
+      const tokens = [...document.querySelectorAll(".board__rupee")];
+      return tokens.length
+        ? { count: tokens.length, boxes: tokens.map((t) => t.getBoundingClientRect().toJSON()) }
+        : null;
+    `);
+    if (flight) break;
+    await sleep(50);
+  }
+  note("rent is paid in rupee tokens flying between the two chips",
+    Boolean(flight) && flight.count >= 3,
+    flight ? `${flight.count} tokens in the air` : "no tokens seen");
+  // Hold the tokens at the middle of their flight for the shot. They are only
+  // in the air for about half a second, and a screenshot taken after the poll
+  // would catch them already fading into the holder's chip.
+  if (flight) {
+    await host.eval(`(() => {
+      for (const token of document.querySelectorAll(".board__rupee")) {
+        for (const animation of token.getAnimations()) {
+          animation.pause();
+          animation.currentTime = 230;
+        }
+      }
       return true;
-    })()
+    })()`);
+  }
+  await shot(host, "phase1-rent-flight-390");
+  await host.eval(`(() => {
+    for (const token of document.querySelectorAll(".board__rupee")) {
+      for (const animation of token.getAnimations()) animation.play();
+    }
+    return true;
+  })()`);
+
+  for (let i = 0; i < 120; i++) {
+    const phase = await host.eval(`document.querySelector(".board").game.phase`);
+    if (phase === "DECISION") break;
+    await sleep(100);
+  }
+  // The two purses count to their new figures over about half a second after
+  // the tokens land. The ledger is already right; the chips are what is read.
+  await sleep(700);
+
+  const rent = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const builds = h.querySelector(".builds");
+    return {
+      phase: g.phase,
+      active: g.active,
+      kind: g.landing?.kind,
+      turn: b.querySelector(".board__turn").textContent,
+      money: g.ledger.players.map((p) => p.money),
+      status: h.querySelector(".property-card__status").textContent,
+      buildsHidden: builds.hidden,
+      nextText: h.querySelector(".property-card__next-label").textContent,
+      nextHidden: h.querySelector(".property-card__next").hidden,
+      closeHidden: h.querySelector(".property-card__close").hidden,
+      purse: Object.fromEntries([...document.querySelectorAll(".who")].map((w) => [
+        w.dataset.seat,
+        w.querySelector(".who__money").textContent.replace(/\\s+/g, ""),
+      ])),
+    };
   `);
+  const rentFigure = Number((rent.status.match(/\u20b9([\d,]+)/) || [0, "0"])[1].replace(/,/g, ""));
+  // Seat 0 holds the square and seat 1 landed on it, so the payer is the
+  // second purse in the list, not the first.
+  const [holderBefore, payerBefore] = beforeRent.split(" ").map(Number);
+
+  note("landing on somebody else's square charges the rent automatically",
+    rent.kind === "rent" && rent.phase === "DECISION" &&
+      Number(rent.money[1]) === payerBefore - rentFigure &&
+      Number(rent.money[0]) === holderBefore + rentFigure,
+    `rent ${rentFigure}: ${rent.money.join(" ")} from ${payerBefore} ${holderBefore}`);
+  note("the payer's purse goes down, the holder's goes up, and the chips agree",
+    rent.purse["1"] === `\u20b9${(payerBefore - rentFigure).toLocaleString("en-IN")}` &&
+      rent.purse["0"] === `\u20b9${(holderBefore + rentFigure).toLocaleString("en-IN")}`,
+    `${rent.purse["0"]} ${rent.purse["1"]}`);
+  note("and the card offers only Continue, with no build rows",
+    rent.nextText === "Continue" && !rent.nextHidden &&
+      rent.buildsHidden === true && rent.closeHidden === true,
+    `${rent.nextText}, builds hidden ${rent.buildsHidden}`);
+  note("the turn line stays on the payer while the rent card is up",
+    rent.active === 1 && rent.turn === TURN_OF(OTHER),
+    `active ${rent.active}, "${rent.turn}"`);
+  await shot(host, "phase1-rent-card-390");
+
+  // Continue, and catch the banner that sweeps across the hand-over.
+  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  let banner = null;
+  for (let i = 0; i < 60; i++) {
+    banner = await host.json(`
+      const n = document.querySelector(".board__banner");
+      return n ? { text: n.textContent, cls: n.className } : null;
+    `);
+    if (banner) break;
+    await sleep(40);
+  }
+  note("the turn hand-over sweeps in a banner that says whose turn it is",
+    Boolean(banner) && banner.text === "Your turn" && /board__banner/.test(banner.cls),
+    banner ? `"${banner.text}" (${banner.cls})` : "no banner seen");
+  // The banner sweeps in and then fades. Hold it at the middle of its own
+  // animation for the shot: a screenshot taken on a wall clock can catch the
+  // first half of the sweep or the last of the fade, and neither is the thing
+  // the banner is for.
+  await sleep(140);
+  await host.eval(`(() => {
+    const node = document.querySelector(".board__banner");
+    for (const animation of node?.getAnimations?.() ?? []) {
+      animation.pause();
+      animation.currentTime = 350;
+    }
+    return true;
+  })()`);
+  await shot(host, "phase1-turn-banner-390");
+  await host.eval(`(() => {
+    const node = document.querySelector(".board__banner");
+    for (const animation of node?.getAnimations?.() ?? []) animation.play();
+    return true;
+  })()`);
+  await host.eval("window.__finishVisit()");
+  await sleep(500);
+
+  /* --- a square the player cannot afford ------------------------------- */
+
+  await host.eval(`(() => {
+    const g = document.querySelector(".board").game;
+    g.ledger.players.find((p) => p.seat === 0).money = 10;
+    return true;
+  })()`);
+  await host.eval("window.__econ.place(0)");
+  await host.eval("window.__econ.roll(5)"); // Jupiter, unowned and 500.
+
+  const short = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const buy = h.querySelector(".property-card__buy");
+    return {
+      phase: g.phase,
+      active: g.active,
+      kind: g.landing?.kind,
+      price: g.ledger.properties.has(g.landing?.id) ? g.landing.id : null,
+      label: h.querySelector(".property-card__buy-label").textContent,
+      cost: h.querySelector(".property-card__buy-cost").textContent,
+      disabled: buy.disabled,
+      aria: buy.getAttribute("aria-disabled"),
+      title: buy.title,
+    };
+  `);
+
+  note("a square beyond the purse still offers Buy, and says the shortfall on one line",
+    short.label === "Not enough" && /\u20b9[\d,]+ short/.test(short.cost) &&
+      short.disabled === false && short.aria === "true" && /more|afford|need/i.test(short.title),
+    `${short.label} ${short.cost}; disabled ${short.disabled}, aria ${short.aria}, title "${short.title}"`);
+
+  await host.eval(`document.querySelector(".property-card__buy").click(); true;`);
+  await sleep(200);
+  const refused = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const buy = b.querySelector(".property-card__buy");
+    return {
+      phase: g.phase,
+      active: g.active,
+      money: g.ledger.players.map((p) => p.money),
+      toast: b.querySelector(".board__toast")?.textContent || "",
+      shaking: buy ? buy.getAnimations().some((a) => a.playState === "running") : false,
+      owner: g.ledger.properties.get(b.game.landing?.id)?.owner ?? null,
+    };
+  `);
+  note("pressing an unaffordable Buy is refused with a sentence and a shake",
+    refused.phase === "DECISION" && refused.active === 0 &&
+      refused.money[0] === 10 && refused.owner === null &&
+      refused.toast.length > 0 && refused.shaking === true,
+    `money ${refused.money[0]}, owner ${refused.owner}, toast "${refused.toast}", shaking ${refused.shaking}`);
+  await shot(host, "phase1-cannot-afford-390");
+
+  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  await host.eval("window.__finishVisit()");
   await sleep(400);
 
-  const built3 = await host.json(`
-    return (() => ({
-      purses: [...document.querySelectorAll(".who__money")].map(w => w.textContent),
-      rent: document.querySelector(".property-card__rent")?.textContent || "",
-      built: document.querySelector('.board__cell[data-id="moon"]')?.dataset.built,
-      labels: [...document.querySelectorAll(".build__button-label")].map(b => b.textContent),
-      states: [...document.querySelectorAll(".build")].map(b => b.dataset.state),
-      offers: [...document.querySelectorAll(".build")].filter(b => b.querySelector(".build__button").disabled === false).length,
-    }))()
+  /* --- reading and selling --------------------------------------------- */
+
+  // Back to seat 0, and give them a purse the sale can be measured against.
+  await host.eval(`(() => {
+    const g = document.querySelector(".board").game;
+    g.ledger.players.find((p) => p.seat === 0).money = 1000;
+    return true;
+  })()`);
+  await host.eval("window.__econ.ensure(0)");
+
+  await host.eval(`document.querySelector('.board__cell[data-id="pluto"]').click(); true;`);
+  await sleep(400);
+
+  const reading = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const card = h.querySelector(".property-card");
+    const sell = h.querySelector(".property-card__sell");
+    const builds = [...h.querySelectorAll(".build")];
+    return {
+      phase: g.phase,
+      active: g.active,
+      reading: b.dataset.reading,
+      rollable: b.dataset.rollable,
+      dieOpacity: getComputedStyle(b.querySelector(".board__dice")).opacity,
+      mode: h.dataset.mode,
+      closeHidden: h.querySelector(".property-card__close").hidden,
+      buyHidden: h.querySelector(".property-card__buy-slot").hidden,
+      nextHidden: h.querySelector(".property-card__next").hidden,
+      sellHidden: sell.hidden,
+      sellLabel: sell.querySelector(".property-card__sell-label").textContent,
+      builds: builds.map((n) => ({
+        label: n.querySelector(".build__button-label").textContent,
+        disabled: n.querySelector(".build__button").disabled,
+      })),
+      level: g.ledger.properties.get("pluto").upgradeLevel,
+      money: g.ledger.players.map((p) => p.money),
+      holderClient: h.clientHeight,
+      holderScroll: h.scrollHeight,
+      cardClient: card.clientHeight,
+      cardScroll: card.scrollHeight,
+    };
   `);
 
-  note("building the last two costs 150 and 200",
-    built3.purses.join(" ") === "₹1,350 ₹2,000", built3.purses.join(" "));
-  note("and Moon now charges its full 500",
-    built3.rent.includes("₹500") && built3.rent.includes("Built 3 of 3"), built3.rent);
-  note("and every build on it is Built, and none of them is live",
-    built3.states.join(" ") === "done done done" &&
-    built3.labels.join(" ") === "Built Built Built" && built3.offers === 0,
-    `${built3.states.join(" ")} | ${built3.labels.join(" ")} | ${built3.offers} live`);
-  note("and the square says it is built to the top", built3.built === "3", `built ${built3.built}`);
+  note("tapping a square outside a landing opens a read-only card with a close button",
+    reading.phase === "AWAITING_ROLL" && reading.reading === "true" &&
+      reading.mode === "read" && reading.closeHidden === false &&
+      reading.buyHidden === true && reading.nextHidden === true,
+    `phase ${reading.phase}, reading ${reading.reading}, close hidden ${reading.closeHidden}`);
+  note("the die steps aside while a card is being read",
+    reading.rollable === "false" && reading.dieOpacity === "0",
+    `rollable ${reading.rollable}, die ${reading.dieOpacity}`);
+  note("your own square offers no upgrade outside a landing, only the rule in words",
+    reading.builds.every((b) => b.disabled) &&
+      reading.builds[0].label === "Built" &&
+      reading.builds[1].label === "Land here again to build" &&
+      reading.builds[2].label === "Build the previous level first" &&
+      reading.level === 1,
+    `${reading.level}: ${reading.builds.map((b) => b.label).join(" | ")}`);
+  note("and it offers a quiet Sell beside the builds",
+    reading.sellHidden === false && /^Sell for \u20b9[\d,]+$/.test(reading.sellLabel),
+    reading.sellLabel);
+  note("the read card's long description stays inside its own sheet, never clipped",
+    reading.cardScroll <= reading.cardClient + 1,
+    `card ${reading.cardClient}/${reading.cardScroll}; ` +
+      `its holder is the scroller at ${reading.holderClient}/${reading.holderScroll}`);
+  await shot(host, "phase1-read-card-390");
 
-  await shot(host, `${W}-economy-owned`);
-
-  /* --- the other player's side of the same square --- */
-
-  // Hand the turn over. Not by throwing: a throw also moves a coin, and a coin
-  // that landed on Ragnarok would open a chest and stop the rest of this.
-  await host.eval(`
-    (() => {
-      const b = document.querySelector(".board");
-      b.turn.next();
-      return b.turn.node.dataset.turn;
-    })()
+  // No upgrade by any route from here: the buttons are shut and the level does
+  // not move when one is pressed.
+  await host.eval(`document.querySelector(".build__button").click(); true;`);
+  await sleep(200);
+  const unchanged = await host.json(`
+    const g = document.querySelector(".board").game;
+    return { level: g.ledger.properties.get("pluto").upgradeLevel, money: g.ledger.players[0].money };
   `);
-  await host.eval(`document.querySelector('.board__cell[data-id="moon"]').click()`);
+  note("pressing a build row on a read-only card changes nothing",
+    unchanged.level === reading.level && unchanged.money === reading.money[0],
+    `level ${unchanged.level}, money ${unchanged.money}`);
+
+  // A tap outside is the other way out of a read-only card. It must not change
+  // the turn, and the die must come back the moment the card goes.
+  await host.eval(`(() => {
+    const b = document.querySelector(".board");
+    b.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    return true;
+  })()`);
+  // The die fades back over about a fifth of a second; give it that before
+  // asking whether it is there.
+  await sleep(360);
+  const outside = await host.json(`
+    const b = document.querySelector(".board");
+    return {
+      reading: b.dataset.reading,
+      hidden: b.querySelector(".board__card").hidden,
+      phase: b.game.phase,
+      active: b.game.active,
+      rollable: b.dataset.rollable,
+      dieOpacity: getComputedStyle(b.querySelector(".board__dice")).opacity,
+    };
+  `);
+  note("a tap outside a read-only card closes it and gives the die back",
+    outside.reading === "false" && outside.hidden === true &&
+      outside.phase === "AWAITING_ROLL" && outside.rollable === "true" &&
+      outside.dieOpacity === "1",
+    `reading ${outside.reading}, die ${outside.dieOpacity}, rollable ${outside.rollable}`);
+  note("and closing a card does not pass the turn",
+    outside.active === reading.active,
+    `active ${outside.active}, was ${reading.active}`);
+
+  // Open it again for the sale.
+  await host.eval(`document.querySelector('.board__cell[data-id="pluto"]').click(); true;`);
+  await sleep(400);
+
+  const saleValue = Number(
+    (reading.sellLabel.match(/\u20b9([\d,]+)/) || [0, "0"])[1].replace(/,/g, ""),
+  );
+  const moneyBeforeSale = reading.money[0];
+
+  await host.eval(`document.querySelector(".property-card__sell").click(); true;`);
+  await sleep(200);
+  const armed = await host.json(`
+    const sell = document.querySelector(".property-card__sell");
+    return { label: sell.querySelector(".property-card__sell-label").textContent, armed: sell.dataset.armed };
+  `);
+  note("Sell asks once before it sells",
+    armed.armed === "true" && /Confirm sale/.test(armed.label),
+    `"${armed.label}", armed ${armed.armed}`);
+
+  await host.eval(`document.querySelector(".property-card__sell").click(); true;`);
   await sleep(900);
 
-  const theirs = await host.json(`
-    return (() => {
-      const card = document.querySelector(".board__card .property-card");
-      return {
-        turn: document.querySelector(".board__turn")?.dataset.turn,
-        status: card?.querySelector(".property-card__status")?.textContent || "",
-        buyHidden: card?.querySelector(".property-card__buy-slot")?.hidden !== false,
-        offers: [...document.querySelectorAll(".build")].filter(b => b.querySelector(".build__button").disabled === false).length,
-        states: [...document.querySelectorAll(".build")].map(b => b.dataset.state),
-      };
-    })()
+  const sold = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const sell = h.querySelector(".property-card__sell");
+    return {
+      money: g.ledger.players.map((p) => p.money),
+      square: g.ledger.properties.get("pluto"),
+      ownerMark: b.querySelector('.board__cell[data-id="pluto"]').dataset.owner ?? "",
+      status: h.querySelector(".property-card__status").textContent,
+      sellHidden: sell.hidden,
+      builds: [...h.querySelectorAll(".build__button-label")].map((n) => n.textContent),
+      reading: b.dataset.reading,
+      phase: g.phase,
+      active: g.active,
+    };
   `);
 
-  note("the turn passes to the other seat", theirs.turn === "1", `turn ${theirs.turn}`);
-  note("and the same square now names who holds it, and what it charges",
-    theirs.status === `Owned by ${BUYER.name} • Rent ₹500`, theirs.status);
-  // The opponent sees the builds as BUILT rather than as locked. They are built;
-  // saying so is what tells the other player why the rent is 500, and "locked"
-  // would suggest they could build here if they had the money.
-  note("with no way to buy it and no way to build on it",
-    theirs.buyHidden === true && theirs.offers === 0 &&
-    theirs.states.join(" ") === "done done done",
-    `buy hidden ${theirs.buyHidden}, ${theirs.offers} live, ${theirs.states.join(" ")}`);
+  note("selling pays half of what was spent, and the square goes back to the bank",
+    sold.money[0] === moneyBeforeSale + saleValue &&
+      sold.square.owner === null && sold.square.upgradeLevel === 0 &&
+      sold.ownerMark === "" && /Unowned/.test(sold.status),
+    `paid ${sold.money[0] - moneyBeforeSale} of ${saleValue}; ` +
+      `owner ${sold.square.owner}, level ${sold.square.upgradeLevel}, "${sold.status}"`);
+  note("and the card becomes an unowned square again, with no Sell",
+    sold.sellHidden === true && sold.builds.join(" ") === "Locked Locked Locked",
+    `sell hidden ${sold.sellHidden}, builds ${sold.builds.join(" ")}`);
+  note("selling does not end the turn",
+    sold.phase === "AWAITING_ROLL" && sold.active === 0 && sold.reading === "true",
+    `phase ${sold.phase}, active ${sold.active}`);
 
-  await shot(host, `${W}-economy-theirs`);
-
-  /* --- rent, paid by landing on it --- */
-
-  await host.eval(`
-    (async () => {
-      const c = document.querySelector(".board").coins;
-      c.reset();
-      await new Promise(r => setTimeout(r, 250));
-      await c.movePlayer("seat-1", 1);   // one step from Start is Moon
-      return true;
-    })()
+  await host.eval(`document.querySelector(".property-card__close").click(); true;`);
+  await sleep(300);
+  const closed = await host.json(`
+    const b = document.querySelector(".board");
+    return {
+      reading: b.dataset.reading,
+      cardHidden: b.querySelector(".board__card").hidden,
+      dieOpacity: getComputedStyle(b.querySelector(".board__dice")).opacity,
+      rollable: b.dataset.rollable,
+    };
   `);
-  await sleep(1600);
+  note("closing the read card brings the die back and leaves the turn alone",
+    closed.reading === "false" && closed.cardHidden === true &&
+      closed.dieOpacity === "1" && closed.rollable === "true",
+    `reading ${closed.reading}, card hidden ${closed.cardHidden}, die ${closed.dieOpacity}`);
 
-  const paid = await host.json(`
-    return (() => {
-      const toast = document.querySelector(".board__toast");
-      return {
-        purses: [...document.querySelectorAll(".who__money")].map(w => w.textContent).join(" "),
-        toast: toast?.textContent || "",
-        status: document.querySelector(".property-card__status")?.textContent || "",
-      };
-    })()
-  `);
+  /* --- the same card on a 360x700 phone ------------------------------- */
 
-  note("landing on a held square is charged rent, and the purses both move",
-    paid.purses === "₹1,850 ₹1,500",
-    `₹1,350 / ₹2,000  ->  ${paid.purses}`);
-  note("and it says so, in words, without being asked",
-    paid.toast === `${OTHER.name} paid ₹500 rent to ${BUYER.name}`, paid.toast || "no toast");
-  note("and the card it opened still names the holder",
-    paid.status.startsWith(`Owned by ${BUYER.name}`), paid.status);
+  await host.setViewport(360, 700, DSF);
+  await sleep(500);
+  await host.eval("window.__econ.place(0)");
+  await host.eval("window.__econ.roll(5)"); // Jupiter again.
 
-  await shot(host, `${W}-economy-rent`);
-
-  /* --- a square nobody can afford --- */
-
-  const broke = await host.json(`
-    return (() => {
-      const l = document.querySelector(".board").ledger;
-      l.players.find(p => p.seat === 1).money = 10;   // spent down on purpose
-      document.querySelector('.board__cell[data-id="quasar"]').click();
-      return { money: l.players.find(p => p.seat === 1).money };
-    })()
-  `);
-  await sleep(900);
-
-  const cannot = await host.json(`
-    return (() => {
-      const card = document.querySelector(".board__card .property-card");
-      return {
-        money: document.querySelector(".board").ledger.players.find(p => p.seat === 1).money,
-        status: card?.querySelector(".property-card__status")?.textContent || "",
-        label: card?.querySelector(".property-card__buy-label")?.textContent || "",
-        cost: card?.querySelector(".property-card__buy-cost")?.textContent || "",
-        reason: card?.querySelector(".property-card__buy")?.title || "",
-        disabled: card?.querySelector(".property-card__buy")?.disabled,
-        // Whether the button is one line of text or four ragged ones.
-        buttonHeight: card ? +card.querySelector(".property-card__buy").getBoundingClientRect().height.toFixed(1) : 0,
-        scrollTop: document.querySelector(".board__card")?.scrollTop ?? null,
-        owner: document.querySelector('.board__cell[data-id="quasar"]')?.dataset.owner ?? "",
-      };
-    })()
+  const small = await host.json(`
+    const b = document.querySelector(".board");
+    const h = b.querySelector(".board__card");
+    const centre = b.querySelector("#board-center");
+    const card = h.querySelector(".property-card");
+    const builds = h.querySelector(".builds");
+    const buy = h.querySelector(".property-card__buy");
+    const next = h.querySelector(".property-card__next");
+    const rect = (n) => n ? n.getBoundingClientRect().toJSON() : null;
+    return {
+      phase: b.game.phase,
+      kind: b.game.landing?.kind,
+      holder: rect(h), centre: rect(centre), card: rect(card),
+      builds: rect(builds), buy: rect(buy), next: rect(next),
+      holderClient: h.clientHeight,
+      holderScroll: h.scrollHeight,
+      cardClient: card.clientHeight,
+      cardScroll: card.scrollHeight,
+      closeHidden: h.querySelector(".property-card__close").hidden,
+      chips: [...document.querySelectorAll(".who")].map((w) => ({
+        seat: w.dataset.seat,
+        client: w.clientWidth,
+        scroll: w.scrollWidth,
+        nameClient: w.querySelector(".who__name").clientWidth,
+        nameScroll: w.querySelector(".who__name").scrollWidth,
+      })),
+    };
   `);
 
-  note("a square a player cannot afford is shown but not offered",
-    cannot.label === "Not enough" && cannot.disabled === true && /short/.test(cannot.cost),
-    `"${cannot.label}" ${cannot.cost}, disabled=${cannot.disabled}`);
-  // Four words, not a sentence: the full reason is a title on the button, and the
-  // button itself stays the height of the one above it rather than wrapping into
-  // four ragged lines in a pill two hundred pixels wide.
-  note("and says by how much, on the button itself",
-    cannot.cost === "₹1,190 short", cannot.cost);
-  note("and keeps the full reason where a reader can still find it",
-    cannot.reason === "You need 1190 more to take it.", cannot.reason);
-  note("and the button is still one line tall", cannot.buttonHeight < 40,
-    `${cannot.buttonHeight}px`);
-  // A new square opens at the top of the card, not wherever the last one was
-  // left scrolled to - the name and the price are the first things on it.
-  note("and the card opens at the top, whatever the last one was scrolled to",
-    cannot.scrollTop === 0, `scrollTop ${cannot.scrollTop}`);
-  note("and nothing was taken and nothing changed hands",
-    cannot.money === 10 && cannot.owner === "",
-    `money ${cannot.money}, owner "${cannot.owner}"`);
-  note("and the square it quoted is the dearest on the board",
-    cannot.status === "Unowned • ₹1200", cannot.status);
+  note("the decision card fits the middle at 360x700 with no scrolling",
+    small.phase === "DECISION" && small.kind === "buy" &&
+      small.holderScroll <= small.holderClient + 1 &&
+      small.cardScroll <= small.cardClient + 1 &&
+      small.builds.bottom <= small.holder.bottom + 1 &&
+      small.buy.top >= small.holder.top - 1 && small.next.bottom <= small.holder.bottom + 1,
+    `holder ${small.holderClient}/${small.holderScroll}, card ${small.cardClient}/${small.cardScroll}, ` +
+      `builds end ${small.builds.bottom.toFixed(1)} vs ${small.holder.bottom.toFixed(1)}`);
+  note("and it still spans the full middle",
+    small.holder.left >= small.centre.left - 1 &&
+      small.holder.right <= small.centre.right + 1 &&
+      Math.abs(small.holder.width - small.centre.width) <= 12,
+    `card ${small.holder.width.toFixed(1)} of middle ${small.centre.width.toFixed(1)}`);
+  note("no chip overflows at 360px",
+    small.chips.every((c) => c.scroll <= c.client + 1 && c.nameScroll <= c.nameClient + 1),
+    small.chips.map((c) => `${c.seat}:${c.scroll}/${c.client}`).join(" "));
+  await shot(host, "phase1-unowned-360");
 
-  await shot(host, `${W}-economy-cannot`);
+  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  await host.eval("window.__finishVisit()");
+  await sleep(500);
+
+  /* --- Ragnarok's three slots are the same slot ----------------------- */
+
+  await host.eval(`document.querySelector('.board__cell[data-id="ragnarok"]').click(); true;`);
+  await sleep(400);
+
+  const ragnarok = await host.json(`
+    const b = document.querySelector(".board");
+    const h = b.querySelector(".board__card");
+    const card = h.querySelector(".chest-card");
+    const rect = (n) => n ? n.getBoundingClientRect().toJSON() : null;
+    const slots = [...(card?.querySelectorAll(".chest-card__slot") || [])].map(rect);
+    const close = card?.querySelector(".property-card__close");
+    return {
+      open: Boolean(card),
+      kind: h.dataset.cardKind,
+      closePresent: Boolean(close),
+      closeHidden: close ? close.hidden : null,
+      slots,
+      slotsCount: slots.length,
+      gaps: slots.length === 3
+        ? [slots[1].left - slots[0].right, slots[2].left - slots[1].right]
+        : [],
+      card: rect(card),
+      holder: rect(h),
+      holderClient: h.clientHeight,
+      holderScroll: h.scrollHeight,
+      pageScrollX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      pageScrollY: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+    };
+  `);
+
+  const widths = ragnarok.slots.map((s) => s.width);
+  const heights = ragnarok.slots.map((s) => s.height);
+  const ratios = ragnarok.slots.map((s) => s.height / s.width);
+  note("Ragnarok opens a read-only chest with three equal slots",
+    ragnarok.open && ragnarok.kind === "chest" && ragnarok.slotsCount === 3 &&
+      Math.max(...widths) - Math.min(...widths) <= 1 &&
+      Math.max(...heights) - Math.min(...heights) <= 1 &&
+      Math.max(...ratios) - Math.min(...ratios) <= 0.02 &&
+      Math.abs(ragnarok.gaps[0] - ragnarok.gaps[1]) <= 1,
+    `widths ${widths.map((w) => w.toFixed(1)).join(" ")}; ` +
+      `heights ${heights.map((h) => h.toFixed(1)).join(" ")}; ` +
+      `gaps ${ragnarok.gaps.map((g) => g.toFixed(1)).join(" ")}`);
+  note("each slot is portrait-shaped and inside the card",
+    ratios.every((r) => r > 1.1) &&
+      ragnarok.slots.every((s) => s.left >= ragnarok.card.left - 1 &&
+        s.right <= ragnarok.card.right + 1 &&
+        s.top >= ragnarok.card.top - 1 &&
+        s.bottom <= ragnarok.card.bottom + 1),
+    ratios.map((r) => r.toFixed(2)).join(" "));
+  note("the chest fits its holder, and the page does not scroll sideways",
+    ragnarok.holderScroll <= ragnarok.holderClient + 1 &&
+      ragnarok.pageScrollX === 0,
+    `holder ${ragnarok.holderClient}/${ragnarok.holderScroll}, ` +
+      `page x ${ragnarok.pageScrollX} y ${ragnarok.pageScrollY}`);
+  note("and it has a close button of its own",
+    ragnarok.closePresent === true && ragnarok.closeHidden === false,
+    `present ${ragnarok.closePresent}, hidden ${ragnarok.closeHidden}`);
+  await shot(host, "phase1-ragnarok-360");
+
+  await host.eval(`document.querySelector(".property-card__close").click(); true;`);
+  await sleep(300);
+  const chestClosed = await host.json(`
+    const b = document.querySelector(".board");
+    return {
+      cardHidden: b.querySelector(".board__card").hidden,
+      reading: b.dataset.reading,
+      dieOpacity: getComputedStyle(b.querySelector(".board__dice")).opacity,
+      phase: b.game.phase,
+    };
+  `);
+  note("closing the chest returns the board to the waiting turn",
+    chestClosed.cardHidden === true && chestClosed.reading === "false" &&
+      chestClosed.dieOpacity === "1" && chestClosed.phase === "AWAITING_ROLL",
+    `card hidden ${chestClosed.cardHidden}, die ${chestClosed.dieOpacity}`);
+
+  /* --- the chips, the coins, and one colour for both ------------------ */
+
+  await host.eval(`(() => {
+    const b = document.querySelector(".board");
+    const g = b.game;
+    for (const piece of g.pieces) piece.position = 1; // both on MOON
+    b.coins.sync(g.pieces);
+    return true;
+  })()`);
+  await sleep(400);
+
+  const chips = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const rect = (n) => n.getBoundingClientRect().toJSON();
+    const cell = b.querySelector('.board__cell[data-id="moon"]');
+    const label = cell.querySelector(".board__label");
+    const coins = [...b.querySelectorAll(".coin")].map((c) => ({
+      player: c.dataset.player,
+      box: rect(c),
+      coin: getComputedStyle(c).getPropertyValue("--coin").trim(),
+    }));
+    const who = [...document.querySelectorAll(".who")].map((w) => ({
+      seat: w.dataset.seat,
+      active: w.classList.contains("who--active"),
+      turnShown: !w.querySelector(".who__turn").hidden,
+      coin: getComputedStyle(w.querySelector(".who__coin")).getPropertyValue("--coin").trim()
+        || getComputedStyle(w).getPropertyValue("--coin").trim(),
+      overflow: w.scrollWidth > w.clientWidth + 1,
+      nameOverflow: w.querySelector(".who__name").scrollWidth >
+        w.querySelector(".who__name").clientWidth + 1,
+      money: w.querySelector(".who__money").textContent.replace(/\\s+/g, ""),
+      weapons: w.querySelectorAll(".who__weapon").length,
+    }));
+    return {
+      label: rect(label),
+      coins,
+      who,
+      active: g.active,
+      onMoon: g.pieces.filter((p) => p.position === 1).length,
+      coinCount: b.querySelectorAll(".coin").length,
+    };
+  `);
+
+  const labelBox = chips.label;
+  note("both coins stand on the square without touching its name",
+    chips.onMoon === 2 && chips.coinCount === 2 &&
+      chips.coins.every((c) => c.box.top >= labelBox.bottom - 1) &&
+      !chips.coins.some((a, i) =>
+        chips.coins.slice(i + 1).some((c) =>
+          a.box.left < c.box.right - 1 && c.box.left < a.box.right - 1 &&
+          a.box.top < c.box.bottom - 1 && c.box.top < a.box.bottom - 1)),
+    `name ends ${labelBox.bottom.toFixed(1)}, coins ` +
+      chips.coins.map((c) => `${c.box.top.toFixed(1)}..${c.box.bottom.toFixed(1)}`).join(" "));
+  note("the chip, the board coin and the square's ring all draw the same colour",
+    chips.coins.every((c) => {
+      const seat = c.player.replace("seat-", "");
+      return chips.who.find((w) => w.seat === seat)?.coin === c.coin;
+    }),
+    chips.coins.map((c) => `${c.player}:${c.coin}`).join(" ") + " | " +
+      chips.who.map((w) => `${w.seat}:${w.coin}`).join(" "));
+  note("the active chip wears the TURN tag, and only the active one",
+    chips.who.filter((w) => w.active && w.turnShown).length === 1 &&
+      chips.who.find((w) => w.active)?.seat === String(chips.active),
+    chips.who.map((w) => `${w.seat}:${w.active ? "active" : "idle"}/${w.turnShown ? "TURN" : "-"}`).join(" "));
+  note("no chip overflows at 360px, and a weapon dot still sits on the chip",
+    chips.who.every((w) => !w.overflow && !w.nameOverflow) &&
+      chips.who.some((w) => w.weapons >= 1),
+    chips.who.map((w) => `${w.seat}:${w.money}/${w.weapons} dots`).join(" | "));
+  await shot(host, "phase1-chips-coins-360");
+
+  await host.setViewport(W, H, DSF);
+  await sleep(400);
 
   /* ------------------------------------------------------- back out again */
 
