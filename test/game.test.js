@@ -239,7 +239,6 @@ test("a move wraps at the end of the board, and the path is every square it touc
   const { state, events } = take(before, { type: "roll" }, face(4));
   assert.equal(pieceAt(state, 0).position, 2);
   assert.deepEqual(events[0].path, [26, 27, 0, 1, 2]);
-  assert.deepEqual(pathFrom(26, 4), [26, 27, 0, 1, 2]);
 });
 
 test("the game's wrap and the coin layer's wrap cannot disagree", () => {
@@ -315,9 +314,10 @@ test("an owned square is not offered to the next player", () => {
 
 /* ---------------------------------------------------------------- building */
 
-test("landing on your own square offers one build this visit", () => {
+test("landing on your own square offers one upgrade this visit", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
+  buy(before.ledger, "lagrange-l2", 0);
   before.pieces[0].position = 0;
   let state = take(before, { type: "roll" }, face(1)).state;
   state = take(state, { type: "continue" }).state;
@@ -330,7 +330,7 @@ test("landing on your own square offers one build this visit", () => {
   const built = take(state, { type: "upgrade" });
   state = built.state;
   assert.equal(levelOf(state.ledger, "moon"), 1);
-  assert.equal(moneyOf(state.ledger, 0), 2000 - 200 - 100);
+  assert.equal(moneyOf(state.ledger, 0), 2000 - 200 - 250 - 100);
   assert.equal(built.events[0].type, "upgraded");
   assert.equal(built.events[0].level, 1);
   assert.equal(built.events[0].cost, 100);
@@ -344,6 +344,7 @@ test("landing on your own square offers one build this visit", () => {
 test("a second visit allows the second level, in order", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
+  buy(before.ledger, "lagrange-l2", 0);
   upgrade(before.ledger, "moon", 0);
   before.pieces[0].position = 0;
   let state = take(before, { type: "roll" }, face(1)).state;
@@ -353,7 +354,7 @@ test("a second visit allows the second level, in order", () => {
   assert.equal(built.visit.upgrades, 1);
 });
 
-test("you cannot build on the visit you bought the square", () => {
+test("you cannot upgrade on the visit you bought the square", () => {
   const owned = game();
   buy(owned.ledger, "moon", 0);
   standOn(owned, 1, "own");
@@ -366,7 +367,7 @@ test("you cannot build on the visit you bought the square", () => {
   assert.equal(levelOf(owned.ledger, "moon"), 0);
 });
 
-test("there is no way to build outside a landing", () => {
+test("there is no way to upgrade outside a landing", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
   assert.equal(before.phase, PHASE.AWAITING_ROLL);
@@ -410,7 +411,7 @@ test("landing on somebody else's square pays the right rent to the right seat", 
   assert.equal(take(opened, { type: "continue" }).state.phase, PHASE.TURN_END);
 });
 
-test("rent follows the build level", () => {
+test("rent follows the upgrade level", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
   upgrade(before.ledger, "moon", 0);
@@ -464,11 +465,58 @@ test("a rent paid in full is not a short", () => {
   assert.equal(state.ledger.players[1].short, 0);
 });
 
+/* ---------------------------------------------------------------- monopoly */
+
+test("upgrades stay locked without a monopoly", () => {
+  const before = game();
+  buy(before.ledger, "asteroid-belt", 0);
+  before.active = 0;
+  before.turn = 0;
+  before.landing = { seat: 0, index: 3, id: "asteroid-belt", kind: "own" };
+  before.visit = { seat: 0, bought: false, upgrades: 0, drawn: null, collected: false, rent: 0, paid: false, short: 0 };
+  before.phase = PHASE.DECISION;
+  const offer = upgradeOffer(before, "asteroid-belt");
+  assert.equal(offer.ok, false);
+  assert.match(offer.why, /set/);
+});
+
+test("a monopoly unlocks upgrades", () => {
+  const before = game();
+  buy(before.ledger, "asteroid-belt", 0);
+  buy(before.ledger, "jupiter", 0);
+  buy(before.ledger, "pluto", 0);
+  before.active = 0;
+  before.turn = 0;
+  before.landing = { seat: 0, index: 3, id: "asteroid-belt", kind: "own" };
+  before.visit = { seat: 0, bought: false, upgrades: 0, drawn: null, collected: false, rent: 0, paid: false, short: 0 };
+  before.phase = PHASE.DECISION;
+  const offer = upgradeOffer(before, "asteroid-belt");
+  assert.equal(offer.ok, true);
+});
+
+test("a sale that breaks the monopoly re-locks further upgrades", () => {
+  const before = game();
+  buy(before.ledger, "asteroid-belt", 0);
+  buy(before.ledger, "jupiter", 0);
+  buy(before.ledger, "pluto", 0);
+  // sell pluto
+  sell(before.ledger, "pluto", 0);
+  before.active = 0;
+  before.turn = 0;
+  before.landing = { seat: 0, index: 3, id: "asteroid-belt", kind: "own" };
+  before.visit = { seat: 0, bought: false, upgrades: 0, drawn: null, collected: false, rent: 0, paid: false, short: 0 };
+  before.phase = PHASE.DECISION;
+  const offer = upgradeOffer(before, "asteroid-belt");
+  assert.equal(offer.ok, false);
+  assert.match(offer.why, /set/);
+});
+
 /* ---------------------------------------------------------------- selling */
 
 test("a square sells for half the price and half the builds, to a multiple of five", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
+  buy(before.ledger, "lagrange-l2", 0);
   upgrade(before.ledger, "moon", 0);
   assert.equal(saleValue(before.ledger, "moon"), Math.round((200 / 2 + 100 / 2) / 5) * 5);
   assert.equal(SALE_RATE, 0.5);
@@ -485,7 +533,7 @@ test("selling returns the square to the bank, clears its builds, and pays", () =
   assert.equal(state.phase, PHASE.AWAITING_ROLL, "selling does not end a turn");
   assert.equal(ownerOf(state.ledger, "moon"), null);
   assert.equal(levelOf(state.ledger, "moon"), 0);
-  assert.equal(moneyOf(state.ledger, 0), 2000 - 200 - 100 + payout);
+  assert.equal(moneyOf(state.ledger, 0), 2000 - 200 - 250 - 100 + payout);
   assert.equal(events[0].type, "sold");
   assert.equal(events[0].payout, payout);
 });
@@ -568,9 +616,10 @@ test("the decision names the square, the seat, and what may be done", () => {
   assert.equal(decisionFor(state, "jupiter"), null, "a square not landed on has no decision");
 });
 
-test("the card's build offer and the rule cannot disagree", () => {
+test("the card's upgrade offer and the rule cannot disagree", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
+  buy(before.ledger, "lagrange-l2", 0);
   standOn(before, 1, "own");
   before.landing.id = "moon";
   assert.equal(decisionFor(before, "moon").canUpgrade.ok, true);

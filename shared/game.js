@@ -65,7 +65,9 @@ import {
   nameOfSeat,
   ownerOf,
   payRent,
+  recordEntry,
   rentAt,
+  salary as ledgerSalary,
   saleValue,
   sell as ledgerSell,
   upgrade as ledgerUpgrade,
@@ -360,6 +362,13 @@ export function applyAction(state, action, rng = Math.random) {
 
       piece.position = to;
       next.lastRoll = { seat: active, face, from, to, id: cell?.id || "" };
+
+      // Salary: crossing or landing on Start pays 200. The first move out of
+      // Start never pays, because 0 + steps is never 28 with one die.
+      if (from > 0 && from + face >= BOARD_SIZE) {
+        ledgerSalary(next.ledger, active, state.turn);
+        ok("salary", { seat: active, amount: 200 });
+      }
       next.landing = {
         seat: active,
         index: to,

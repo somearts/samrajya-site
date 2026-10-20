@@ -45,6 +45,7 @@
    ========================================================================== */
 
 import { MAX_UPGRADE, STARTING_MONEY, isPriced, priceOf, rentFor, upgradeAt } from "./economy.js";
+import { CELLS } from "./spaces.js";
 
 export { MAX_UPGRADE, STARTING_MONEY };
 
@@ -89,6 +90,10 @@ export function createLedger(players = [], { opening = STARTING_MONEY } = {}) {
       short: 0,
     })),
     properties: new Map(),
+    // The transaction history, newest first. The server is the source of truth;
+    // both devices read the same list. Each entry: { turn, seat, kind, text,
+    // amount (signed), balance (after) }.
+    history: [],
   };
 }
 
@@ -134,10 +139,54 @@ export function shortOf(ledger, seat) {
   return playerAt(ledger, seat)?.short ?? 0;
 }
 
+/**
+ * The transaction history, newest first. The server is the source of truth, so
+ * both devices read the same list. Each entry: { turn, seat, kind, text, amount
+ * (signed), balance (after) }.
+ *
+ * `recordEntry` is the one place entries are added. The ledger functions below
+ * do not know the turn number, so the game records them once it has applied an
+ * action and knows which turn it is.
+ */
+export function recordEntry(ledger, { turn = null, seat, kind, text, amount }) {
+  if (!ledger) return;
+  ledger.history = ledger.history || [];
+  const balance = moneyOf(ledger, seat);
+  ledger.history.unshift({ turn, seat, kind, text, amount, balance });
+}
+
+/** Pay a salary of 200 for crossing or landing on Start. */
+export function salary(ledger, seat, turn = null) {
+  const player = playerAt(ledger, seat);
+  if (!player) return no("That seat is not playing.");
+  player.money += 200;
+  recordEntry(ledger, { turn, seat, kind: "salary", text: "Salary · lap complete", amount: 200 });
+  return yes({ amount: 200, money: player.money });
+}
+
 /** The seat holding a square, or null when nobody holds it. */
 export function ownerOf(ledger, id) {
   const sheet = sheetIfOwned(ledger, id);
   return sheet?.owner ?? null;
+}
+
+/** The property ids that share a set with this square. */
+export function setMembers(ledger, id) {
+  const cell = CELLS.find((c) => c.id === id);
+  if (!cell || !cell.set) return [];
+  return CELLS.filter((c) => c.type === "property" && c.set === cell.set).map((c) => c.id);
+}
+
+/** Does this seat hold every square in the set this square belongs to? */
+export function hasMonopoly(ledger, id, seat) {
+  const members = setMembers(ledger, id);
+  if (members.length === 0) return false;
+  return members.every((m) => ownerOf(ledger, m) === seat);
+}
+
+/** The set this square belongs to, or null. */
+export function setOf(ledger, id) {
+  return CELLS.find((c) => c.id === id)?.set || null;
 }
 
 /** How far a square is built: 0, 1, 2 or 3. */
@@ -207,6 +256,16 @@ export function canUpgrade(ledger, id, seat) {
   if (!player) return no("Nobody is sitting in that seat.");
   if (ownerOf(ledger, id) === null) return no("Nobody holds this square yet.");
   if (ownerOf(ledger, id) !== seat) return no(`${nameOfSeat(ledger, ownerOf(ledger, id))} holds this square.`);
+  // Upgrades unlock only with a monopoly: the player must hold every square in
+  // the set. A sale that breaks the set re-locks further upgrades, but levels
+  // already built stay.
+  if (!hasMonopoly(ledger, id, seat)) {
+    const holder = setMembers(ledger, id).map((m) => ownerOf(ledger, m)).find((o) => o !== null && o !== seat);
+    if (holder !== undefined) {
+      return no(`${nameOfSeat(ledger, holder)} holds every colony in this set.`);
+    }
+    return no("Own every colony in this set to unlock upgrades.");
+  }
   const upgrade = nextUpgrade(ledger, id);
   if (!upgrade) return no("This square is built as far as it goes.");
   if (player.money < upgrade.cost) {

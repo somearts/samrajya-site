@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 
 import {
   createLedger,
+  setMembers,
   sheetFor,
   ownerOf,
   levelOf,
@@ -161,6 +162,7 @@ test("a seat nobody is sitting in cannot buy anything", () => {
 test("the three builds go on in order, and each one raises the rent", () => {
   const game = solo(5000);
   buy(game, "halleys-comet", 0);
+  buy(game, "kuiper-belt", 0);
 
   const seen = [rentAt(game, "halleys-comet")];
   const names = [];
@@ -174,12 +176,13 @@ test("the three builds go on in order, and each one raises the rent", () => {
   assert.deepEqual(names, ["Tracking Array", "Comet Observatory", "Intercept Network"]);
   assert.deepEqual(seen, [50, 220, 700, 1500]);
   assert.equal(levelOf(game, "halleys-comet"), 3);
-  assert.equal(moneyOf(game, 0), 5000 - 500 - 250 - 400 - 500);
+  assert.equal(moneyOf(game, 0), 5000 - 500 - 450 - 250 - 400 - 500);
 });
 
 test("the builds are offered in order, and only the next one is reachable", () => {
   const game = twoPlayers();
   buy(game, "moon", 0);
+  buy(game, "lagrange-l2", 0);
 
   // Out of order means out of offer: with the square bare, Lunar Colony is not
   // on the card at all - `nextUpgrade` says Lunar Outpost or nothing.
@@ -196,9 +199,10 @@ test("the builds are offered in order, and only the next one is reachable", () =
   assert.equal(nextUpgrade(game, "moon"), null, "a finished square offers nothing");
 });
 
-test("there is no fourth build", () => {
+test("there is no fourth upgrade", () => {
   const game = solo(9000);
   buy(game, "moon", 0);
+  buy(game, "lagrange-l2", 0);
   for (let n = 0; n < MAX_UPGRADE; n += 1) assert.equal(upgrade(game, "moon", 0).ok, true);
 
   const fourth = upgrade(game, "moon", 0);
@@ -208,7 +212,7 @@ test("there is no fourth build", () => {
   assert.equal(nextUpgrade(game, "moon"), null);
 });
 
-test("you cannot build on a square you do not hold", () => {
+test("you cannot upgrade on a square you do not hold", () => {
   const game = twoPlayers();
   buy(game, "moon", 0);
 
@@ -222,16 +226,17 @@ test("you cannot build on a square you do not hold", () => {
   assert.equal(moneyOf(game, 1), 2000);
 });
 
-test("you cannot build on a square nobody holds", () => {
+test("you cannot upgrade on a square nobody holds", () => {
   const game = twoPlayers();
   const verdict = canUpgrade(game, "moon", 0);
   assert.equal(verdict.ok, false);
   assert.match(verdict.why, /Nobody holds/);
 });
 
-test("you cannot build with money you do not have", () => {
-  const game = solo(250);   // Moon costs 200, leaving 50; Outpost costs 100
+test("you cannot upgrade with money you do not have", () => {
+  const game = solo(500);   // Moon 200 + Lagrange 250, leaving 50; Outpost costs 100
   buy(game, "moon", 0);
+  buy(game, "lagrange-l2", 0);   // the set mate, so the money rule is the one that bites
   assert.equal(moneyOf(game, 0), 50);
 
   const verdict = canUpgrade(game, "moon", 0);
@@ -250,6 +255,9 @@ test("every property in the game can be bought and built to the top", () => {
     const game = solo(9000);
     const p = PRICING[id];
 
+    for (const mate of setMembers(game, id)) {
+      if (mate !== id) buy(game, mate, 0);
+    }
     assert.equal(buy(game, id, 0).ok, true, `${id} cannot be bought`);
     assert.equal(levelOf(game, id), 0);
 
@@ -276,6 +284,7 @@ test("every property in the game can be bought and built to the top", () => {
 test("landing on somebody else's square pays them the rent it carries", () => {
   const game = twoPlayers();
   buy(game, "moon", 0);            // bare, 20
+  buy(game, "lagrange-l2", 0);     // the set mate, so upgrades unlock
   upgrade(game, "moon", 0);        // Lunar Outpost, 80
   upgrade(game, "moon", 0);        // Lunar Colony, 240
 
@@ -304,7 +313,7 @@ test("a rent moves money between the players and creates none", () => {
   assert.equal(moneyOf(game, 0) + moneyOf(game, 1), opening);
 });
 
-test("buying and building take money out of the game, into the bank", () => {
+test("buying and upgrading take money out of the game, into the bank", () => {
   // The other half of the ledger, and worth stating because it is the reason the
   // first test cannot simply say "the total never changes". A square somebody
   // buys is money that leaves both purses; only a rent is a transfer.
@@ -312,13 +321,14 @@ test("buying and building take money out of the game, into the bank", () => {
   const opening = moneyOf(game, 0) + moneyOf(game, 1);
 
   buy(game, "moon", 0);
-  assert.equal(moneyOf(game, 0) + moneyOf(game, 1), opening - 200);
+  buy(game, "lagrange-l2", 0);   // the set mate, so the upgrade is unlocked
+  assert.equal(moneyOf(game, 0) + moneyOf(game, 1), opening - 200 - 250);
 
   upgrade(game, "moon", 0);
-  assert.equal(moneyOf(game, 0) + moneyOf(game, 1), opening - 200 - 100);
+  assert.equal(moneyOf(game, 0) + moneyOf(game, 1), opening - 200 - 250 - 100);
 
   buy(game, "jupiter", 1);
-  assert.equal(moneyOf(game, 0) + moneyOf(game, 1), opening - 200 - 100 - 350);
+  assert.equal(moneyOf(game, 0) + moneyOf(game, 1), opening - 200 - 250 - 100 - 350);
 });
 
 test("landing on your own square costs you nothing", () => {
@@ -424,8 +434,10 @@ test("the rent charged is the rent the square carries right now", () => {
     [{ seat: 0, name: "Landlord", civ: "aztec" }, { seat: 1, name: "Payer", civ: "roma" }],
     { opening: 2000 },
   );
+  game.players[0].money = 5000;
   game.players[1].money = 9000;
   buy(game, "earth-137", 0);
+  buy(game, "orions-belt", 0);
 
   const seen = [];
   for (let level = 0; level <= 3; level += 1) {
