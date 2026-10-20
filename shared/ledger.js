@@ -221,6 +221,55 @@ export function upgrade(ledger, id, seat) {
   });
 }
 
+/* -------------------------------------------------------------------- selling
+
+   A square can go back to the bank, and it goes back for half of what was put
+   into it: half the price, plus half of every upgrade that was paid for. The
+   half is rounded to a multiple of five, because a purse reading ₹1,237 is a
+   number nobody wants to do arithmetic with and every price on this board is a
+   multiple of ten. */
+
+/** What a seat would get for selling a square. Zero when nobody holds it. */
+export function saleValue(ledger, id) {
+  const sheet = sheetIfOwned(ledger, id);
+  if (!sheet || sheet.owner === null) return 0;
+
+  let spent = 0;
+  for (let n = 0; n < sheet.upgradeLevel; n += 1) {
+    spent += upgradeAt(id, n)?.cost ?? 0;
+  }
+  const half = (priceOf(id) ?? 0) / 2 + spent / 2;
+  return Math.round(half / 5) * 5;
+}
+
+/** May this seat sell this square back to the bank? */
+export function canSell(ledger, id, seat) {
+  if (!isPriced(id)) return no("This square is not for sale.");
+  const player = playerAt(ledger, seat);
+  if (!player) return no("Nobody is sitting in that seat.");
+  const owner = ownerOf(ledger, id);
+  if (owner === null) return no("Nobody holds this square.");
+  if (owner !== seat) return no(`${nameOfSeat(ledger, owner)} holds this square.`);
+  return yes({ payout: saleValue(ledger, id) });
+}
+
+/**
+ * Sell a square back. Its builds go with it: the bank buys the square, not the
+ * buildings on it, and a square nobody holds is a square at level zero.
+ */
+export function sell(ledger, id, seat) {
+  const verdict = canSell(ledger, id, seat);
+  if (!verdict.ok) return verdict;
+
+  const player = playerAt(ledger, seat);
+  const sheet = sheetFor(ledger, id);
+  const payout = saleValue(ledger, id);
+  player.money += payout;
+  sheet.owner = null;
+  sheet.upgradeLevel = 0;
+  return yes({ payout, money: player.money, sheet });
+}
+
 /* --------------------------------------------------------------------- rent */
 
 /** Who, if anybody, a square charges when it is landed on. */
