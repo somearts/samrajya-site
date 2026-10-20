@@ -71,6 +71,22 @@ export class Session {
   }
 
   /**
+   * One move, decided by the server.
+   *
+   * The browser sends what it wants to do and the server answers with the new
+   * state, its number and the events that caused it - or a refusal with a
+   * sentence. The client never applies a rule itself.
+   */
+  async action(code, action) {
+    return this.#post(`/rooms/${encodeURIComponent(code)}/action`, action);
+  }
+
+  /** Start the game. Only the host may, and only when both seats are taken. */
+  async start(code) {
+    return this.#post(`/rooms/${encodeURIComponent(code)}/action`, { type: "start" });
+  }
+
+  /**
    * Watch a room, and be told when it changes.
    *
    * Returns a function that stops watching. `onChange` is called with the room
@@ -81,7 +97,7 @@ export class Session {
    * a fact of networks, not a reason for a player to be left staring at a lobby
    * that is quietly out of date.
    */
-  subscribe(code, { onChange, onStatus } = {}) {
+  subscribe(code, { onChange, onSnapshot, onStatus } = {}) {
     if (!code) return () => {};
     const scheme = location.protocol === "https:" ? "wss:" : "ws:";
     const url = `${scheme}//${location.host}${API}/rooms/${encodeURIComponent(code)}/live`;
@@ -112,9 +128,11 @@ export class Session {
         } catch {
           return;
         }
-        // The room is only ever changed by a POST. Anything else on this
-        // socket is the server talking, and the only thing it says is state.
+        // Two kinds of message. `state` is the room (seats, status) and arrives
+        // when somebody joins. `snapshot` is the game and arrives after every
+        // accepted action; it carries the events the board animates from.
         if (message?.type === "state" && message.room) onChange?.(message.room);
+        else if (message?.type === "snapshot" && message.state) onSnapshot?.(message);
       });
 
       socket.addEventListener("close", () => {

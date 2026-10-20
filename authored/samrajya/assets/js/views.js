@@ -16,7 +16,6 @@ import { el, button, focusFirst } from "./dom.js";
 import { masthead } from "./wordmark.js";
 import { board } from "./board.js";
 import { purseOf, figureOf } from "./economy-ui.js";
-import { createGame } from "./shared/game.js";
 import { choices, civById, coinColor } from "./shared/civilizations.js";
 import { NAME_MAX } from "./shared/identity.js";
 
@@ -507,14 +506,29 @@ export function boardView(state, actions) {
 
   /* THE GAME
      --------
-     Built once and kept on `state`, so leaving the board and coming back to it
-     returns to the same game rather than to a fresh one. Nothing is saved
-     between visits - a refresh starts again - and that is stated in the game's
-     own file rather than hidden here. */
-  if (!state.game || state.game.ledger.players.length !== players.length) {
-    state.game = createGame(players);
-  }
+     The server owns it. `state.game` is the restored snapshot the room carries;
+     it is null until the host has started the game, and the board screen says so
+     rather than inventing a game of its own. */
   const game = state.game;
+  if (!game) {
+    return {
+      body: el("div", { class: "board-screen" }, [
+        el("div", { class: "board-waiting" }, [
+          el("p", { class: "board-waiting__title", text: "Waiting for the game to start" }),
+          el("p", {
+            class: "board-waiting__note",
+            text: "The first player starts the game from the lobby. This screen will show the board the moment it begins.",
+          }),
+        ]),
+      ]),
+      foot: el("button", {
+        type: "button",
+        class: "btn btn--quiet",
+        text: "Back to the lobby",
+        onclick: actions.leaveBoard,
+      }),
+    };
+  }
   const ledger = game.ledger;
 
   // The two identities with the matchup between them. The VS goes in as a real
@@ -568,10 +582,23 @@ export function boardView(state, actions) {
       .filter(Boolean),
   );
 
-  const theBoard = board({ players, game, seat: Number.isInteger(room?.seat) ? room.seat : 0 });
+  const theBoard = board({
+    players,
+    game,
+    seat: Number.isInteger(room?.seat) ? room.seat : 0,
+    session: state.session,
+    roomId: room?.roomId || null,
+  });
   // The room is on the board itself, which is what lets a test - and anyone
   // with a screen reader - tell one game from another.
   theBoard.dataset.room = state.room?.roomId || "";
+
+  // The live channel pushes the game here. `app.js` keeps `state.game` current
+  // and hands the snapshot to the board, which animates it.
+  state.applySnapshot = (snapshot) => {
+    const frame = document.querySelector(".board");
+    frame?.applySnapshot?.(snapshot);
+  };
 
   return {
     body: el("div", { class: "board-screen" }, [roster, theBoard]),

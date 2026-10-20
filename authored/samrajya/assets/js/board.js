@@ -59,12 +59,7 @@ import {
 } from "./economy-ui.js";
 import { turnPill } from "./turn.js";
 import { isPurchasable } from "./shared/properties.js";
-import {
-  ENABLE_SELL,
-  PHASE,
-  applyAction,
-  createGame,
-} from "./shared/game.js";
+import { ENABLE_SELL, PHASE, restoreGame } from "./shared/game.js";
 import { rupees } from "./shared/economy.js";
 import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
 import {
@@ -227,12 +222,19 @@ function plainCell(cell) {
 /**
  * Build the board and the game on it.
  *
- * `players` is the room's roster. `game` is optional and is how a game survives
- * leaving the board and coming back; without one a fresh game is made. The
- * game is kept on the element (`frame.game`) for the same reason the coin layer
- * is: the board is built once and lives for the whole match.
+ * `players` is the room's roster and `game` is the server's state, already
+ * restored from its wire form. `session` and `roomId` are how the board sends
+ * its actions: it does not apply a rule itself, and it never rolls its own die.
+ * The game is kept on the element (`frame.game`) for the same reason the coin
+ * layer is: the board is built once and lives for the whole match.
  */
-export function board({ players = [], game: given = null, seat: mySeat = null } = {}) {
+export function board({
+  players = [],
+  game: given = null,
+  seat: mySeat = null,
+  session = null,
+  roomId = null,
+} = {}) {
   const frame = el("div", {
     class: "board",
     role: "group",
@@ -278,28 +280,39 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
 
   /* ------------------------------------------------------------- the game */
 
-  let game = given || createGame(players);
+  let game = given;
   let cardMode = "read";
   let reading = false;
   let busy = false;
+  /* The number of the last action this board applied. The socket repeats the
+     state an action produced; the number is how a board knows that repetition
+     from a genuinely new turn. */
+  let lastSeq = game?.seq ?? 0;
+  /* A snapshot that arrived while this board was busy animating its own action.
+     It is applied the moment the animation is done, so a move by the other
+     player is never dropped just because this screen was mid-flight. */
+  let pendingSnapshot = null;
 
   frame.game = game;
-  frame.ledger = game.ledger;
+  frame.ledger = game?.ledger ?? null;
   frame.turn = turn;
 
   /* A way to take one action from outside the board, with the die's generator
      injectable. The checks use it to play a real turn to a square they chose;
-     nothing in the page calls it, and it takes the same lock a press does. */
+     nothing in the page calls it, and it takes the same lock a press does. The
+     generator is only used by the preview's test hook; the server rolls the die
+     in every real game. */
   frame.play = (action, rng) => run(action, { rng });
 
   const root = () => frame.closest(".board-screen") || document;
   const holder = () => frame.querySelector(".board__card");
-  const idOnCard = () => holder()?.dataset.property || "";
   const cellAt = (id) => frame.querySelector(`.board__cell[data-id="${id}"]`);
   const isDecision = () => game.phase === PHASE.DECISION;
+  const isMyTurn = () => mySeat !== null && game.active === Number(mySeat);
 
   /** Everything on screen that the game decides, repainted from the game. */
   const paint = ({ animate = true } = {}) => {
+    if (!game) return;
     syncPurses(root(), game.ledger, { animate });
     markBoard(frame, game.ledger);
     syncActive(root(), game.active);
@@ -316,12 +329,22 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
    * card that can be dismissed by a tap is not a card you can throw past.
    */
   const paintPhase = () => {
+    if (!game) {
+      frame.dataset.phase = "";
+      frame.dataset.active = "";
+      frame.dataset.rollable = "false";
+      frame.dataset.busy = busy ? "true" : "false";
+      return;
+    }
     frame.dataset.phase = game.phase;
     frame.dataset.active = game.active === null ? "" : String(game.active);
     frame.dataset.reading = reading ? "true" : "false";
     frame.dataset.cardMode = cardMode;
+    frame.dataset.busy = busy ? "true" : "false";
     turn.set(game.active);
-    const rollable = game.phase === PHASE.AWAITING_ROLL && !reading && !busy;
+    // The die belongs to the player whose turn it is, and only on their screen.
+    const rollable =
+      game.phase === PHASE.AWAITING_ROLL && !reading && !busy && isMyTurn();
     die?.setAttribute("tabindex", rollable ? "0" : "-1");
     die?.setAttribute("aria-hidden", String(!rollable));
     frame.dataset.rollable = rollable ? "true" : "false";
@@ -340,7 +363,9 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
   const context = () => ({
     ledger: game.ledger,
     game,
-    seat: game.active,
+    // The card belongs to the player looking at it, not to whoever's turn it
+    // happens to be. On the other player's screen it is a read-only card.
+    seat: mySeat ?? game.active,
     mode: cardMode,
     sellEnabled: ENABLE_SELL,
     onBuy: () => run({ type: "buy" }),
@@ -382,22 +407,39 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
     } finally {
       busy = false;
       paintPhase();
+      // A snapshot that arrived while this board was busy is applied now, so the
+      // other player's move is never dropped because this screen was animating.
+      if (pendingSnapshot) {
+        const snapshot = pendingSnapshot;
+        pendingSnapshot = null;
+        frame.applySnapshot(snapshot);
+      }
     }
   }
 
   /** One action, its events, and the repaint after them. No settling. */
   async function step(action, { rng } = {}) {
     const before = game;
-    let result;
+    let response;
     try {
-      result = applyAction(game, action, rng);
-    } catch (error) {
-      toast(frame, error?.message || "The game could not do that.", { tone: "refused" });
+      response = await session.action(roomId, {
+        ...action,
+        ...((action.type === "roll" || action.type === "drawWeapon") && rng !== undefined
+          ? { rng }
+          : {}),
+      });
+    } catch {
+      toast(frame, "No connection to the server. Check your network and try again.", { tone: "refused" });
       return null;
     }
 
-    const no = result.events.find((event) => event.type === "refused");
-    if (no && no.action === action.type) {
+    if (!response.ok) {
+      const no = {
+        type: "refused",
+        action: action.type,
+        seat: game?.active ?? null,
+        why: response.error,
+      };
       toast(frame, no.why, { tone: "refused" });
       const target =
         action.type === "buy"
@@ -408,13 +450,22 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
               ? holder()?.querySelector(".property-card__sell")
               : die;
       shake(target);
-      return result;
+      return { events: [no] };
     }
-    // A rent that could not be paid is a fact inside a successful throw, not a
-    // refused throw. The visit still happens, and the card still opens.
-    if (no) toast(frame, no.why, { tone: "refused" });
 
-    game = result.state;
+    const state = restoreGame(response.data.state);
+    // The socket may have delivered this action already. The number tells a
+    // board's own reply from a repetition of one it has already applied. A debug
+    // action is the exception: it changes the state without changing the number,
+    // so a board that applied it once must not refuse it a second time.
+    const isDebug = action.type === "debug";
+    if (!isDebug && state.seq <= lastSeq) {
+      return { events: [] };
+    }
+    if (isDebug && action.reset) lastSeq = -1;
+    lastSeq = state.seq;
+
+    game = state;
     frame.game = game;
     frame.ledger = game.ledger;
     paintPhase();
@@ -424,7 +475,7 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
     // Waiting for the animation would leave a live Buy button under the finger.
     syncCard(frame, context());
 
-    await playEvents(result.events);
+    await playEvents(response.data.events);
 
     // The coin already walked during `moved`; syncing here is what puts the
     // weapons and the final slot on screen without moving anybody twice.
@@ -434,7 +485,7 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
     // A property decision that has just been answered takes its card away. A
     // chest card closes itself, because it has a reveal to finish first.
     if (
-      before.phase === PHASE.DECISION &&
+      before?.phase === PHASE.DECISION &&
       game.phase !== PHASE.DECISION &&
       cardMode === "decision" &&
       holder()?.dataset.cardKind === "property"
@@ -442,8 +493,54 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
       await dismissCard();
     }
 
-    return result;
+    return { state, events: response.data.events };
   }
+
+  /**
+   * Apply a snapshot the server pushed down the socket.
+   *
+   * This is how the other player's move reaches this screen: the events are
+   * animated and the new state is painted. The number keeps a repeated
+   * broadcast from being played twice, and a snapshot that arrives mid-animation
+   * is queued rather than dropped.
+   */
+  frame.applySnapshot = (snapshot) => {
+    if (!snapshot?.state) return;
+    const candidate = restoreGame(snapshot.state);
+    if (!candidate) return;
+    const isReset = candidate.seq === 0 && lastSeq > 0;
+    if (!isReset && candidate.seq <= lastSeq) return;
+    if (busy) {
+      pendingSnapshot = snapshot;
+      return;
+    }
+    busy = true;
+    (async () => {
+      try {
+        lastSeq = candidate.seq;
+        game = candidate;
+        frame.game = game;
+        frame.ledger = game.ledger;
+        paintPhase();
+        await playEvents(snapshot.events || []);
+        pieces.sync(game.pieces);
+        paint({ animate: true });
+        // A decision the other player is making is shown here as a read-only
+        // card. Their own board is the one with the buttons.
+        if (game.phase === PHASE.DECISION && !isMyTurn()) {
+          await openDecision();
+        }
+      } finally {
+        busy = false;
+        paintPhase();
+        if (pendingSnapshot) {
+          const next = pendingSnapshot;
+          pendingSnapshot = null;
+          frame.applySnapshot(next);
+        }
+      }
+    })();
+  };
 
   /** Play the events in the order they happened. */
   async function playEvents(events) {
@@ -589,41 +686,54 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
     }
   }
 
-  /** Open the card the decision belongs to, and wait for the player. */
+  /** Open the card the decision belongs to. */
   async function openDecision() {
     const landing = game.landing;
     if (!landing) return;
+    // The card belongs to whoever is looking at it. On the player whose turn it
+    // is it is a decision with buttons; on the other screen it is a read-only
+    // card, because the buttons would only be refused.
+    const mine = isMyTurn();
 
     if (landing.kind === "chest") {
-      cardMode = "decision";
+      cardMode = mine ? "decision" : "read";
       reading = false;
       paintPhase();
-      await showChest(frame, {
-        drawable: true,
-        // The draw is an action. The card shuffles and reveals; the game
-        // chooses. There is no second random generator behind the glass.
-        draw: async () => {
-          const result = await step({ type: "drawWeapon" });
-          const drawn = result?.events.find((event) => event.type === "weaponDrawn");
-          return drawn?.weapon || BAD_LUCK;
-        },
-        collect: async () => {
-          await step({ type: "collectWeapon" });
-        },
-        onWeapon: () => paint({ animate: false }),
-      });
+      if (mine) {
+        await showChest(frame, {
+          drawable: true,
+          // The draw is an action. The card shuffles and reveals; the game
+          // chooses. There is no second random generator behind the glass.
+          draw: async () => {
+            // The e2e may force the draw (for bad luck) by setting
+            // window.__drawRng; the server honours it only in the preview.
+            const rng = window.__drawRng;
+            const result = await step(
+              rng !== undefined ? { type: "drawWeapon", rng } : { type: "drawWeapon" },
+            );
+            const drawn = result?.events.find((event) => event.type === "weaponDrawn");
+            return drawn?.weapon || BAD_LUCK;
+          },
+          collect: async () => {
+            await step({ type: "collectWeapon" });
+          },
+          onWeapon: () => paint({ animate: false }),
+        });
+      } else {
+        showChest(frame, { drawable: false, onClose: () => closeRead() });
+      }
       cardMode = "read";
       frame.dataset.reading = "false";
       // Bad luck leaves the visit open until it is acknowledged; collecting
       // leaves it in RESOLVING. Either way the phase settles from here.
-      if (game.phase === PHASE.DECISION && game.landing?.kind === "chest") {
+      if (mine && game.phase === PHASE.DECISION && game.landing?.kind === "chest") {
         await step({ type: "continue" });
       }
       return;
     }
 
     if (!landing.id || !isPurchasable(landing.id)) return;
-    cardMode = "decision";
+    cardMode = mine ? "decision" : "read";
     reading = false;
     paintPhase();
     await showCard(frame, landing.id, context());
@@ -641,9 +751,12 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
 
   function openRead(id) {
     if (game.phase !== PHASE.AWAITING_ROLL) return;
+    if (busy) return;
+    if (isDecision()) return;
     reading = true;
     cardMode = "read";
     paintPhase();
+    console.log("OPENREAD", id, "phase", game.phase, "busy", busy, "reading", reading);
 
     if (id === RAGNAROK.id) {
       showChest(frame, { drawable: false, onClose: () => closeRead() });
@@ -667,6 +780,7 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
 
   const rollIt = () => {
     if (busy || reading) return;
+    if (!isMyTurn()) return;
     if (game.phase !== PHASE.AWAITING_ROLL) return;
     run({ type: "roll" });
   };

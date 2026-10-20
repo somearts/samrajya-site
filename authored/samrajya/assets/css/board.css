@@ -151,6 +151,30 @@
   width: 100%;
 }
 
+/* The board screen before the game has started. It says so plainly rather than
+   drawing an empty board, because an empty board reads as a broken one. */
+.board-waiting {
+  display: grid;
+  place-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.board-waiting__title {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.board-waiting__note {
+  margin: 0;
+  max-width: 22rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
 /* --------------------------------------------------------------- the board */
 
 .board {

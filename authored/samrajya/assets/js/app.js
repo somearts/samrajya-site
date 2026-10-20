@@ -19,6 +19,7 @@ import { Session } from "./session.js";
 import { welcomeView, createView, joinView, lobbyView, boardView } from "./views.js";
 import { cleanName, parseRoomCode } from "./shared/identity.js";
 import { isCiv } from "./shared/civilizations.js";
+import { restoreGame } from "./shared/game.js";
 
 const REMEMBERED_ROOM = "samrajya.room";
 
@@ -29,10 +30,13 @@ const state = {
   error: null,
   errors: {},
   room: null,
-  // The game's money and holdings. Made when the board first opens and kept
-  // afterwards, so leaving the board and coming back is the same game. See
-  // shared/ledger.js - none of this is persisted anywhere yet.
-  ledger: null,
+  // The game's state, owned by the server and kept here as a restored snapshot.
+  // Null until the game starts. The session is here so the board screen can send
+  // actions without a second path to the network.
+  game: null,
+  session: null,
+  // The board registers this so a live snapshot can be handed straight to it.
+  applySnapshot: null,
   draft: {
     name: "",
     civ: "",
@@ -45,6 +49,7 @@ const state = {
 };
 
 const session = new Session();
+state.session = session;
 let copyTimer = null;
 
 /* ------------------------------------------------------------------- render */
@@ -282,10 +287,34 @@ function buildActions() {
 
     /* --- the board --- */
 
-    enterBoard: () => {
-      state.screen = "board";
+    enterBoard: async () => {
+      const room = state.room;
+      if (!room) return;
+      state.busy = true;
       state.error = null;
-      render();
+      try {
+        if (room.seat === 0 && room.status === "LOBBY") {
+          // The host starts the game. If the second seat is not taken the server
+          // says so, and the lobby stays where it is.
+          const result = await session.start(room.roomId);
+          if (!result.ok) {
+            state.error = result.error;
+            render();
+            return;
+          }
+          state.room = result.data.room;
+        } else {
+          // The guest, or anyone rejoining a game that has already begun, reads
+          // the room as it is.
+          const result = await session.room(room.roomId);
+          if (result.ok) state.room = result.data;
+        }
+        state.game = state.room.board ? restoreGame(state.room.board) : null;
+        state.screen = "board";
+        render();
+      } finally {
+        state.busy = false;
+      }
     },
 
     /**
@@ -377,7 +406,18 @@ function startWatching() {
       const mine = state.room?.seat ?? null;
       const before = fingerprint(state.room);
       state.room = { ...room, seat: room.seat ?? mine };
+      if (room.board) state.game = restoreGame(room.board);
       if (before !== fingerprint(state.room) && state.screen === "lobby") render();
+      // A game that started while this screen was the board: the snapshot is
+      // handed to the board, which animates it.
+      if (state.screen === "board" && room.board) {
+        state.applySnapshot?.({ state: room.board, events: [] });
+      }
+    },
+    onSnapshot: (snapshot) => {
+      if (!snapshot?.state) return;
+      state.game = restoreGame(snapshot.state);
+      state.applySnapshot?.(snapshot);
     },
   });
 }
