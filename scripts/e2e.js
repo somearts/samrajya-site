@@ -2129,6 +2129,50 @@ try {
   await host.eval("window.__finishVisit()");
   await sleep(500);
 
+  /* --- a rent the payer cannot fully meet ------------------------------ */
+
+  // Seat 1 is the payer next. Give them less than Pluto's rent, then put them on
+  // it. The rule: they hand over everything they hold, the ledger keeps the rest
+  // as a short, and a notice says so. Nothing else happens.
+  await host.eval("window.__econ.ensure(1)");
+  await host.eval(`(() => {
+    const g = document.querySelector(".board").game;
+    g.ledger.players.find((p) => p.seat === 1).money = 50;
+    return true;
+  })()`);
+  await host.eval("window.__econ.place(0)");
+  await host.eval("window.__econ.roll(6)"); // Start + 6 is Pluto, rent 180.
+
+  const rentShort = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const toasts = [...b.querySelectorAll(".board__toast")];
+    return {
+      phase: g.phase,
+      kind: g.landing?.kind,
+      money: g.ledger.players.map((p) => p.money),
+      short: g.ledger.players.find((p) => p.seat === 1).short,
+      status: h.querySelector(".property-card__status").textContent,
+      toast: toasts.at(-1)?.textContent || "",
+      nextText: h.querySelector(".property-card__next-label").textContent,
+    };
+  `);
+
+  note("a rent the payer cannot meet takes everything they hold and records the short",
+    rentShort.kind === "rent" && rentShort.money[1] === 0 &&
+      rentShort.money[0] === 1580 + 50 && rentShort.short === 180 - 50 &&
+      /Short \u20b9130/.test(rentShort.toast),
+    `money ${rentShort.money.join(" ")}, short ${rentShort.short}, toast "${rentShort.toast}"`);
+  note("and the card says the short, and still offers only Continue",
+    /Short \u20b9130/.test(rentShort.status) && rentShort.nextText === "Continue",
+    `"${rentShort.status}"`);
+  await shot(host, "phase1-rent-short-390");
+
+  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  await host.eval("window.__finishVisit()");
+  await sleep(400);
+
   /* --- a square the player cannot afford ------------------------------- */
 
   await host.eval(`(() => {

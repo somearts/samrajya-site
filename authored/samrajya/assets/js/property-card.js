@@ -313,6 +313,13 @@ export function syncCard(board, ctx) {
   // answer again. The phase has already left DECISION by then.
   const answered = deciding && game?.phase !== "DECISION";
 
+  // A rent that could not be met in full is still a visit that must be answered,
+  // and the card says so in the same line as the rent: the payer paid everything
+  // they held, and the rest is a short. Nothing else happened.
+  if (deciding && kind === "rent" && game?.visit?.short > 0) {
+    status.textContent += ` • Short ${rupees(game.visit.short)}`;
+  }
+
   /* --- the close button --- */
 
   const close = card.querySelector(".property-card__close");

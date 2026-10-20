@@ -52,6 +52,7 @@ import { hideCard, showCard, syncCard } from "./property-card.js";
 import {
   markBoard,
   rentMessage,
+  rentShortMessage,
   syncActive,
   syncPurses,
   toast,
@@ -514,6 +515,17 @@ export function board({ players = [], game: given = null, seat: mySeat = null } 
           paint({ animate: true });
           toast(frame, rentMessage(game.ledger, event), { tone: "rent" });
           await wait(260);
+          break;
+        }
+
+        case "rentShort": {
+          // What the payer could actually hand over still flies; the rest is the
+          // short, and the notice is the only thing that says the visit was not
+          // an ordinary rent. Nothing else happens because of it.
+          if (event.amount > 0) await flyRent(root(), frame, event);
+          paint({ animate: true });
+          toast(frame, rentShortMessage(event), { tone: "refused" });
+          await wait(event.amount > 0 ? 260 : 420);
           break;
         }
 

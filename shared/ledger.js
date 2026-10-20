@@ -83,6 +83,10 @@ export function createLedger(players = [], { opening = STARTING_MONEY } = {}) {
       name: p?.name || "",
       civ: p?.civ || "",
       money: opening,
+      // A rent the payer could not fully meet. It is a fact about the purse, not a
+      // penalty: nothing is taken, nothing is owed to the bank, and the game does
+      // not end. It accumulates so the ledger can say what happened later.
+      short: 0,
     })),
     properties: new Map(),
   };
@@ -118,6 +122,16 @@ export function nameOfSeat(ledger, seat) {
 /** How much a seat is holding. Zero for a seat nobody is sitting in. */
 export function moneyOf(ledger, seat) {
   return playerAt(ledger, seat)?.money ?? 0;
+}
+
+/**
+ * How much rent this seat has fallen short of, across every visit. Zero for a
+ * seat nobody is sitting in. A short is a record, not a debt to the bank: it is
+ * here so the ledger can answer "what happened to this purse?" without having to
+ * remember the visits.
+ */
+export function shortOf(ledger, seat) {
+  return playerAt(ledger, seat)?.short ?? 0;
 }
 
 /** The seat holding a square, or null when nobody holds it. */
@@ -282,34 +296,51 @@ export function rentPayer(ledger, id, seat) {
 /**
  * Charge whoever lands on a square.
  *
- * The payer keeps what is left and the owner is paid, and the answer says both
- * so a toast can be written without going back to the ledger for the numbers.
+ * The owner is paid and the answer says how much moved, so a toast can be
+ * written without going back to the ledger for the numbers.
  *
  * A square nobody holds charges nothing, and landing on your own charges
  * nothing. Both are the same case as far as the ledger is concerned - there is
  * no second player to pay - and both return `ok: true` with `rent: 0`, because
  * nothing went wrong.
  *
- * The one thing refused is a payment the payer cannot make. The purse is never
- * allowed below zero; refusing is loud, and a silent negative balance is not.
+ * A payment the payer cannot fully make is not refused and is not borrowed
+ * either. The payer hands over **everything they hold** and the owner takes it;
+ * the part of the rent that is left over is recorded against the payer as a
+ * `short`. The purse is never allowed below zero, and a short is not a penalty:
+ * nothing else happens because of it, and there is no bankruptcy yet. The short
+ * is the ledger's way of remembering that the rent was not met, so a later rule
+ * (or a card, or a test) can ask about it.
  */
 export function payRent(ledger, id, seat) {
   const owner = rentPayer(ledger, id, seat);
   const rent = rentAt(ledger, id) ?? 0;
-  if (owner === null) return yes({ rent: 0, from: seat, to: null, paid: false });
+  if (owner === null) {
+    return yes({ rent: 0, from: seat, to: null, paid: false, amount: 0, short: 0, shortfall: 0 });
+  }
 
   const payer = playerAt(ledger, seat);
   const holder = playerAt(ledger, owner);
   if (!payer || !holder) return no("That seat is not playing.");
 
-  if (payer.money < rent) {
-    return no(
-      `${payer.name || "They"} cannot pay ${rent} and does not have it.`,
-      { rent, from: seat, to: owner, paid: false },
-    );
-  }
+  // What can actually move is the smaller of the rent and the purse. When the two
+  // are equal this is the whole rent; when the purse is smaller it is the whole
+  // purse, and the difference is the short.
+  const paid = Math.max(0, Math.min(payer.money, rent));
+  payer.money -= paid;
+  holder.money += paid;
+  const shortfall = rent - paid;
+  if (shortfall > 0) payer.short += shortfall;
 
-  payer.money -= rent;
-  holder.money += rent;
-  return yes({ rent, from: seat, to: owner, paid: rent > 0, payer: payer.money, holder: holder.money });
+  return yes({
+    rent,
+    from: seat,
+    to: owner,
+    paid: rent > 0 && paid === rent,
+    amount: paid,
+    payer: payer.money,
+    holder: holder.money,
+    short: payer.short,
+    shortfall,
+  });
 }

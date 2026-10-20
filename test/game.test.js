@@ -423,24 +423,45 @@ test("rent follows the build level", () => {
   );
 });
 
-test("a rent that cannot be paid moves nothing and says so", () => {
+test("a rent that cannot be fully paid takes everything the payer holds and records the short", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
   before.active = 1;
+  before.turn = 1;
   before.ledger.players[1].money = 5;
   const { state, events } = applyAction(before, { type: "roll" }, face(1));
 
-  assert.equal(moneyOf(state.ledger, 1), 5);
-  assert.equal(moneyOf(state.ledger, 0), 2000 - priceOf("moon"));
-  const no = events.find((e) => e.type === "refused");
-  assert.ok(no);
-  assert.match(no.why, /cannot pay/);
+  const rent = baseRentOf("moon");
+  assert.equal(moneyOf(state.ledger, 1), 0, "the payer hands over everything they hold");
+  assert.equal(moneyOf(state.ledger, 0), 2000 - priceOf("moon") + 5, "the owner takes it");
+  assert.equal(state.ledger.players[1].short, rent - 5, "the short is recorded on the payer");
+
+  const short = events.find((e) => e.type === "rentShort");
+  assert.ok(short, "a short rent is its own event");
+  assert.equal(short.amount, 5);
+  assert.equal(short.shortfall, rent - 5);
+  assert.equal(short.short, rent - 5);
+  assert.equal(events.find((e) => e.type === "refused"), undefined, "it is not a refusal");
 
   const opened = take(state, { type: "continue" }).state;
   assert.equal(opened.landing.kind, "rent");
-  assert.equal(decisionFor(opened, "moon").paid, false);
+  const decision = decisionFor(opened, "moon");
+  assert.equal(decision.rentPaid, 5, "the card says what actually moved");
+  assert.equal(decision.short, rent - 5);
+  assert.equal(decision.paid, false);
   // The visit can still be acknowledged; nothing is owed at TURN_END.
   assert.equal(take(opened, { type: "continue" }).state.phase, PHASE.TURN_END);
+});
+
+test("a rent paid in full is not a short", () => {
+  const before = game();
+  buy(before.ledger, "moon", 0);
+  before.active = 1;
+  before.turn = 1;
+  const { state, events } = applyAction(before, { type: "roll" }, face(1));
+  assert.equal(events.find((e) => e.type === "rentShort"), undefined);
+  assert.equal(events.find((e) => e.type === "rentPaid").amount, baseRentOf("moon"));
+  assert.equal(state.ledger.players[1].short, 0);
 });
 
 /* ---------------------------------------------------------------- selling */
@@ -596,6 +617,9 @@ test("a fresh game's ledger is a real ledger with a sheet for every property", (
     from: 1,
     to: null,
     paid: false,
+    amount: 0,
+    short: 0,
+    shortfall: 0,
   });
 });
 

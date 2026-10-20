@@ -34,7 +34,7 @@ import {
   STARTING_MONEY,
   MAX_UPGRADE,
 } from "../shared/ledger.js";
-import { PRICED_IDS, PRICING } from "../shared/economy.js";
+import { PRICED_IDS, PRICING, baseRentOf, priceOf } from "../shared/economy.js";
 
 /** Two players on seats 0 and 1, as the room hands them over. */
 const twoPlayers = () =>
@@ -355,35 +355,66 @@ test("landing on a corner or a chest costs you nothing", () => {
   }
 });
 
-test("a player is never left owing money", () => {
-  const game = solo(0);
-  buy(game, "moon", 0);          // -200? no: refused, because there is none
-  assert.equal(moneyOf(game, 0), 0);
-
-  // Now a landlord who cannot be paid.
-  const rich = solo(5000);
-  buy(rich, "quasar", 0);
-  upgrade(rich, "quasar", 0);
-  upgrade(rich, "quasar", 0);
-  upgrade(rich, "quasar", 0);
-
-  const broke = createLedger(
+test("a rent the payer cannot fully meet takes everything they hold and records the short", () => {
+  const game = createLedger(
     [{ seat: 0, name: "Landlord", civ: "aztec" }, { seat: 1, name: "Broke", civ: "roma" }],
     { opening: 100000 },
   );
   // Give the landlord Quasar and leave the other player with less than the rent.
-  const landlord = broke.players[0];
-  landlord.money = 400;
-  const sheet = sheetFor(broke, "quasar");
+  game.players[0].money = 400;
+  const sheet = sheetFor(game, "quasar");
   sheet.owner = 0;
   sheet.upgradeLevel = 3;
-  broke.players[1].money = 10;
+  game.players[1].money = 10;
 
-  const verdict = payRent(broke, "quasar", 1);
-  assert.equal(verdict.ok, false, "a rent nobody can pay is refused, not quietly borrowed");
-  assert.match(verdict.why, /cannot pay/);
-  assert.equal(moneyOf(broke, 1), 10, "and the purse is untouched");
-  assert.equal(moneyOf(broke, 0), 400);
+  const rent = rentAt(game, "quasar");
+  const verdict = payRent(game, "quasar", 1);
+
+  assert.equal(verdict.ok, true, "a short rent is not refused and is not borrowed");
+  assert.equal(verdict.rent, rent, "the rent charged is the full rent the square carries");
+  assert.equal(verdict.amount, 10, "the payer hands over everything they hold");
+  assert.equal(verdict.paid, false);
+  assert.equal(verdict.shortfall, rent - 10);
+  assert.equal(moneyOf(game, 1), 0, "the purse is never allowed below zero");
+  assert.equal(moneyOf(game, 0), 410, "the owner takes what was actually paid");
+  assert.equal(game.players[1].short, rent - 10, "the short is recorded on the payer");
+});
+
+test("a short rent is not a penalty: nothing else is taken or owed", () => {
+  const game = twoPlayers();
+  buy(game, "moon", 0);
+  game.players[1].money = 5;
+
+  const rent = baseRentOf("moon");
+  const verdict = payRent(game, "moon", 1);
+
+  assert.equal(verdict.shortfall, rent - 5);
+  assert.equal(moneyOf(game, 0), STARTING_MONEY - priceOf("moon") + 5, "the owner got the 5");
+  assert.equal(moneyOf(game, 1), 0);
+  assert.equal(game.players[1].short, rent - 5);
+  // The game does not end and no other player's purse moved.
+  assert.equal(moneyOf(game, 0) + moneyOf(game, 1), STARTING_MONEY - priceOf("moon") + 5);
+});
+
+test("a short accumulates across visits, and a full rent leaves none", () => {
+  const game = twoPlayers();
+  buy(game, "moon", 0);
+  const rent = baseRentOf("moon");
+
+  game.players[1].money = 5;
+  payRent(game, "moon", 1);
+  assert.equal(game.players[1].short, rent - 5);
+
+  game.players[1].money = 3;
+  payRent(game, "moon", 1);
+  assert.equal(game.players[1].short, (rent - 5) + (rent - 3));
+  assert.equal(moneyOf(game, 1), 0);
+
+  game.players[1].money = rent;
+  const full = payRent(game, "moon", 1);
+  assert.equal(full.shortfall, 0);
+  assert.equal(full.short, (rent - 5) + (rent - 3), "a full rent does not clear an older short");
+  assert.equal(moneyOf(game, 1), 0);
 });
 
 test("the rent charged is the rent the square carries right now", () => {

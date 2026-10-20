@@ -335,6 +335,7 @@ export function applyAction(state, action, rng = Math.random) {
         collected: false,
         rent: 0,
         paid: false,
+        short: 0,
       };
       next.phase = PHASE.MOVING;
 
@@ -368,7 +369,26 @@ export function applyAction(state, action, rng = Math.random) {
           const verdict = payRent(next.ledger, cell.id, active);
           next.visit.rent = verdict.rent || 0;
           next.visit.paid = Boolean(verdict.paid);
-          if (verdict.ok) {
+          next.visit.short = verdict.shortfall || 0;
+
+          if (verdict.shortfall > 0) {
+            /* The payer could not meet the whole rent. They have paid everything
+               they hold and the ledger has recorded the rest as a short. This is
+               not a refusal and not a penalty: the visit continues exactly as a
+               paid rent would, and the notice is the only thing that says the two
+               were different. */
+            ok("rentShort", {
+              id: cell.id,
+              from: active,
+              to: owner,
+              rent: verdict.rent || 0,
+              amount: verdict.amount || 0,
+              short: verdict.short || 0,
+              shortfall: verdict.shortfall || 0,
+              payer: verdict.payer,
+              holder: verdict.holder,
+            });
+          } else {
             ok("rentPaid", {
               id: cell.id,
               from: active,
@@ -378,18 +398,6 @@ export function applyAction(state, action, rng = Math.random) {
               holder: verdict.holder,
               rent: rentAt(next.ledger, cell.id),
             });
-          } else {
-            /* The rent could not be paid. Nothing moves, the visit still has to
-               be acknowledged, and the refusal says why. It is not the player's
-               error; it is a fact about the purse. */
-            events.push(
-              event(actionSeq, "refused", {
-                action: "rent",
-                seat: active,
-                why: verdict.why,
-                id: cell.id,
-              }),
-            );
           }
         }
       } else if (cell?.id === RAGNAROK.id) {
@@ -627,7 +635,10 @@ export function decisionFor(game, id) {
     drawn: game.visit?.drawn ?? null,
     collected: Boolean(game.visit?.collected),
     paid: Boolean(game.visit?.paid),
-    rentPaid: game.visit?.rent || 0,
+    // The rent that actually moved, and the part of it that did not. A full
+    // payment has `short` zero; a shortfall has `rentPaid + short === rent`.
+    rentPaid: (game.visit?.rent || 0) - (game.visit?.short || 0),
+    short: game.visit?.short || 0,
     canBuy: canBuy(game.ledger, id, game.active),
     canUpgrade: upgradeOffer(game, id),
     canSell: sellOffer(game, id, game.active),

@@ -229,3 +229,13 @@ export function rentMessage(ledger, { from, to, rent }) {
   const holder = nameOfSeat(ledger, to) || "Someone";
   return `${payer} paid ${rupees(rent)} rent to ${holder}`;
 }
+
+/**
+ * The notice a short rent gets. The payer paid everything they hold and the
+ * ledger kept the rest as a short; the notice says only that, because nothing
+ * else happened.
+ */
+export function rentShortMessage({ shortfall }) {
+  if (!shortfall) return "";
+  return `Short ${rupees(shortfall)}`;
+}
