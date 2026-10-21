@@ -159,7 +159,9 @@ let unitTests = 0;
 let unitAssertions = 0;
 for (const file of unitFiles) {
   const text = at(file) || "";
-  unitTests += count(text, /\btest\(/g);
+  // Only a test case: a test() at the start of a statement. `regex.test(x)` is
+  // a regular expression being used, and is not a test case.
+  unitTests += count(text, /^\s*test\(/gm);
   unitAssertions += count(text, /\bassert\./g);
 }
 rows.push(["unit: named test cases (test() blocks)", unitTests]);
