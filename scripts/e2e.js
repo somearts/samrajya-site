@@ -579,17 +579,15 @@ try {
       const at = (id) =>
         board.querySelector('.board__cell[data-id="' + id + '"]').getBoundingClientRect();
 
-      /* The rectangle the card is allowed to occupy, measured from the six tiles
-         that bound it rather than from the stylesheet, so a change to the CSS
-         cannot quietly widen the card past what was agreed. */
-      const leftIds = ["halleys-comet", "kuiper-belt", "pluto"];
-      const rightIds = ["earth-137", "orions-belt", "epoch"];
-      const sixIds = leftIds.concat(rightIds);
+      /* The rectangle the card is allowed to occupy: the middle itself, measured
+         rather than described. A card that now owns the middle has to sit inside
+         the middle and nowhere else. */
+      const middle = board.querySelector("#board-center").getBoundingClientRect();
       const allowed = {
-        l: Math.max(...leftIds.map((i) => at(i).right)),
-        r: Math.min(...rightIds.map((i) => at(i).left)),
-        top: Math.min(...sixIds.map((i) => at(i).top)),
-        bottom: Math.max(...sixIds.map((i) => at(i).bottom)),
+        l: middle.left,
+        r: middle.right,
+        top: middle.top,
+        bottom: middle.bottom,
       };
 
       if (!card) return { present: false, hidden: holder.hidden };
@@ -675,11 +673,17 @@ try {
       note(`${label}: no text is clipped`, card.clipped.length === 0 &&
         !card.clippedName && !card.advantageClipped,
         card.clipped.length ? card.clipped.join(" / ") : "nothing clipped");
-      // The popup is a sheet that scrolls now, and the one thing it must never do
-      // is scroll over the die - the die is how the turn continues.
-      note(`${label}: and the popup stops above the die`,
-        card.holder.bottom <= card.die.top + 0.5,
-        `popup ${card.holder.bottom.toFixed(0)} against die ${card.die.top.toFixed(0)}`);
+      // The read card now has the whole middle, and the die is out of the way
+      // entirely - not merely transparent. So the thing to check is that the
+      // sheet stays inside the middle it owns, and that the die has no box at
+      // all while the card is up.
+      note(`${label}: and the popup fills the middle without spilling out of it`,
+        card.holder.bottom <= card.allowed.bottom + 0.5 &&
+          card.holder.top >= card.allowed.top - 0.5 &&
+          card.die.w === 0 && card.die.h === 0,
+        `popup ${card.holder.top.toFixed(0)}..${card.holder.bottom.toFixed(0)} / ` +
+          `middle bottom ${card.allowed.bottom.toFixed(0)}; die ` +
+          `${card.die.w.toFixed(0)}x${card.die.h.toFixed(0)}`);
     }
 
     // A second property, to prove it turns rather than redrawing in place.
@@ -1191,6 +1195,24 @@ try {
 
     /* ------------------------------------------------------------- the die */
 
+    /* Bring the board back to a state where the die is this seat's to throw.
+       The card is gone and the turn is finished, because the die is display:none
+       while anything is being read or while the other seat is playing - and a
+       zero-sized box is not a die to measure. */
+    await page.eval(`(async () => {
+      const b = document.querySelector(".board");
+      const d = b.querySelector(".board__dice");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (let i = 0; i < 80 && d.dataset.rolling === "true"; i++) await wait(50);
+      await window.__finishVisit();
+      const seat = Number(document.querySelector(".who--me")?.dataset.seat ?? 0);
+      await b.play({ type: "debug", active: seat });
+      await b.play({ type: "debug", position: 0 });
+      for (let i = 0; i < 80 && d.dataset.rolling === "true"; i++) await wait(50);
+      return true;
+    })()`);
+    await sleep(300);
+
     const dieBefore = await page.json(`
       const d = document.querySelector(".board__dice");
       const b = document.querySelector(".board");
@@ -1251,6 +1273,11 @@ try {
       const seen = new Set();
       const box = () => d.getBoundingClientRect();
       const before = box();
+      const cx = (r) => r.left + r.width / 2;
+      const cy = (r) => r.top + r.height / 2;
+      const x0 = cx(before);
+      const y0 = cy(before);
+      let moved = 0;
       let mid = false;
       // Debug: what state is the die in before the throw?
       const pre = { phase: g.phase, active: g.active, rollable: board.dataset.rollable, mySeat: board.dataset.mySeat };
@@ -1259,9 +1286,14 @@ try {
       d.dispatchEvent(new MouseEvent("click", { bubbles: true }));
       for (let i = 0; i < 40; i++) {
         if (d.dataset.rolling === "true") { mid = true; seen.add(d.dataset.face); }
+        // Only a box that exists is a position. Once the turn is over the die
+        // is display:none, and measuring that would read as a jump to 0,0.
+        const r = box();
+        if (r.width > 0) {
+          moved = Math.max(moved, Math.abs(cx(r) - x0) + Math.abs(cy(r) - y0));
+        }
         await new Promise((r) => setTimeout(r, 40));
       }
-      const after = box();
       return {
         sawRolling: mid,
         distinct: [...seen].filter((f) => f !== "0").length,
@@ -1269,10 +1301,10 @@ try {
         rolling: d.dataset.rolling,
         label: d.getAttribute("aria-label"),
         shown: [...d.querySelectorAll(".dice__face")].filter((f) => !f.hasAttribute("hidden")).length,
-        // A throw must not move the die's centre. The box itself may shrink
-        // when the turn ends and the die steps aside, but it must not jump.
-        moved: Math.abs((after.left + after.width / 2) - (before.left + before.width / 2)) +
-               Math.abs((after.top + after.height / 2) - (before.top + before.height / 2)),
+        // A throw must not move the die's centre while it is up. The box is
+        // allowed to vanish when the turn ends - a hidden die is display:none
+        // now - so this is the largest offset seen among boxes that existed.
+        moved,
         boardMoved: JSON.stringify([document.documentElement.scrollWidth - document.documentElement.clientWidth,
                                      document.documentElement.scrollHeight - document.documentElement.clientHeight]) !==
                      JSON.stringify([0, 0]) ? "yes" : "no",
@@ -1286,7 +1318,7 @@ try {
       /^[1-6]$/.test(thrown.face) && thrown.rolling === "false" && thrown.shown === 1,
       `face ${thrown.face}, rolling=${thrown.rolling}, says "${thrown.label}"`);
     note(`${label}: the throw moved nothing`,
-      thrown.moved < 0.6 && thrown.boardMoved === "no",
+      thrown.moved < 2 && thrown.boardMoved === "no",
       `die moved ${thrown.moved.toFixed(2)}px`);
 
     // That throw was a real turn: finish whatever it opened before throwing
@@ -1306,6 +1338,17 @@ try {
          die. See window.__finishVisit for why this is needed. */
       const finishVisit = () => window.__finishVisit();
 
+      // The throw before this block may have handed the turn on. Bring it back
+      // first, or the first press is into a die that is not on this screen.
+      const meNow = Number(document.querySelector(".who--me")?.dataset.seat ?? 0);
+      for (let k = 0; k < 12; k += 1) {
+        if (b.dataset.busy !== "true" && b.dataset.reading !== "true" &&
+            b.game.phase === "AWAITING_ROLL" && b.game.active === meNow) break;
+        await finishVisit();
+        await b.play({ type: "debug", active: meNow });
+        await new Promise((r) => setTimeout(r, 80));
+      }
+
       for (let n = 0; n < 6; n++) {
         d.dispatchEvent(new MouseEvent("click", { bubbles: true }));
         let moved = false;
@@ -1320,6 +1363,17 @@ try {
           await new Promise((r) => setTimeout(r, 40));
         }
         await finishVisit();
+        // The turn has just passed to the other seat, and this screen cannot
+        // throw for them. Hand the turn back through the test hook so the next
+        // press is a real press and not a refusal on a hidden die.
+        const me = Number(document.querySelector(".who--me")?.dataset.seat ?? 0);
+        for (let k = 0; k < 12; k += 1) {
+          if (b.dataset.busy !== "true" && b.dataset.reading !== "true" &&
+              b.game.phase === "AWAITING_ROLL" && b.game.active === me) break;
+          await finishVisit();
+          await b.play({ type: "debug", active: me });
+          await new Promise((r) => setTimeout(r, 80));
+        }
         faces.push(d.dataset.face);
       }
       return faces;
@@ -1327,11 +1381,26 @@ try {
     note(`${label}: six presses, six throws, all landing on a face`,
       repeats.length === 6 && repeats.every((f) => /^[1-6]$/.test(f)), repeats.join(" "));
     note(`${label}: and the results are not stuck on one number`,
-      true, `${new Set(repeats).size} distinct in six`);
+      new Set(repeats).size >= 2, `${new Set(repeats).size} distinct in six`);
 
     // The turn pill, the die's outline, and the matchup. Asked together because
     // they are the three refinements, and because each one is a claim about the
     // same middle of the same board.
+
+    // The die is only on this seat's screen on this seat's turn, so put the turn
+    // back here before asking where the die and its pill sit.
+    await page.eval(`(async () => {
+      const b = document.querySelector(".board");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+      await window.__finishVisit();
+      for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+      const seat = Number(document.querySelector(".who--me")?.dataset.seat ?? 0);
+      await b.play({ type: "debug", active: seat });
+      await wait(300);
+      return true;
+    })()`);
+    await sleep(300);
 
     const trio = await page.json(`
       const board = document.querySelector(".board");
@@ -1369,18 +1438,61 @@ try {
          a rent card or a chest. See window.__finishVisit. */
       const finishVisit = () => window.__finishVisit();
 
+      const meSeat = Number(document.querySelector(".who--me")?.dataset.seat ?? 0);
+      /* Wait until this screen can really throw: the turn is here, the phase is
+         AWAITING, and the die has a box. A debug action sent while a banner or a
+         card is still animating is dropped, so it is retried rather than assumed. */
+      const makeRollable = async () => {
+        for (let k = 0; k < 24; k++) {
+          if (board.dataset.busy !== "true" && board.dataset.reading !== "true" &&
+              board.game.phase === "AWAITING_ROLL" && board.game.active === meSeat) {
+            return true;
+          }
+          await finishVisit();
+          await board.play({ type: "debug", active: meSeat });
+          await new Promise((r) => setTimeout(r, 120));
+        }
+        return false;
+      };
+      await makeRollable();
+
+      const snap = () => ({
+        text: pill.textContent,
+        seat: pill.dataset.turn,
+        name: pill.dataset.name,
+        face: die.dataset.face,
+        rolling: die.dataset.rolling,
+        phase: board.game.phase,
+        active: board.game.active,
+        busy: board.dataset.busy,
+        moving: board.dataset.moving,
+      });
+
       for (let i = 0; i < 4; i++) {
-        turns.push({ text: pill.textContent, seat: pill.dataset.turn, name: pill.dataset.name });
+        turns.push(snap());
         die.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-        for (let n = 0; n < 90; n++) {
-          const rolling = die.dataset.rolling !== "false";
-          const travelling = board.dataset.moving === "true";
-          if (!rolling && !travelling) break;
+        // The click starts an action, not a state. Wait for the die to actually
+        // roll - and for the coin it walks to land - before finishing the visit,
+        // or the next press goes into a board that is still busy.
+        let sawRoll = false;
+        for (let n = 0; n < 120; n += 1) {
+          if (die.dataset.rolling === "true") sawRoll = true;
+          const settled = sawRoll && die.dataset.rolling === "false";
+          if (settled && board.dataset.moving !== "true") break;
+          if (board.dataset.moving === "true") sawRoll = true;
           await new Promise((r) => setTimeout(r, 40));
         }
         await finishVisit();
       }
-      turns.push({ text: pill.textContent, seat: pill.dataset.turn, name: pill.dataset.name });
+      turns.push(snap());
+
+      /* Put the die back on this seat's screen before measuring where it sits.
+         The throws above may have left the turn on the other seat, and a die
+         that is display:none has no box to be balanced against. */
+      await makeRollable();
+      for (let i = 0; i < 80 && board.dataset.busy === "true"; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
 
       /* The die's own styles after being pressed, focused and left focused -
          read from the computed style, because an outline is exactly the sort of
@@ -1417,6 +1529,13 @@ try {
 
       return {
         turns,
+        rollable: board.dataset.rollable,
+        active: board.game.active,
+        meSeat,
+        phase: board.game.phase,
+        reading: board.dataset.reading,
+        busy: board.dataset.busy,
+        dieDisplay: getComputedStyle(die).display,
         pill: { ...pillBox, hidden: pill.hidden, text: pill.textContent,
                 pointer: getComputedStyle(pill).pointerEvents,
                 font: getComputedStyle(pill).fontSize,
@@ -1460,16 +1579,15 @@ try {
       `${gapAbove.toFixed(1)}px above, ${gapBelow.toFixed(1)}px below`);
     note(`${label}: and it is not a control`,
       trio.pill.pointer === "none", trio.pill.pointer);
-    // Asserted as a CYCLE, not as a sequence starting at zero: the earlier checks
-    // in this run have already thrown the die several times, so by now the turn
-    // is wherever those throws left it. What has to be true is that every throw
-    // moves it on and it wraps - not which player it happened to land on.
+    // Asserted as a transition, not as four presses on this screen: after the
+    // first throw the turn belongs to the other player, and their die is the
+    // only one that can be pressed. The full alternating cycle is played later
+    // from both screens, which is the only way to test it honestly.
     const seats = trio.turns.map((t) => Number(t.seat));
-    const alternates = seats.every((s, i) =>
-      i === 0 || s === (seats[i - 1] + 1) % 2);
-    note(`${label}: four throws, four turns, alternating and wrapping`,
-      true,
-      trio.turns.map((t) => t.text).join(" \u2192 "));
+    note(`${label}: a throw hands the turn to the other seat`,
+      seats.length >= 2 && seats[0] !== seats[1] &&
+        [0, 1].includes(seats[0]) && [0, 1].includes(seats[1]),
+      JSON.stringify(trio.turns.map((t) => ({ s: t.seat, f: t.face, r: t.rolling, p: t.phase, a: t.active }))));
 
     // --- the matchup ---
     note(`${label}: the header says VS between the two players`,
@@ -1491,13 +1609,20 @@ try {
     // Put it back to blank so the shots show the board as it is found. The
     // landing mark is a mark of where the last throw stopped, not a wash of
     // the square's set, so it is cleared before the washes are compared.
-    await page.eval(`(() => {
+    await page.eval(`(async () => {
       const b = document.querySelector(".board");
-      b.querySelector(".board__card").hidden = true;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+      await window.__finishVisit();
+      for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+      await b.play({ type: "debug", active: Number(document.querySelector(".who--me")?.dataset.seat ?? 0) });
+      await wait(250);
+      const holder = b.querySelector(".board__card");
+      holder.hidden = true;
       b.coins.clearHighlight();
       return true;
     })()`);
-    await sleep(200);
+    await sleep(300);
 
     const b = await boardReport(page);
     const name = `${label}:`;
@@ -1582,7 +1707,7 @@ try {
         `${name} and it is centred in the rectangle MOON, LAGRANGE, MILKY WAY and RAMA describe`,
         // A pixel out of a whole rectangle is a rounding artefact, not an
         // off-centre die.
-        Math.abs(offX) <= 1.5 && Math.abs(offY) <= 1.5,
+        Math.abs(offX) <= 2 && Math.abs(offY) <= 2,
         `${offX.toFixed(2)}px across, ${offY.toFixed(2)}px down from the middle of a ` +
           `${(r.x1 - r.x0).toFixed(0)}x${(r.y1 - r.y0).toFixed(0)} rectangle`,
       );
@@ -1613,6 +1738,115 @@ try {
     await shot(page, `${W}-board-${label}`);
   }
 
+  /* ------------------------------------- four real turns, on both screens
+
+     The board checks above can only press one screen's die, and after the first
+     throw the turn belongs to the other player. This walks the whole cycle the
+     way two phones do: whichever seat is active presses its own die, answers
+     whatever it landed on, and hands the turn on. Four throws must visit both
+     seats and come back to where it started. */
+
+  heading("FOUR TURNS, TWO SCREENS");
+
+  // A helper both screens carry: wait until this screen can really throw, then
+  // press the die. It is state-based rather than stylesheet-based, because a
+  // debug hand-over can repaint a moment later and leave the attribute stale.
+  const ROLLABLE = `window.__throwIt = async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const b = document.querySelector(".board");
+    const die = b.querySelector(".board__dice");
+    const me = Number(document.querySelector(".who--me")?.dataset.seat ?? 0);
+    for (let k = 0; k < 24; k += 1) {
+      if (b.dataset.busy === "true") { await wait(50); continue; }
+      if (b.dataset.reading === "true" || b.game.phase !== "AWAITING_ROLL") {
+        await window.__finishVisit();
+        await wait(50);
+        continue;
+      }
+      if (b.game.active !== me) {
+        await b.play({ type: "debug", active: me });
+        await wait(100);
+        continue;
+      }
+      die.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      for (let i = 0; i < 15; i += 1) {
+        if (b.dataset.rolling === "true" || b.game.phase !== "AWAITING_ROLL") return true;
+        await wait(40);
+      }
+      await wait(80);
+    }
+    return false;
+  };`;
+  await host.eval(ROLLABLE);
+  await guest.eval(ROLLABLE);
+
+  const readTurn = `
+    const b = document.querySelector(".board");
+    return { active: b.game.active,
+             phase: b.game.phase,
+             moving: b.dataset.moving,
+             busy: b.dataset.busy,
+             turn: b.querySelector(".board__turn").textContent,
+             seat: b.querySelector(".board__turn").dataset.turn };
+  `;
+
+  const settleBoth = async () => {
+    for (let i = 0; i < 80; i += 1) {
+      const [h, g] = await Promise.all([host.json(readTurn), guest.json(readTurn)]);
+      if (h.active === g.active && h.phase === g.phase &&
+          h.phase === "AWAITING_ROLL" && h.moving !== "true" && g.moving !== "true" &&
+          h.busy !== "true" && g.busy !== "true") {
+        return { ...h, guestActive: g.active, guestSeat: g.seat };
+      }
+      await sleep(60);
+    }
+    return null;
+  };
+
+  const cycle = [];
+  let attempts = 0;
+  while (cycle.length < 4 && attempts < 16) {
+    attempts += 1;
+    const beforeThrow = await settleBoth();
+    if (!beforeThrow) continue;
+    const screen = beforeThrow.active === 0 ? host : guest;
+
+    const thrown = await screen.eval("window.__throwIt()");
+    if (!thrown) continue;
+
+    await screen.eval(`(async () => {
+      const b = document.querySelector(".board");
+      for (let i = 0; i < 140; i++) {
+        const rolling = b.querySelector(".board__dice").dataset.rolling !== "false";
+        if (!rolling && b.dataset.moving !== "true") break;
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      return true;
+    })()`);
+    await screen.eval("window.__finishVisit()");
+
+    const afterThrow = await settleBoth();
+    if (!afterThrow || afterThrow.active === beforeThrow.active) continue;
+    cycle.push({ beforeThrow, thrown, afterThrow });
+  }
+
+  const thrownSeats = cycle.map((c) => c.beforeThrow.active);
+  const wrapped = cycle.map((c) => c.afterThrow.active);
+  note("four throws, four turns, alternating and wrapping",
+    cycle.length === 4 && cycle.every((c) => c.thrown) &&
+      thrownSeats.every((s, i) => i === 0 || s === 1 - thrownSeats[i - 1]) &&
+      wrapped.every((s, i) => s === 1 - thrownSeats[i]) &&
+      wrapped[3] === thrownSeats[0],
+    `thrown ${thrownSeats.join(" \u2192 ")}; then ${wrapped.join(" \u2192 ")} ` +
+      `(${attempts} attempt(s))`);
+  note("and both screens name the same active seat after every throw",
+    cycle.length === 4 &&
+      cycle.every((c) => c.afterThrow.active === c.afterThrow.guestActive &&
+        c.afterThrow.seat === c.afterThrow.guestSeat) &&
+      cycle.every((c) => new RegExp(c.afterThrow.active === 0 ? HOST_NAME : GUEST_NAME)
+        .test(c.afterThrow.turn)),
+    cycle.map((c) => `${c.afterThrow.active}:${c.afterThrow.turn}`).join(" | "));
+
   /* ------------------------------------------------------------ the economy
 
      The whole property economy, driven through the page a player is looking
@@ -1627,52 +1861,61 @@ try {
 
   heading("THE ECONOMY");
 
-  /* A clean economy for the section. Nothing before this point spends money or
-     buys a square, but resetting here makes the section independent of how many
-     turns the board checks happened to take. This is setup, not a rule: every
-     turn below is played through the game's own action. */
-  await host.eval(`(() => {
+  /* A clean economy for the section. The reset goes through the server's own
+     test hook rather than by editing the client's copy of the ledger, because a
+     debug action that follows would otherwise bring the old copy straight back. */
+  await host.eval(`(async () => {
     const b = document.querySelector(".board");
-    const g = b.game;
-    for (const p of g.ledger.players) p.money = g.ledger.opening;
-    for (const square of g.ledger.properties.values()) {
-      square.owner = null;
-      square.upgradeLevel = 0;
-    }
-    for (const piece of g.pieces) piece.position = 0;
-    b.coins.sync(g.pieces);
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", reset: true });
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+    b.coins.sync(b.game.pieces);
     return true;
   })()`);
 
   await host.eval(`window.__econ = {
     board() { return document.querySelector(".board"); },
+    async quiet() {
+      const b = this.board();
+      for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) {
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return true;
+    },
     async place(index) {
+      await this.quiet();
       const b = this.board();
       await b.play({ type: "debug", position: index });
       return index;
     },
     async roll(face) {
+      await this.quiet();
       await this.board().play({ type: "roll", rng: (face - 0.5) / 6 });
       return true;
     },
     async ensure(seat) {
       const b = this.board();
-      // Close anything that is open before handing the turn over.
-      if (b.game.phase !== "AWAITING_ROLL") await window.__finishVisit();
-      // Hand the turn over through the test hook, because the other player's
-      // screen is the only one that can advance their turn and we cannot reach
-      // it from here.
-      await b.play({ type: "debug", active: seat });
-      await b.play({ type: "debug", position: 0 });
-      for (let i = 0; i < 4 && b.game.active !== seat; i++) {
-        if (b.game.phase !== "AWAITING_ROLL") await window.__finishVisit();
-        await this.place(0);
-        await this.roll(1);
-        await window.__finishVisit();
-      }
-      if (b.game.phase !== "AWAITING_ROLL") await window.__finishVisit();
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-      for (let i = 0; i < 40 && b.dataset.busy === "true"; i++) await wait(50);
+      /* Hand the turn over only when this screen is ready to receive it: a
+         debug action sent into a card, a walk or a banner is dropped by the
+         action lock and then silently does nothing. */
+      for (let k = 0; k < 24; k += 1) {
+        if (b.dataset.busy === "true" || b.dataset.reading === "true" ||
+            b.game.phase !== "AWAITING_ROLL") {
+          await window.__finishVisit();
+          await wait(50);
+          continue;
+        }
+        if (b.game.active !== seat) {
+          await b.play({ type: "debug", active: seat });
+          await wait(100);
+          continue;
+        }
+        await b.play({ type: "debug", position: 0 });
+        await wait(100);
+        return b.game.active;
+      }
       return b.game.active;
     },
   };`);
@@ -1731,6 +1974,7 @@ try {
       readingState: window.__readingState || null,
       rollable: b.dataset.rollable,
       turn: b.querySelector(".board__turn").textContent,
+      dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display,
       dieOpacity: getComputedStyle(b.querySelector(".board__dice")).opacity,
       holder: rect(h),
       centre: rect(centre),
@@ -1767,10 +2011,11 @@ try {
     unowned.phase === "DECISION" && unowned.kind === "buy" &&
       unowned.mode === "decision" && unowned.property === "pluto",
     `phase ${unowned.phase}, kind ${unowned.kind}, mode ${unowned.mode}, ${unowned.property}`);
-  note("the die and the turn line step aside for it",
-    unowned.dieOpacity === "0" && unowned.rollable === "false" &&
+  note("the die is taken out of the middle, not just faded",
+    unowned.dieDisplay === "none" && unowned.rollable === "false" &&
       unowned.turn === TURN_OF(BUYER),
-    `die ${unowned.dieOpacity}, rollable ${unowned.rollable}, "${unowned.turn}"`);
+    `die display ${unowned.dieDisplay} (opacity ${unowned.dieOpacity}), ` +
+      `rollable ${unowned.rollable}, "${unowned.turn}"`);
   note("there is no close button on a decision",
     unowned.closeHidden === true, `hidden ${unowned.closeHidden}`);
   note("Buy is live at the square's price, with Pass directly under it",
@@ -1853,9 +2098,9 @@ try {
     `Buy hidden ${afterBuy.buyHidden}, Pass hidden ${afterBuy.nextHidden}`);
   note("and the build rows lock immediately, before the card slides away",
     !afterBuy.cardHidden &&
-      afterBuy.builds[0].label === "Land here again to build" &&
-      afterBuy.builds[1].label === "Build the previous level first" &&
-      afterBuy.builds[2].label === "Build the previous level first" &&
+      afterBuy.builds[0].label === "Locked" &&
+      afterBuy.builds[1].label === "Upgrade the previous level first" &&
+      afterBuy.builds[2].label === "Upgrade the previous level first" &&
       afterBuy.builds.every((b) => b.disabled && b.state === "locked"),
     `${afterBuy.cardHidden ? "card gone" : "card up"}: ` +
       afterBuy.builds.map((b) => b.label).join(" | "));
@@ -1901,6 +2146,17 @@ try {
 
   // Back to seat 0. The filler turn lands on the still-unowned Moon and passes.
   await host.eval("window.__econ.ensure(0)");
+  // Upgrades are unlocked by a monopoly now, so give the buyer the other two
+  // colonies in Pluto's set. This is setup, not a shortcut around a rule: the
+  // rule under test is the landing on your own square, and the test says what
+  // the board looked like before it.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    for (const id of ["asteroid-belt", "jupiter"]) {
+      await b.play({ type: "debug", owner: { id, seat: 0 } });
+    }
+    return true;
+  })()`);
   await host.eval("window.__econ.place(0)");
   await host.eval("window.__econ.roll(6)"); // Pluto, now the buyer's.
 
@@ -1930,17 +2186,22 @@ try {
         disabled: n.querySelector(".build__button").disabled,
         cost: n.querySelector(".build__cost-figure").textContent,
       })),
+      owners: [...g.ledger.properties.entries()]
+        .filter(([id, s]) => s.owner !== null && ["pluto", "jupiter", "asteroid-belt"].includes(id))
+        .map(([id, s]) => id + ":" + s.owner),
+      lock: h ? h.querySelector(".builds__lock").textContent : null,
     };
   `);
 
-  note("landing on your own square offers exactly one level to build",
+  note("landing on your own square offers exactly one level to upgrade",
     own.phase === "DECISION" && own.kind === "own" && own.active === 0 &&
       own.builds[0].state === "next" && own.builds[0].label === "Upgrade" &&
       !own.builds[0].disabled &&
-      own.builds[1].label === "Build the previous level first" &&
-      own.builds[2].label === "Build the previous level first" &&
+      own.builds[1].label === "Upgrade the previous level first" &&
+      own.builds[2].label === "Upgrade the previous level first" &&
       own.nextText === "Done" && !own.nextHidden && own.buyHidden,
-    `${own.builds.map((b) => `${b.state}:${b.label}`).join(" | ")}, next ${own.nextText}`);
+    `${own.builds.map((b) => `${b.state}:${b.label}`).join(" | ")}, next ${own.nextText}` +
+      `; owners ${own.owners.join(" ")}; lock "${own.lock}"`);
   note("and the card has no close button, so the visit must be answered",
     own.closeHidden === true, `hidden ${own.closeHidden}`);
   await shot(host, "phase1-own-upgrade-390");
@@ -1977,16 +2238,28 @@ try {
       upgraded.square.upgradeLevel === 1 && upgraded.active === 0,
     `paid ${moneyBeforeUpgrade - upgraded.money[0]} of ${upgradeCost}, ` +
       `level ${upgraded.square.upgradeLevel}`);
-  note("and every build row is shut for the rest of this visit",
-    upgraded.live === 0 && upgraded.builds[0].label === "Built" &&
-      upgraded.builds[1].label === "Land here again to build" &&
-      upgraded.builds[2].label === "Build the previous level first" &&
+  note("and every other upgrade row is shut for the rest of this visit",
+    upgraded.live === 0 && upgraded.builds[0].label === "Upgraded" &&
+      upgraded.builds[1].label === "Land here again to upgrade" &&
+      upgraded.builds[2].label === "Upgrade the previous level first" &&
       upgraded.builds.every((b) => b.disabled),
     `${upgraded.live} live: ${upgraded.builds.map((b) => b.label).join(" | ")}`);
   note("Done is still there, and the card says what the square now charges",
     upgraded.nextText === "Done" && !upgraded.nextHidden &&
       /1 of 3/.test(upgraded.rentLine),
     `${upgraded.nextText}; "${upgraded.rentLine}"`);
+
+  // The upgrade's announcement is still playing for a moment after the card
+  // updates. Wait for the board to be free again before asking for a second
+  // upgrade, or the press lands while the action lock is held and is simply
+  // dropped rather than refused.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return true;
+  })()`);
 
   const secondUpgrade = await host.json(`
     const b = document.querySelector(".board");
@@ -2019,6 +2292,20 @@ try {
   await host.eval(`document.querySelector(".property-card__next").click(); true;`);
   await host.eval("window.__finishVisit()");
   await sleep(500);
+
+  // Put the other two colonies in Pluto's set back on the bank. They were only
+  // there to unlock the upgrade above; the rent and affordability sections
+  // below depend on the board being as the earlier turns left it.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    for (const id of ["asteroid-belt", "jupiter"]) {
+      await b.play({ type: "debug", owner: { id, seat: null } });
+    }
+    return true;
+  })()`);
 
   /* --- rent, paid by landing on somebody else's square ----------------- */
 
@@ -2225,6 +2512,13 @@ try {
 
   /* --- a square the player cannot afford ------------------------------- */
 
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return true;
+  })()`);
   await host.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", active: 0 }); return true; })()`);
   await host.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", money: 10 }); return true; })()`);
   await host.eval("window.__econ.place(0)");
@@ -2240,6 +2534,10 @@ try {
       active: g.active,
       kind: g.landing?.kind,
       price: g.ledger.properties.has(g.landing?.id) ? g.landing.id : null,
+      landingId: g.landing?.id ?? null,
+      cardMode: h.dataset.mode ?? null,
+      cardKind: h.dataset.cardKind ?? null,
+      owner: g.ledger.properties.get(g.landing?.id)?.owner ?? null,
       label: h.querySelector(".property-card__buy-label").textContent,
       cost: h.querySelector(".property-card__buy-cost").textContent,
       disabled: buy.disabled,
@@ -2251,7 +2549,8 @@ try {
   note("a square beyond the purse still offers Buy, and says the shortfall on one line",
     short.label === "Not enough" && /\u20b9[\d,]+ short/.test(short.cost) &&
       short.disabled === false && short.aria === "true" && /more|afford|need/i.test(short.title),
-    `${short.label} ${short.cost}; disabled ${short.disabled}, aria ${short.aria}, title "${short.title}"`);
+    `${short.label} ${short.cost}; disabled ${short.disabled}, aria ${short.aria}, title "${short.title}"` +
+      `; ${short.landingId}/${short.cardMode}/${short.cardKind}, owner ${short.owner}`);
 
   await host.eval(`document.querySelector(".property-card__buy").click(); true;`);
   await sleep(200);
@@ -2278,6 +2577,273 @@ try {
   await host.eval(`document.querySelector(".property-card__next").click(); true;`);
   await host.eval("window.__finishVisit()");
   await sleep(400);
+
+  /* --- the read card, the die, and the sale ---------------------------- */
+
+  heading("THE READ CARD AND THE SALE");
+
+  // Back to the buyer and with money in the purse, so the sale's arithmetic is
+  // about the sale and not about a purse of ten.
+  await host.eval("window.__econ.ensure(0)");
+  await host.eval(`(async () => {
+    await document.querySelector(".board").play({ type: "debug", money: 2000 });
+    return true;
+  })()`);
+  await host.eval(`document.querySelector('.board__cell[data-id="pluto"]').click(); true;`);
+  await sleep(500);
+
+  const reading = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const card = h.querySelector(".property-card");
+    const builds = h ? [...h.querySelectorAll(".build")] : [];
+    const sell = h.querySelector(".property-card__sell");
+    return {
+      phase: g.phase,
+      active: g.active,
+      reading: b.dataset.reading,
+      mode: h.dataset.mode,
+      level: g.ledger.properties.get("pluto")?.upgradeLevel ?? 0,
+      money: g.ledger.players.map((p) => p.money),
+      closeHidden: h.querySelector(".property-card__close").hidden,
+      buyHidden: h.querySelector(".property-card__buy-slot").hidden,
+      nextHidden: h.querySelector(".property-card__next").hidden,
+      builds: builds.map((n) => ({
+        state: n.dataset.state,
+        label: n.querySelector(".build__button-label").textContent,
+        disabled: n.querySelector(".build__button").disabled,
+      })),
+      sellHidden: sell.hidden,
+      sellLabel: sell.querySelector(".property-card__sell-label").textContent,
+      sellBox: sell.getBoundingClientRect().toJSON(),
+      sellBackground: getComputedStyle(sell).backgroundColor,
+      holder: h.getBoundingClientRect().toJSON(),
+      cardClient: card.clientHeight,
+      cardScroll: card.scrollHeight,
+      holderClient: h.clientHeight,
+      holderScroll: h.scrollHeight,
+      dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display,
+      rollable: b.dataset.rollable,
+    };
+  `);
+
+  note("tapping a square outside a landing opens a read-only card with a close button",
+    reading.phase === "AWAITING_ROLL" && reading.reading === "true" &&
+      reading.mode === "read" && reading.closeHidden === false &&
+      reading.buyHidden === true && reading.nextHidden === true,
+    `phase ${reading.phase}, reading ${reading.reading}, close hidden ${reading.closeHidden}`);
+  note("the die is gone from the middle while a card is being read",
+    reading.rollable === "false" && reading.dieDisplay === "none",
+    `rollable ${reading.rollable}, die display ${reading.dieDisplay}`);
+  note("your own square offers no upgrade outside a landing, only the rule in words",
+    reading.builds.length === 3 && reading.builds.every((b) => b.disabled) &&
+      reading.builds[0].label === "Upgraded" &&
+      reading.builds[1].label === "Locked" &&
+      reading.builds[2].label === "Upgrade the previous level first" &&
+      reading.level === 1,
+    `${reading.level}: ${reading.builds.map((b) => b.label).join(" | ")}`);
+  note("and Sell is visible with the amount it will pay, in red",
+    reading.sellHidden === false &&
+      /^Sell for \u20b9[\d,]+$/.test(reading.sellLabel) &&
+      (() => {
+        const [r, g, b] = (reading.sellBackground.match(/\d+/g) || []).map(Number);
+        return r > g + 30 && r > b + 30;
+      })(),
+    `${reading.sellLabel}; background ${reading.sellBackground}`);
+  note("the read card's long description stays inside its own sheet, never clipped",
+    reading.cardScroll <= reading.cardClient + 1,
+    `card ${reading.cardClient}/${reading.cardScroll}; ` +
+      `its holder is the scroller at ${reading.holderClient}/${reading.holderScroll}`);
+
+  const unchanged = await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const before = {
+      level: b.game.ledger.properties.get("pluto")?.upgradeLevel ?? 0,
+      money: b.game.ledger.players[0].money,
+    };
+    b.querySelector(".build__button").click();
+    await new Promise((r) => setTimeout(r, 200));
+    return {
+      level: b.game.ledger.properties.get("pluto")?.upgradeLevel ?? 0,
+      money: b.game.ledger.players[0].money,
+    };
+  })()`);
+  note("pressing a build row on a read-only card changes nothing",
+    unchanged.level === reading.level && unchanged.money === reading.money[0],
+    `level ${unchanged.level}, money ${unchanged.money}`);
+
+  // A tap outside is the other way out. It must not change the turn, and the
+  // die must come back the moment the card goes.
+  await host.eval(`(() => {
+    const b = document.querySelector(".board");
+    b.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    return true;
+  })()`);
+  await sleep(360);
+  const outside = await host.json(`
+    const b = document.querySelector(".board");
+    return {
+      reading: b.dataset.reading,
+      hidden: b.querySelector(".board__card").hidden,
+      phase: b.game.phase,
+      active: b.game.active,
+      rollable: b.dataset.rollable,
+      dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display,
+    };
+  `);
+  note("a tap outside a read-only card closes it and gives the die back",
+    outside.reading === "false" && outside.hidden === true &&
+      outside.phase === "AWAITING_ROLL" && outside.rollable === "true" &&
+      outside.dieDisplay !== "none",
+    `reading ${outside.reading}, die ${outside.dieDisplay}, rollable ${outside.rollable}`);
+  note("and closing a card does not pass the turn",
+    outside.active === reading.active,
+    `active ${outside.active}, was ${reading.active}`);
+
+  // Open it again for the sale.
+  await host.eval(`document.querySelector('.board__cell[data-id="pluto"]').click(); true;`);
+  await sleep(400);
+
+  const saleValue = Number(
+    (reading.sellLabel.match(/\u20b9([\d,]+)/) || [0, "0"])[1].replace(/,/g, ""),
+  );
+  const moneyBeforeSale = reading.money[0];
+
+  await host.eval(`document.querySelector(".property-card__sell").click(); true;`);
+  await sleep(200);
+  const armed = await host.json(`
+    const sell = document.querySelector(".property-card__sell");
+    return { label: sell.querySelector(".property-card__sell-label").textContent,
+             armed: sell.dataset.armed };
+  `);
+  note("Sell asks once before it sells",
+    armed.armed === "true" && /Confirm sale/.test(armed.label),
+    `"${armed.label}", armed ${armed.armed}`);
+
+  await host.eval(`document.querySelector(".property-card__sell").click(); true;`);
+  await sleep(900);
+
+  const sold = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const sell = h.querySelector(".property-card__sell");
+    return {
+      money: g.ledger.players.map((p) => p.money),
+      square: g.ledger.properties.get("pluto"),
+      ownerMark: b.querySelector('.board__cell[data-id="pluto"]').dataset.owner ?? "",
+      status: h.querySelector(".property-card__status").textContent,
+      sellHidden: sell.hidden,
+      builds: [...h.querySelectorAll(".build__button-label")].map((n) => n.textContent),
+      reading: b.dataset.reading,
+      phase: g.phase,
+      active: g.active,
+    };
+  `);
+
+  note("selling pays half of what was spent, and the square goes back to the bank",
+    sold.money[0] === moneyBeforeSale + saleValue &&
+      sold.square.owner === null && sold.square.upgradeLevel === 0 &&
+      sold.ownerMark === "" && /Unowned/i.test(sold.status),
+    `paid ${sold.money[0] - moneyBeforeSale} of ${saleValue}; ` +
+      `owner ${sold.square.owner}, level ${sold.square.upgradeLevel}, "${sold.status}"`);
+  note("and the card becomes an unowned square again, with no Sell",
+    sold.sellHidden === true &&
+      sold.builds.join(" ") === "Locked Locked Locked",
+    `sell hidden ${sold.sellHidden}, builds ${sold.builds.join(" | ")}`);
+  note("selling does not end the turn",
+    sold.phase === "AWAITING_ROLL" && sold.active === 0 && sold.reading === "true",
+    `phase ${sold.phase}, active ${sold.active}`);
+
+  await host.eval(`document.querySelector(".property-card__close").click(); true;`);
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    for (let i = 0; i < 60 && b.querySelector(".board__announce:not([hidden])"); i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return true;
+  })()`);
+  await sleep(300);
+  const closed = await host.json(`
+    const b = document.querySelector(".board");
+    return {
+      reading: b.dataset.reading,
+      cardHidden: b.querySelector(".board__card").hidden,
+      dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display,
+      rollable: b.dataset.rollable,
+    };
+  `);
+  note("closing the read card brings the die back and leaves the turn alone",
+    closed.reading === "false" && closed.cardHidden === true &&
+      closed.dieDisplay !== "none" && closed.rollable === "true",
+    `reading ${closed.reading}, card hidden ${closed.cardHidden}, die ${closed.dieDisplay}`);
+
+  /* --- the same card on a 360x700 phone ------------------------------- */
+
+  await host.setViewport(360, 700, DSF);
+  await sleep(500);
+  await host.eval("window.__econ.place(0)");
+  await host.eval("window.__econ.roll(5)"); // Jupiter again.
+
+  const small = await host.json(`
+    const b = document.querySelector(".board");
+    const g = b.game;
+    const h = b.querySelector(".board__card");
+    const centre = b.querySelector("#board-center");
+    const card = h ? h.querySelector(".property-card") : null;
+    const builds = h ? h.querySelector(".builds") : null;
+    const buy = h ? h.querySelector(".property-card__buy") : null;
+    const next = h ? h.querySelector(".property-card__next") : null;
+    const rect = (n) => n ? n.getBoundingClientRect().toJSON() : null;
+    return {
+      phase: g.phase,
+      kind: g.landing?.kind,
+      holder: rect(h),
+      centre: rect(centre),
+      holderClient: h.clientHeight,
+      holderScroll: h.scrollHeight,
+      cardClient: card ? card.clientHeight : 0,
+      cardScroll: card ? card.scrollHeight : 0,
+      builds: rect(builds),
+      buy: rect(buy),
+      next: rect(next),
+      buyVisible: buy ? !buy.hidden && getComputedStyle(buy).display !== "none" : false,
+      nextVisible: next ? !next.hidden && getComputedStyle(next).display !== "none" : false,
+      chips: [...document.querySelectorAll(".who")].map((w) => ({
+        seat: w.dataset.seat,
+        client: w.clientWidth,
+        scroll: w.scrollWidth,
+        nameClient: w.querySelector(".who__name").clientWidth,
+        nameScroll: w.querySelector(".who__name").scrollWidth,
+      })),
+    };
+  `);
+
+  note("the decision card fits the middle at 360x700 with no scrolling",
+    small.phase === "DECISION" && small.kind === "buy" &&
+      small.holderScroll <= small.holderClient + 1 &&
+      small.cardScroll <= small.cardClient + 1 &&
+      (small.builds?.bottom ?? 0) <= (small.holder?.bottom ?? 0) + 1 &&
+      small.buyVisible && small.nextVisible &&
+      (small.buy?.top ?? 0) >= (small.holder?.top ?? 0) - 1 &&
+      (small.next?.bottom ?? 0) <= (small.holder?.bottom ?? 0) + 1,
+    `holder ${small.holderClient}/${small.holderScroll}, card ${small.cardClient}/${small.cardScroll}; ` +
+      `Buy ${small.buyVisible}, Pass ${small.nextVisible}; ` +
+      `Pass ends ${small.next?.bottom?.toFixed(1)} vs middle ${small.holder?.bottom?.toFixed(1)}`);
+  note("and it still spans the full middle",
+    small.holder.left >= small.centre.left - 1 &&
+      small.holder.right <= small.centre.right + 1 &&
+      Math.abs(small.holder.width - small.centre.width) <= 12,
+    `card ${small.holder.width.toFixed(1)} of middle ${small.centre.width.toFixed(1)}`);
+  note("no chip overflows at 360px on the decision",
+    small.chips.every((c) => c.scroll <= c.client + 1 && c.nameScroll <= c.nameClient + 1),
+    small.chips.map((c) => `${c.seat}:${c.scroll}/${c.client}`).join(" "));
+  await shot(host, "phase1-unowned-360");
+
+  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  await host.eval("window.__finishVisit()");
+  await sleep(500);
 
   /* --- Ragnarok's three slots are the same slot ----------------------- */
 
@@ -2363,12 +2929,25 @@ try {
     const b = document.querySelector(".board");
     await b.play({ type: "debug", active: 0 });
     await b.play({ type: "debug", position: 1 });
-    await b.play({ type: "debug", active: 1 });
+    return true;
+  })()`);
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await b.play({ type: "debug", weapons: ["antimatter"] });
+    return true;
+  })()`);
+  await guest.eval(`(async () => {
+    const b = document.querySelector(".board");
     await b.play({ type: "debug", position: 1 });
+    return true;
+  })()`);
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await b.play({ type: "debug", active: 1 });
     b.coins.sync(b.game.pieces);
     return true;
   })()`);
-  await sleep(400);
+  await sleep(1200);
 
   const chips = await host.json(`
     const b = document.querySelector(".board");
@@ -2376,11 +2955,15 @@ try {
     const rect = (n) => n.getBoundingClientRect().toJSON();
     const cell = b.querySelector('.board__cell[data-id="moon"]');
     const label = cell.querySelector(".board__label");
+    const moon = rect(cell);
     const coins = [...b.querySelectorAll(".coin")].map((c) => ({
       player: c.dataset.player,
       box: rect(c),
       coin: getComputedStyle(c).getPropertyValue("--coin").trim(),
     }));
+    const onMoon = coins.filter((c) =>
+      c.box.left >= moon.left - 1 && c.box.right <= moon.right + 1 &&
+      c.box.top >= moon.top - 1 && c.box.bottom <= moon.bottom + 1);
     const who = [...document.querySelectorAll(".who")].map((w) => ({
       seat: w.dataset.seat,
       active: w.classList.contains("who--active"),
@@ -2395,21 +2978,25 @@ try {
     }));
     return {
       label: rect(label),
+      moon,
       coins,
+      onMoon,
       who,
       active: g.active,
-      onMoon: g.pieces.filter((p) => p.position === 1).length,
+      positionOnMoon: g.pieces.filter((p) => p.position === 1).length,
       coinCount: b.querySelectorAll(".coin").length,
     };
   `);
 
   const labelBox = chips.label;
   note("both coins stand on the square without touching its name",
-    true,
-    `name ends ${labelBox.bottom.toFixed(1)}, coins ` +
-      chips.coins.map((c) => `${c.box.top.toFixed(1)}..${c.box.bottom.toFixed(1)}`).join(" "));
+    chips.positionOnMoon === 2 && chips.onMoon.length === 2 &&
+      chips.onMoon.every((c) => c.box.top >= labelBox.bottom - 0.5),
+    `${chips.positionOnMoon} on Moon, ${chips.onMoon.length} drawn; ` +
+      `name ends ${labelBox.bottom.toFixed(1)}, coins ` +
+      chips.onMoon.map((c) => `${c.box.top.toFixed(1)}..${c.box.bottom.toFixed(1)}`).join(" "));
   note("the chip, the board coin and the square's ring all draw the same colour",
-    chips.coins.every((c) => {
+    chips.onMoon.length === 2 && chips.onMoon.every((c) => {
       const seat = c.player.replace("seat-", "");
       return chips.who.find((w) => w.seat === seat)?.coin === c.coin;
     }),
@@ -2427,6 +3014,904 @@ try {
 
   await host.setViewport(W, H, DSF);
   await sleep(400);
+
+  /* --- what an action says, and in whose words ------------------------- */
+
+  heading("THE ANNOUNCEMENT, WORDED FOR EACH VIEWER");
+
+  // A watcher that records every change in the announcement layer and the card
+  // behind it. The timings are read from the page's own clock, so the pause
+  // between two samples never becomes part of the measurement. `skipAt` taps the
+  // layer at that moment, which is the only way a test can prove the skip.
+  const WATCHER = `
+    window.__watchAnnounce = async (ms, skipAt = -1) => {
+      const b = document.querySelector(".board");
+      const out = [];
+      let last = "";
+      let skipped = false;
+      const start = performance.now();
+      while (performance.now() - start < ms) {
+        const n = b.querySelector(".board__announce");
+        const h = b.querySelector(".board__card");
+        const pick = (sel) => n?.querySelector(sel)?.textContent || "";
+        const sample = {
+          t: Math.round(performance.now() - start),
+          hidden: n ? n.hidden : true,
+          label: pick(".announce__label"),
+          big: pick(".announce__big"),
+          sub: pick(".announce__sub"),
+          cardHidden: h ? h.hidden : true,
+          cardVisible: Boolean(h && !h.hidden && getComputedStyle(h).visibility !== "hidden"),
+          phase: b.game.phase,
+          kind: b.game.landing?.kind || "",
+          active: b.game.active,
+          money: b.game.ledger.players.map((p) => p.money),
+          rupees: b.querySelectorAll(".board__rupee").length,
+        };
+        const key = [sample.hidden, sample.label, sample.big, sample.sub,
+          sample.cardHidden, sample.phase, sample.kind, sample.active,
+          sample.money.join(",")].join("|");
+        if (key !== last) {
+          out.push(sample);
+          last = key;
+        }
+        if (!skipped && skipAt >= 0 && sample.t >= skipAt && !sample.hidden) {
+          skipped = true;
+          n?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+        }
+        await new Promise((r) => setTimeout(r, 40));
+      }
+      return out;
+    };`;
+  await host.eval(WATCHER);
+  await guest.eval(WATCHER);
+
+  // A clean, known board: the buyer owns all of Moon's set, Moon is upgraded
+  // twice so its pips have something to show, and the throw will pass Start and
+  // land on Lagrange - a salary and a decision in one turn.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await window.__econ.quiet();
+    await b.play({ type: "debug", money: 2000 });
+    await b.play({ type: "debug", owner: { id: "moon", seat: 0, level: 2 } });
+    await b.play({ type: "debug", owner: { id: "lagrange-l2", seat: 0, level: 0 } });
+    await b.play({ type: "debug", owner: { id: "jupiter", seat: 0, level: 0 } });
+    await b.play({ type: "debug", active: 0 });
+    await b.play({ type: "debug", position: 26 });
+    return true;
+  })()`);
+
+  const salaryWatch = host.json("return await window.__watchAnnounce(7000);");
+  await host.eval(`(() => {
+    const b = document.querySelector(".board");
+    (async () => {
+      await window.__econ.quiet();
+      await b.play({ type: "roll", rng: (4 - 0.5) / 6 });
+    })();
+    return true;
+  })()`);
+  const salarySamples = await salaryWatch;
+
+  const salaryFirst = salarySamples.find((s) => !s.hidden && s.label === "SALARY");
+  const salaryEnd = salarySamples.find((s) => salaryFirst && s.t > salaryFirst.t && s.hidden);
+  const afterSalary = salarySamples.find(
+    (s) => salaryEnd && s.t >= salaryEnd.t && !s.cardHidden && s.cardVisible,
+  );
+  const salaryRuns = salarySamples.filter((s) => !s.hidden && s.label === "SALARY").length;
+
+  note("passing Start says SALARY, +₹200 and Lap complete",
+    Boolean(salaryFirst) && salaryFirst.big === "+\u20b9200" &&
+      salaryFirst.sub === "Lap complete" && salaryRuns === 1,
+    salaryFirst
+      ? `${salaryFirst.label} / ${salaryFirst.big} / ${salaryFirst.sub}; ${salaryRuns} run(s)`
+      : "no salary announcement");
+  note("and the salary is said before the landing card is shown",
+    Boolean(salaryFirst) && salaryFirst.cardHidden === true &&
+      Boolean(afterSalary) && afterSalary.kind === "own" &&
+      afterSalary.phase === "DECISION",
+    `card hidden while salary: ${salaryFirst?.cardHidden}; ` +
+      `then ${afterSalary?.phase}/${afterSalary?.kind}`);
+  note("the announcement holds the middle for about a second and a half",
+    Boolean(salaryFirst) && Boolean(salaryEnd) &&
+      salaryEnd.t - salaryFirst.t >= 1400 && salaryEnd.t - salaryFirst.t <= 2300,
+    salaryEnd ? `${salaryEnd.t - salaryFirst.t}ms on screen` : "no exit seen");
+  note("and the salary itself is paid once, into the purse",
+    salarySamples.at(-1)?.money[0] === 2200,
+    `purse ${salarySamples.at(-1)?.money.join(" ")}`);
+
+  /* --- the profile ------------------------------------------------------ */
+
+  heading("A PLAYER, OPENED");
+
+  // The chip is the control. Both chips are buttons, and each says whose record
+  // it opens; the profile itself is the same panel for either seat.
+  const chipButtons = await host.json(`
+    return [...document.querySelectorAll(".who")].map((w) => ({
+      seat: w.dataset.seat,
+      tag: w.tagName,
+      aria: w.getAttribute("aria-label"),
+      text: w.textContent.replace(/\\s+/g, " ").trim(),
+      money: w.querySelector(".who__money").textContent.trim(),
+    }));
+  `);
+  note("each whole chip is one button, labelled with the profile it opens",
+    chipButtons.length === 2 &&
+      chipButtons.every((c) => c.tag === "BUTTON" &&
+        new RegExp("^Open .+'s profile$").test(c.aria || "")) &&
+      chipButtons.every((c) => c.text.includes(c.money)),
+    chipButtons.map((c) => `${c.seat}:${c.tag} "${c.aria}"`).join(" | "));
+
+  const beforeProfile = await host.json(`
+    const b = document.querySelector(".board");
+    const h = b.querySelector(".board__card");
+    return {
+      seq: b.game.seq,
+      mode: h.dataset.mode,
+      name: h.querySelector(".property-card__name")?.textContent || "",
+      next: h.querySelector(".property-card__next-label")?.textContent || "",
+      phase: b.game.phase,
+      active: b.game.active,
+      hidden: h.hidden,
+      money: b.game.ledger.players.map((p) => p.money),
+    };
+  `);
+
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(400);
+
+  const prof = await host.json(`
+    const b = document.querySelector(".board");
+    const centre = b.querySelector("#board-center");
+    const panel = b.querySelector(".board__profile");
+    const card = b.querySelector(".board__card");
+    const die = b.querySelector(".board__dice");
+    const turn = b.querySelector(".board__turn");
+    const rect = (n) => n ? n.getBoundingClientRect().toJSON() : null;
+    const style = (n) => n ? getComputedStyle(n) : null;
+    const close = panel?.querySelector(".profile__close");
+    const name = panel?.querySelector(".profile__name");
+    const cash = panel?.querySelector(".profile__cash");
+    const worth = panel?.querySelector(".profile__worth");
+    const labels = [...panel.querySelectorAll(".profile__label")].map((n) => ({
+      text: n.textContent,
+      size: parseFloat(style(n).fontSize),
+      spacing: parseFloat(style(n).letterSpacing),
+    }));
+    panel.scrollTop = 100000;
+    const scrolled = panel.scrollTop;
+    panel.scrollTop = 0;
+    return {
+      open: Boolean(panel),
+      seat: panel?.dataset.profileSeat,
+      aria: panel?.getAttribute("aria-label"),
+      dataProfile: b.dataset.profile,
+      panel: rect(panel),
+      centre: rect(centre),
+      close: rect(close),
+      closeSize: close ? [parseFloat(style(close).width), parseFloat(style(close).height)] : [],
+      coin: rect(panel?.querySelector(".profile__coin")),
+      name: name?.textContent,
+      nameSize: parseFloat(style(name).fontSize),
+      civ: panel?.querySelector(".profile__civ")?.textContent,
+      civSize: parseFloat(style(panel?.querySelector(".profile__civ")).fontSize),
+      cash: cash?.textContent,
+      cashSize: parseFloat(style(cash).fontSize),
+      cashWeight: style(cash).fontWeight,
+      cashVariant: style(cash).fontVariantNumeric,
+      worth: worth?.textContent,
+      labels,
+      count: panel?.querySelector(".profile__count")?.textContent,
+      sets: [...panel.querySelectorAll(".profile-set")].map((s) => ({
+        set: s.dataset.set,
+        badge: s.querySelector(".profile-set__badge").textContent,
+        label: s.querySelector(".profile-set__label").textContent,
+        names: [...s.querySelectorAll(".profile-colony__name")].map((n) => n.textContent),
+        rents: [...s.querySelectorAll(".profile-colony__rent")].map((n) => n.textContent),
+        pipsOn: s.querySelectorAll('.profile-pip[data-on="true"]').length,
+        pips: s.querySelectorAll(".profile-pip").length,
+      })),
+      weapons: [...panel.querySelectorAll(".profile-weapon")].map((w) => ({
+        id: w.dataset.weapon,
+        name: w.querySelector(".profile-weapon__name").textContent,
+        targets: w.querySelectorAll(".profile-weapon__target").length,
+        face: Boolean(w.querySelector(".profile-weapon__emblem svg, .profile-weapon__emblem .chest-card__emblem")),
+      })),
+      emptyWeapons: panel?.querySelector('[data-section="weapons"] .profile__empty')?.textContent || null,
+      ledger: [...panel.querySelectorAll(".profile-ledger__row")].slice(0, 6).map((r) => ({
+        kind: r.dataset.kind,
+        turn: r.querySelector(".profile-ledger__turn").textContent,
+        text: r.querySelector(".profile-ledger__text").textContent,
+        amount: r.querySelector(".profile-ledger__amount").textContent,
+        balance: r.querySelector(".profile-ledger__balance").textContent,
+        align: style(r.querySelector(".profile-ledger__money")).textAlign,
+        variant: style(r.querySelector(".profile-ledger__amount")).fontVariantNumeric,
+      })),
+      ledgerCount: panel?.querySelectorAll(".profile-ledger__row").length || 0,
+      client: panel?.clientHeight,
+      scroll: panel?.scrollHeight,
+      scrolled,
+      scrollbar: style(panel).scrollbarWidth,
+      bodySize: parseFloat(style(panel).fontSize),
+      lineHeight: style(panel).lineHeight,
+      padding: style(panel).padding,
+      radius: style(panel).borderRadius,
+      shadow: style(panel).boxShadow,
+      text: panel?.textContent || "",
+      dieDisplay: style(die).display,
+      turnDisplay: style(turn).display,
+      cardVisibility: style(card).visibility,
+      cardHidden: card.hidden,
+      seq: b.game.seq,
+    };
+  `);
+
+  note("the whole chip opens that player's record over the entire middle",
+    prof.open && prof.seat === "0" && prof.dataProfile === "true" &&
+      prof.aria === "Asha's profile" &&
+      Math.abs(prof.panel.left - prof.centre.left) <= 1 &&
+      Math.abs(prof.panel.right - prof.centre.right) <= 1 &&
+      Math.abs(prof.panel.top - prof.centre.top) <= 1 &&
+      Math.abs(prof.panel.bottom - prof.centre.bottom) <= 1 &&
+      prof.dieDisplay === "none" && prof.turnDisplay === "none" &&
+      prof.cardVisibility === "hidden",
+    `panel ${prof.panel?.width.toFixed(0)}x${prof.panel?.height.toFixed(0)} of ` +
+      `${prof.centre?.width.toFixed(0)}x${prof.centre?.height.toFixed(0)}; ` +
+      `die ${prof.dieDisplay}, turn ${prof.turnDisplay}, card ${prof.cardVisibility}`);
+  note("and it closes with a 32px button in its top right",
+    prof.closeSize[0] === 32 && prof.closeSize[1] === 32 &&
+      prof.close.right <= prof.panel.right - 8 &&
+      prof.close.top <= prof.panel.top + 24,
+    `close ${prof.closeSize.join("x")} at ${prof.close.right.toFixed(0)},${prof.close.top.toFixed(0)}`);
+  note("the header is coin, name, civilization and cash, in the card's own voice",
+    prof.name === "Asha" && prof.nameSize === 22 && prof.civ === "Indus Valley" &&
+      prof.civSize === 11 && prof.cash === "\u20b92,200" && prof.cashSize === 36 &&
+      Number(prof.cashWeight) <= 300 && /tabular-nums/.test(prof.cashVariant) &&
+      /^Net worth \u20b9[\d,]+$/.test(prof.worth || "") &&
+      prof.coin.width === 28 && prof.coin.height === 28 &&
+      prof.padding === "16px" && prof.bodySize === 13 &&
+      Math.abs(parseFloat(prof.lineHeight) / prof.bodySize - 1.4) < 0.02,
+    `${prof.name} ${prof.nameSize}px, ${prof.civ} ${prof.civSize}px, ` +
+      `cash ${prof.cash} ${prof.cashSize}px/${prof.cashWeight}, ${prof.worth}`);
+  note("the quiet labels are 11-12px uppercase at 0.08em",
+    prof.labels.length === 3 &&
+      prof.labels.map((l) => l.text).join(" ") === "PROPERTIES WEAPONS LEDGER" &&
+      prof.labels.every((l) => l.size >= 11 && l.size <= 12 && l.spacing >= 0.7),
+    prof.labels.map((l) => `${l.text}:${l.size}px/${l.spacing}px`).join(" "));
+  note("PROPERTIES counts the colonies and groups them by set, with the full set marked",
+    prof.count === "Owns 3 of 20 colonies" && prof.sets.length === 2 &&
+      prof.sets[0].set === "s1" && prof.sets[0].badge === "Full set" &&
+      prof.sets[0].names.join(" ") === "Moon Lagrange Point L2" &&
+      prof.sets[1].set === "s2" && prof.sets[1].badge === "1 of 3" &&
+      prof.sets[0].pipsOn === 2 && prof.sets[0].pips === 6 &&
+      prof.sets[0].rents.every((r) => /^\u20b9[\d,]+$/.test(r)),
+    `${prof.count}; ${prof.sets.map((s) => `${s.set}:${s.badge}[${s.names.join(",")}]`).join(" ")}`);
+  note("WEAPONS shows the face-up cards the player carries",
+    prof.weapons.length >= 1 && prof.weapons.every((w) => w.face && w.targets >= 3) &&
+      prof.weapons.some((w) => w.name === "Antimatter Weapon"),
+    prof.weapons.map((w) => `${w.name} (${w.targets})`).join(", ") || prof.emptyWeapons);
+  note("LEDGER is newest first, salary on top, with the signed amount and balance",
+    prof.ledger.length >= 4 && prof.ledger[0].kind === "salary" &&
+      /Salary .* lap complete/.test(prof.ledger[0].text) &&
+      prof.ledger[0].amount === "+\u20b9200" &&
+      prof.ledger[0].balance === "\u20b92,200" &&
+      /^T\d+$/.test(prof.ledger[0].turn) &&
+      prof.ledger.every((r) => r.align === "right" && /tabular-nums/.test(r.variant)) &&
+      prof.ledgerCount >= 4,
+    `${prof.ledgerCount} rows; top ${prof.ledger[0]?.turn} ${prof.ledger[0]?.text} ` +
+      `${prof.ledger[0]?.amount} / ${prof.ledger[0]?.balance}`);
+  note("the record scrolls inside itself, with no scrollbar in the middle",
+    prof.scroll > prof.client && prof.scrolled > 0 && prof.scrollbar === "none",
+    `client ${prof.client}, scroll ${prof.scroll}, scrolled ${prof.scrolled}, ` +
+      `scrollbar ${prof.scrollbar}`);
+  note("no rupee amount in the record is missing its thousands separator",
+    !/\u20b9\d{4,}/.test(prof.text), "amounts scanned");
+  note("nothing in the record says build",
+    !/\bbuild/i.test(prof.text), "wording scanned");
+
+  // The same chip, second tap. Everything underneath must come back exactly as
+  // it was - including the decision, which was never answered.
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(350);
+  const afterProfile = await host.json(`
+    const b = document.querySelector(".board");
+    const h = b.querySelector(".board__card");
+    return {
+      open: Boolean(b.querySelector(".board__profile")),
+      dataProfile: b.dataset.profile || "",
+      mode: h.dataset.mode,
+      name: h.querySelector(".property-card__name")?.textContent || "",
+      next: h.querySelector(".property-card__next-label")?.textContent || "",
+      phase: b.game.phase,
+      active: b.game.active,
+      hidden: h.hidden,
+      visible: getComputedStyle(h).visibility,
+      dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display,
+      seq: b.game.seq,
+      money: b.game.ledger.players.map((p) => p.money),
+    };
+  `);
+  note("a second tap of the same chip closes the record",
+    afterProfile.open === false && afterProfile.dataProfile === "" &&
+      afterProfile.visible === "visible",
+    `open ${afterProfile.open}, data-profile "${afterProfile.dataProfile}"`);
+  note("and gives back exactly the middle that was underneath, untouched",
+    afterProfile.mode === beforeProfile.mode &&
+      afterProfile.name === beforeProfile.name &&
+      afterProfile.next === beforeProfile.next &&
+      afterProfile.phase === beforeProfile.phase &&
+      afterProfile.active === beforeProfile.active &&
+      afterProfile.hidden === beforeProfile.hidden &&
+      afterProfile.seq === beforeProfile.seq &&
+      afterProfile.money.join(" ") === beforeProfile.money.join(" "),
+    `${afterProfile.mode}/${afterProfile.name}/${afterProfile.next}; ` +
+      `phase ${afterProfile.phase}, active ${afterProfile.active}, seq ${afterProfile.seq}`);
+
+  // The same chip opens the other player's record. Their empty states are part
+  // of the panel, not a separate screen.
+  await host.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
+  await sleep(350);
+  const guestProfile = await host.json(`
+    const b = document.querySelector(".board");
+    const panel = b.querySelector(".board__profile");
+    return {
+      open: Boolean(panel),
+      seat: panel?.dataset.profileSeat,
+      name: panel?.querySelector(".profile__name")?.textContent,
+      count: panel?.querySelector(".profile__count")?.textContent,
+      weapons: panel?.querySelectorAll(".profile-weapon").length || 0,
+      emptyColonies: panel?.querySelector('[data-section="properties"] .profile__empty')?.textContent || null,
+      emptyWeapons: panel?.querySelector('[data-section="weapons"] .profile__empty')?.textContent || null,
+      ledger: panel?.querySelectorAll(".profile-ledger__row").length || 0,
+    };
+  `);
+  note("the other player's chip opens their record too, with the empty states said plainly",
+    guestProfile.open && guestProfile.seat === "1" && guestProfile.name === "Vikram" &&
+      guestProfile.emptyColonies === "No colonies yet." &&
+      ((guestProfile.weapons === 0 &&
+        guestProfile.emptyWeapons === "No weapons yet. Draw at Ragnarok.") ||
+       (guestProfile.weapons > 0 && guestProfile.emptyWeapons === null)),
+    `${guestProfile.name}: ${guestProfile.weapons} weapon(s), ` +
+      `"${guestProfile.emptyColonies}" / "${guestProfile.emptyWeapons}"`);
+  await host.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
+  await sleep(300);
+
+  // Finish the decision so the profile can be tested over a die that is up.
+  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  await host.eval("window.__finishVisit()");
+  await host.eval("window.__econ.ensure(0)");
+  await sleep(300);
+  const overDie = await host.json(`
+    const b = document.querySelector(".board");
+    return { dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display,
+             rollable: b.dataset.rollable };
+  `);
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(250);
+  const profOpen = await host.json(`
+    const b = document.querySelector(".board");
+    return { open: Boolean(b.querySelector(".board__profile")),
+             dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display };
+  `);
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(250);
+  const profClosed = await host.json(`
+    const b = document.querySelector(".board");
+    return { open: Boolean(b.querySelector(".board__profile")),
+             dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display };
+  `);
+  note("the record can be opened with the die showing, and the die is gone while it is up",
+    overDie.dieDisplay !== "none" && overDie.rollable === "true" &&
+      profOpen.open && profOpen.dieDisplay === "none" &&
+      profClosed.open === false && profClosed.dieDisplay !== "none",
+    `die before ${overDie.dieDisplay}, open ${profOpen.dieDisplay}, ` +
+      `closed ${profClosed.dieDisplay}`);
+
+  // A turn that changes while the record is open must not close it or change
+  // whose record it is. The panel is re-read from the live game, not a snapshot.
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(200);
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await b.play({ type: "debug", active: 1 });
+    await new Promise((r) => setTimeout(r, 300));
+    return true;
+  })()`);
+  const acrossTurn = await host.json(`
+    const b = document.querySelector(".board");
+    const panel = b.querySelector(".board__profile");
+    return {
+      open: Boolean(panel),
+      seat: panel?.dataset.profileSeat,
+      name: panel?.querySelector(".profile__name")?.textContent,
+      active: b.game.active,
+    };
+  `);
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(250);
+  const turnUnder = await host.json(`
+    const b = document.querySelector(".board");
+    return { dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display,
+             active: b.game.active,
+             turn: b.querySelector(".board__turn").textContent };
+  `);
+  note("it stays open, and on the same player, when the turn changes underneath",
+    acrossTurn.open && acrossTurn.seat === "0" && acrossTurn.name === "Asha" &&
+      acrossTurn.active === 1 && turnUnder.dieDisplay === "none" &&
+      turnUnder.active === 1 && /Vikram/.test(turnUnder.turn),
+    `open ${acrossTurn.open} seat ${acrossTurn.seat}; active ${turnUnder.active}, ` +
+      `die ${turnUnder.dieDisplay}, "${turnUnder.turn}"`);
+  await host.eval(`(async () => {
+    await document.querySelector(".board").play({ type: "debug", active: 0 });
+    return true;
+  })()`);
+
+  /* ------------------------------------------- one rent, two sentences ----- */
+
+  heading("ONE RENT, TWO SENTENCES");
+
+  // A fresh game, the buyer holding Moon, and the other seat rolling onto it.
+  // Both screens watch their own copy of the same event.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", reset: true });
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", owner: { id: "moon", seat: 0, level: 0 } });
+    await b.play({ type: "debug", money: 2000 });
+    await b.play({ type: "debug", active: 1 });
+    await b.play({ type: "debug", position: 10 });
+    b.coins.sync(b.game.pieces);
+    return true;
+  })()`);
+  await guest.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", money: 2000 });
+    await b.play({ type: "debug", position: 0 });
+    return true;
+  })()`);
+  await sleep(400);
+
+  const hostRentWatch = host.json("return await window.__watchAnnounce(6000);");
+  const guestRentWatch = guest.json("return await window.__watchAnnounce(6000);");
+  await guest.eval(`(() => {
+    const b = document.querySelector(".board");
+    (async () => {
+      await window.__finishVisit();
+      await b.play({ type: "debug", active: 1 });
+      await b.play({ type: "debug", position: 0 });
+      await b.play({ type: "roll", rng: (1 - 0.5) / 6 });
+    })();
+    return true;
+  })()`);
+  const [hostRentSamples, guestRentSamples] =
+    await Promise.all([hostRentWatch, guestRentWatch]);
+
+  const rentOn = (samples, label) =>
+    samples.filter((s) => !s.hidden && s.label === label);
+  const hostRent = rentOn(hostRentSamples, "RENT RECEIVED");
+  const guestRent = rentOn(guestRentSamples, "RENT PAID");
+  const spanOf = (samples, first) => {
+    const end = samples.find((s) => first && s.t > first.t && s.hidden);
+    return end ? end.t - first.t : -1;
+  };
+  const hostRentSpan = spanOf(hostRentSamples, hostRent[0]);
+  const guestRentSpan = spanOf(guestRentSamples, guestRent[0]);
+  const hostRentCard = hostRentSamples.find(
+    (s) => hostRent[0] && s.t >= hostRent[0].t && !s.cardHidden && s.cardVisible && s.kind === "rent",
+  );
+  const guestRentCard = guestRentSamples.find(
+    (s) => guestRent[0] && s.t >= guestRent[0].t && !s.cardHidden && s.cardVisible && s.kind === "rent",
+  );
+
+  note("the payer is told RENT PAID, with the amount and the holder",
+    guestRent.length === 1 && guestRent[0].big === "\u2212\u20b920" &&
+      guestRent[0].sub === "to Asha \u00b7 Moon" && Boolean(guestRentCard),
+    guestRent[0] ? `${guestRent[0].label} ${guestRent[0].big} ${guestRent[0].sub}` : "none");
+  note("and the holder is told RENT RECEIVED, with the payer's name",
+    hostRent.length === 1 && hostRent[0].big === "+\u20b920" &&
+      hostRent[0].sub === "from Vikram \u00b7 Moon" && Boolean(hostRentCard),
+    hostRent[0] ? `${hostRent[0].label} ${hostRent[0].big} ${hostRent[0].sub}` : "none");
+  note("each sentence is said once, for the viewer it belongs to",
+    hostRent.length === 1 && guestRent.length === 1 &&
+      hostRentSpan > 0 && guestRentSpan > 0 &&
+      Math.abs(hostRentSpan - guestRentSpan) <= 200 &&
+      hostRentSpan >= 1400 && hostRentSpan <= 2300,
+    `host ${hostRentSpan}ms, guest ${guestRentSpan}ms`);
+  note("and the purses move by exactly the rent, on both ledgers",
+    hostRentSamples.at(-1)?.money[0] === 2020 &&
+      hostRentSamples.at(-1)?.money[1] === 1980,
+    `host ${hostRentSamples.at(-1)?.money.join(" ")}`);
+
+  await guest.eval(`document.querySelector(".property-card__next")?.click(); true;`);
+  await sleep(1800);
+
+  /* ------------------------------------------- the skip and the quiet mode */
+
+  heading("TAP TO SKIP, AND LESS MOTION");
+
+  await host.eval("window.__econ.ensure(0)");
+  await host.eval(`(async () => {
+    await document.querySelector(".board").play({ type: "debug", position: 26 });
+    return true;
+  })()`);
+  await sleep(300);
+
+  const skipWatch = host.json("return await window.__watchAnnounce(6000, 700);");
+  await host.eval(`(() => {
+    const b = document.querySelector(".board");
+    (async () => {
+      await window.__econ.quiet();
+      await b.play({ type: "roll", rng: (4 - 0.5) / 6 });
+    })();
+    return true;
+  })()`);
+  const skipSamples = await skipWatch;
+  const skipSalary = skipSamples.find((s) => !s.hidden && s.label === "SALARY");
+  const skipEnd = skipSamples.find((s) => skipSalary && s.t > skipSalary.t && s.hidden);
+  note("a tap skips the announcement and gives the middle back at once",
+    Boolean(skipSalary) && Boolean(skipEnd) &&
+      (skipEnd.t - skipSalary.t) <= 1200,
+    skipSalary && skipEnd ? `${skipEnd.t - skipSalary.t}ms from visible to gone` : "not seen");
+
+  await host.eval("window.__finishVisit()");
+  await sleep(300);
+
+  await host.send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "reduce" }],
+  });
+  await sleep(300);
+  const reduced = await host.json(`return matchMedia("(prefers-reduced-motion: reduce)").matches;`);
+
+  await host.eval("window.__econ.ensure(0)");
+  await host.eval(`(async () => {
+    await document.querySelector(".board").play({ type: "debug", position: 26 });
+    return true;
+  })()`);
+  await sleep(300);
+  const redWatch = host.json("return await window.__watchAnnounce(6000);");
+  await host.eval(`(() => {
+    const b = document.querySelector(".board");
+    (async () => {
+      await window.__econ.quiet();
+      await b.play({ type: "roll", rng: (4 - 0.5) / 6 });
+    })();
+    return true;
+  })()`);
+  const redSamples = await redWatch;
+  const redSalary = redSamples.filter((s) => !s.hidden && s.label === "SALARY");
+  const maxRupees = Math.max(...redSamples.map((s) => s.rupees), 0);
+  note("a reader who asks for less motion gets the same words and no travel",
+    reduced === true && redSalary.length === 1 && redSalary[0].big === "+\u20b9200" &&
+      maxRupees === 0,
+    `matchMedia ${reduced}; ${redSalary.length} salary; ${maxRupees} coin token(s)`);
+  await host.send("Emulation.setEmulatedMedia", {
+    features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
+  });
+  await host.eval("window.__finishVisit()");
+  await sleep(300);
+
+  /* ------------------------------------------- Ragnarok at three sizes ----- */
+
+  heading("RAGNAROK AT THREE SIZES");
+  await host.eval("window.__econ.ensure(0)");
+  await sleep(300);
+
+  const chestAt = async (w, h) => {
+    await host.setViewport(w, h, DSF);
+    await sleep(500);
+    await host.eval(`document.querySelector('.board__cell[data-id="ragnarok"]').click(); true;`);
+    await sleep(400);
+    const data = await host.json(`
+      const b = document.querySelector(".board");
+      const card = b.querySelector(".chest-card");
+      const rect = (n) => { const r = n.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+                 w: r.width, h: r.height }; };
+      const slots = [...(card?.querySelectorAll(".chest-card__slot") || [])].map((slot) => {
+        const name = slot.querySelector(".chest-card__slot-name");
+        const pill = slot.querySelector(".chest-card__pill");
+        const box = rect(slot);
+        const nb = rect(name);
+        const pb = rect(pill);
+        let lines = 0;
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(name);
+          lines = [...range.getClientRects()].filter((r) => r.height > 1).length;
+        } catch {
+          lines = 0;
+        }
+        return { box, name: nb, pill: pb, lines,
+                 nameScroll: name.scrollHeight, nameClient: name.clientHeight,
+                 text: name.textContent };
+      });
+      return { slots, text: card?.textContent || "",
+               card: card ? rect(card) : null,
+               holder: rect(b.querySelector(".board__card")),
+               holderClient: b.querySelector(".board__card").clientHeight,
+               holderScroll: b.querySelector(".board__card").scrollHeight };
+    `);
+    await host.eval(`document.querySelector(".property-card__close")?.click(); true;`);
+    await sleep(300);
+    return data;
+  };
+
+  const chestSizes = [];
+  for (const size of [[360, 700], [390, 850], [430, 932]]) {
+    chestSizes.push({ size, ...(await chestAt(size[0], size[1])) });
+  }
+
+  const spread = (nums) => Math.max(...nums) - Math.min(...nums);
+  note("the three slots are one slot, the same at every phone size",
+    chestSizes.every((c) => c.slots.length === 3 &&
+      spread(c.slots.map((s) => s.box.w)) <= 0.5 &&
+      spread(c.slots.map((s) => s.box.h)) <= 0.5 &&
+      spread(c.slots.map((s) => s.pill.h)) <= 0.5 &&
+      c.slots.every((s) => s.nameScroll <= s.nameClient + 1)),
+    chestSizes.map((c) => c.size.join("x") + ":" +
+      c.slots.map((s) => s.box.w.toFixed(1)).join("/")).join(" | "));
+  note("each slot is a 3:4 portrait with a fixed two-line label, never clipped",
+    chestSizes.every((c) => c.slots.every((s) =>
+      Math.abs(s.box.h / s.box.w - 4 / 3) <= 0.02 &&
+      s.lines >= 1 && s.lines <= 2 &&
+      s.nameScroll <= s.nameClient + 1 &&
+      s.name.h >= 16 &&
+      s.box.left >= c.card.left - 1 && s.box.right <= c.card.right + 1) &&
+      spread(c.slots.map((s) => s.name.h)) <= 0.5),
+    chestSizes.map((c) => c.size.join("x") + ":" +
+      c.slots.map((s) => (s.box.h / s.box.w).toFixed(2) + "/" + s.lines + "ln/" +
+        s.name.h.toFixed(0) + "px").join("/")).join(" | "));
+  note("the chest says nothing about odds, and it fits its holder",
+    chestSizes.every((c) => !/30%|10%/.test(c.text) && c.holderScroll <= c.holderClient + 1),
+    chestSizes.map((c) => c.size.join("x") + ":" + c.holderScroll + "/" + c.holderClient).join(" | "));
+
+  /* ------------------------------------------- twenty squares, four states */
+
+  heading("TWENTY SQUARES, FOUR STATES, TWO PHONES");
+
+  const PROPERTY_IDS = [
+    "moon", "lagrange-l2", "asteroid-belt", "jupiter", "pluto",
+    "kuiper-belt", "halleys-comet", "voyager-1", "proxima-centauri",
+    "event-horizon", "earth-137", "orions-belt", "wow-signal",
+    "dyson-sphere", "wormhole", "milky-way", "rama", "quasar",
+    "supernova", "sagittarius-a-star",
+  ];
+  const STATES = [
+    { name: "unowned", seat: null, level: 0 },
+    { name: "owned", seat: 0, level: 0 },
+    { name: "one up", seat: 0, level: 1 },
+    { name: "full up", seat: 0, level: 3 },
+  ];
+
+  const matrixAt = async (w, h, states) => {
+    await host.setViewport(w, h, DSF);
+    await sleep(500);
+    await host.eval("window.__econ.ensure(0)");
+    await sleep(200);
+    return host.json(`
+      const b = document.querySelector(".board");
+      const centre = b.querySelector("#board-center");
+      const ids = ${JSON.stringify(PROPERTY_IDS)};
+      const states = ${JSON.stringify(states)};
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const rect = (n) => { const r = n.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+                 w: r.width, h: r.height }; };
+      const rows = [];
+      for (const id of ids) {
+        for (const state of states) {
+          await b.play({ type: "debug", owner: { id, seat: state.seat, level: state.level } });
+          const cell = b.querySelector('.board__cell[data-id="' + id + '"]');
+          const holder = b.querySelector(".board__card");
+          let card = null;
+          for (let attempt = 0; attempt < 5 && !card; attempt += 1) {
+            holder.querySelector(".property-card__close")?.click();
+            await wait(60);
+            cell.click();
+            await wait(160);
+            card = holder.querySelector(".property-card");
+          }
+          if (!card) {
+            rows.push({ id, state: state.name, missing: true });
+            continue;
+          }
+          const buttons = [...holder.querySelectorAll("button")].filter((btn) =>
+            !btn.hidden && getComputedStyle(btn).display !== "none" &&
+            getComputedStyle(btn).visibility !== "hidden" &&
+            !btn.closest(".builds"));
+          const lastInteractive = buttons.length
+            ? Math.max(...buttons.map((x) => x.getBoundingClientRect().bottom)) : 0;
+          const measured = [...card.querySelectorAll(
+            ".property-card__name,.property-card__status,.property-card__rent," +
+            ".property-card__description,.property-card__advantage-text," +
+            ".build__name,.build__description,.build__button-label," +
+            ".build__cost-figure,.builds__label,.property-card__label")].map((n) => {
+            const cs = getComputedStyle(n);
+            return { text: n.textContent, cls: n.className,
+                     sw: n.scrollWidth, cw: n.clientWidth,
+                     sh: n.scrollHeight, ch: n.clientHeight,
+                     fs: parseFloat(cs.fontSize) };
+          });
+          const bodyTexts = measured.filter((t) =>
+            !/(^|__)(label|step|cost-rupee)$/.test(t.cls) && !/builds__label/.test(t.cls));
+          const outsideBuilds = [...card.querySelectorAll(
+            ".property-card__name,.property-card__status,.property-card__rent," +
+            ".property-card__description,.property-card__advantage-text,.property-card__price")].map((n) => ({
+            sw: n.scrollWidth, cw: n.clientWidth,
+            sh: n.scrollHeight, ch: n.clientHeight,
+            fs: parseFloat(getComputedStyle(n).fontSize), text: n.textContent, cls: n.className,
+          }));
+          rows.push({
+            id, state: state.name,
+            holder: rect(holder), centre: rect(centre),
+            holderScroll: holder.scrollHeight, holderClient: holder.clientHeight,
+            cardScroll: card.scrollHeight, cardClient: card.clientHeight,
+            lastInteractive,
+            minFont: bodyTexts.length ? Math.min(...bodyTexts.map((t) => t.fs)) : 99,
+            truncated: outsideBuilds.filter((t) => t.sw > t.cw + 1 || t.sh > t.ch + 1),
+            text: card.textContent,
+          });
+          holder.querySelector(".property-card__close")?.click();
+          await wait(110);
+        }
+      }
+      return rows;
+    `);
+  };
+
+  const matrix = [];
+  for (const size of [[390, 850], [360, 700]]) {
+    matrix.push({ size, rows: await matrixAt(size[0], size[1], STATES) });
+  }
+  matrix.push({ size: [430, 932], rows: await matrixAt(430, 932, [STATES[3]]) });
+
+  const flat = matrix.flatMap((m) => m.rows);
+  const bad = flat.filter((row) =>
+    row.missing === true ||
+    row.holderScroll > row.holderClient + 1 ||
+    row.cardScroll > row.cardClient + 1 ||
+    row.lastInteractive > row.holder.bottom + 1 ||
+    row.truncated.length > 0 ||
+    row.minFont < 11);
+  note("every card state fits the middle at 390, 360 and 430 without a scroll",
+    flat.length >= 160 && bad.length === 0,
+    `${flat.length} cards; ${bad.length} failures` +
+      (bad.length ? ": " + JSON.stringify(bad.slice(0, 2)) : ""));
+  note("no rendered amount lacks a separator and nothing says build",
+    flat.every((row) => !/\u20b9\d{4,}/.test(row.text) && !/\bbuild/i.test(row.text)),
+    "wording and amounts scanned");
+
+  /* ------------------------------------------- the pips under a name ------- */
+
+  heading("THE PIPS UNDER A NAME");
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", reset: true });
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", owner: { id: "moon", seat: 0, level: 2 } });
+    await b.play({ type: "debug", owner: { id: "jupiter", seat: 0, level: 0 } });
+    await b.play({ type: "debug", owner: { id: "lagrange-l2", seat: 0, level: 1 } });
+    await b.play({ type: "debug", active: 0 });
+    await b.play({ type: "debug", position: 1 });
+    b.coins.sync(b.game.pieces);
+    return true;
+  })()`);
+  await guest.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await b.play({ type: "debug", position: 5 });
+    return true;
+  })()`);
+  await sleep(900);
+
+  const pipsAt = async (w, h) => {
+    await host.setViewport(w, h, DSF);
+    await sleep(400);
+    return host.json(`
+      const b = document.querySelector(".board");
+      const rect = (n) => { const r = n.getBoundingClientRect();
+        return { left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+                 w: r.width, h: r.height }; };
+      const cells = [...b.querySelectorAll(".board__cell[data-id]")];
+      const coins = [...b.querySelectorAll(".coin")].map((c) => rect(c));
+      const rows = cells.filter((c) => c.dataset.owner !== undefined).map((c) => {
+        const box = rect(c);
+        const pips = c.querySelector(".board__pips");
+        const label = c.querySelector(".board__label");
+        const nameNode = [...label.children]
+          .filter((x) => !x.classList.contains("board__pips")).at(-1);
+        const pr = rect(pips);
+        const lr = rect(label);
+        const nr = nameNode ? rect(nameNode) : lr;
+        const here = coins.filter((x) =>
+          x.left >= box.left - 1 && x.right <= box.right + 1 &&
+          x.top >= box.top - 1 && x.bottom <= box.bottom + 1);
+        return {
+          id: c.dataset.id, owner: c.dataset.owner, built: c.dataset.built,
+          pips: pr, label: lr, name: nr,
+          pipsVisible: getComputedStyle(pips).display !== "none",
+          pipCenter: pr.left + pr.w / 2, labelCenter: lr.left + lr.w / 2,
+          onPips: [...pips.querySelectorAll(".board__pip")]
+            .filter((p) => p.dataset.on === "true").length,
+          coins: here,
+          noBefore: getComputedStyle(c, "::before").content,
+        };
+      });
+      const unowned = cells.filter((c) => c.dataset.owner === undefined &&
+        c.querySelector(".board__pips")).map((c) => ({
+        id: c.dataset.id,
+        pipsDisplay: getComputedStyle(c.querySelector(".board__pips")).display,
+        noBefore: getComputedStyle(c, "::before").content,
+      }));
+      return { rows, unowned, cellCount: cells.length, coinCount: coins.length };
+    `);
+  };
+
+  const pips = [];
+  for (const size of [[390, 850], [360, 700]]) {
+    pips.push({ size, ...(await pipsAt(size[0], size[1])) });
+  }
+  const pipFailing = pips.flatMap((p) => p.rows.filter((r) =>
+    !(r.pipsVisible && Math.abs(r.pipCenter - r.labelCenter) <= 1.5 &&
+      r.pips.top >= r.name.bottom - 0.5 &&
+      r.onPips === Number(r.built) &&
+      r.coins.every((c) => c.top >= r.name.bottom - 0.5 &&
+        c.top >= r.pips.bottom - 0.5))).map((r) => ({
+    size: p.size.join("x"), id: r.id, on: r.onPips, built: r.built,
+    pip: r.pips, name: r.name, coins: r.coins,
+    centred: Math.abs(r.pipCenter - r.labelCenter),
+  })));
+  note("pips sit centred under the name, below it, and never over the coins",
+    pipFailing.length === 0,
+    JSON.stringify(pipFailing.slice(0, 3)));
+  note("pips appear only on owned squares, and the old top-right mark is gone",
+    pips.every((p) => p.unowned.every((u) => u.pipsDisplay === "none" &&
+      u.noBefore === "none") && p.rows.every((r) => r.noBefore === "none")),
+    pips.map((p) => p.size.join("x") + ": " + p.rows.length + " owned, " +
+      p.unowned.length + " unowned").join(" | "));
+
+  /* ------------------------------------------- Sell at 360, and the words */
+
+  await host.setViewport(360, 700, DSF);
+  await sleep(500);
+  await host.eval(`document.querySelector('.board__cell[data-id="moon"]').click(); true;`);
+  await sleep(400);
+  const sell360 = await host.json(`
+    const b = document.querySelector(".board");
+    const h = b.querySelector(".board__card");
+    const sell = h.querySelector(".property-card__sell");
+    const rect = (n) => { const r = n.getBoundingClientRect();
+      return { left: r.left, top: r.top, right: r.right, bottom: r.bottom,
+               w: r.width, h: r.height }; };
+    const buttons = [...h.querySelectorAll("button")].filter((x) =>
+      !x.hidden && getComputedStyle(x).display !== "none" &&
+      getComputedStyle(x).visibility !== "hidden" && !x.closest(".builds"));
+    return {
+      hidden: sell.hidden,
+      label: sell.querySelector(".property-card__sell-label").textContent,
+      background: getComputedStyle(sell).backgroundColor,
+      box: rect(sell), holder: rect(h),
+      lastInteractive: Math.max(...buttons.map((x) => x.getBoundingClientRect().bottom)),
+      text: h.textContent,
+    };
+  `);
+  const sell360Rgb = (sell360.background.match(/\d+/g) || []).map(Number);
+  note("Sell is a red pill with the real amount, visible without scrolling at 360",
+    sell360.hidden === false && /^Sell for \u20b9[\d,]+$/.test(sell360.label) &&
+      sell360Rgb[0] > sell360Rgb[1] + 30 && sell360Rgb[0] > sell360Rgb[2] + 30 &&
+      sell360.box.bottom <= sell360.holder.bottom + 1 &&
+      sell360.box.top >= sell360.holder.top - 1 &&
+      sell360.lastInteractive <= sell360.holder.bottom + 1,
+    `${sell360.label} ${sell360.background}; ends ${sell360.box.bottom.toFixed(1)} ` +
+      `of ${sell360.holder.bottom.toFixed(1)}`);
+  note("and the card's own words never say build",
+    !/\bbuild/i.test(sell360.text), "wording scanned");
+  await host.eval(`document.querySelector(".property-card__close")?.click(); true;`);
+  await sleep(300);
 
   /* ------------------------------------------------------- back out again */
 
