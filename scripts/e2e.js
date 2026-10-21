@@ -3073,6 +3073,7 @@ try {
     const b = document.querySelector(".board");
     await window.__econ.quiet();
     await b.play({ type: "debug", money: 2000 });
+    await b.play({ type: "debug", weapons: ["antimatter", "nuclear", "shiva"] });
     await b.play({ type: "debug", owner: { id: "moon", seat: 0, level: 2 } });
     await b.play({ type: "debug", owner: { id: "lagrange-l2", seat: 0, level: 0 } });
     await b.play({ type: "debug", owner: { id: "jupiter", seat: 0, level: 0 } });
@@ -3118,6 +3119,10 @@ try {
   note("and the salary itself is paid once, into the purse",
     salarySamples.at(-1)?.money[0] === 2200,
     `purse ${salarySamples.at(-1)?.money.join(" ")}`);
+  const maxSalaryCoins = Math.max(...salarySamples.map((s) => s.rupees), 0);
+  note("and it is paid in six to eight coins, not a silent number",
+    maxSalaryCoins >= 6 && maxSalaryCoins <= 8,
+    `${maxSalaryCoins} coin token(s) at the busiest sample`);
 
   /* --- the profile ------------------------------------------------------ */
 
@@ -3215,6 +3220,7 @@ try {
         name: w.querySelector(".profile-weapon__name").textContent,
         targets: w.querySelectorAll(".profile-weapon__target").length,
         face: Boolean(w.querySelector(".profile-weapon__emblem svg, .profile-weapon__emblem .chest-card__emblem")),
+        box: rect(w),
       })),
       emptyWeapons: panel?.querySelector('[data-section="weapons"] .profile__empty')?.textContent || null,
       ledger: [...panel.querySelectorAll(".profile-ledger__row")].slice(0, 6).map((r) => ({
@@ -3264,7 +3270,7 @@ try {
     `close ${prof.closeSize.join("x")} at ${prof.close.right.toFixed(0)},${prof.close.top.toFixed(0)}`);
   note("the header is coin, name, civilization and cash, in the card's own voice",
     prof.name === "Asha" && prof.nameSize === 22 && prof.civ === "Indus Valley" &&
-      prof.civSize === 11 && prof.cash === "\u20b92,200" && prof.cashSize === 36 &&
+      prof.civSize === 12 && prof.cash === "\u20b92,200" && prof.cashSize === 36 &&
       Number(prof.cashWeight) <= 300 && /tabular-nums/.test(prof.cashVariant) &&
       /^Net worth \u20b9[\d,]+$/.test(prof.worth || "") &&
       prof.coin.width === 28 && prof.coin.height === 28 &&
@@ -3285,10 +3291,15 @@ try {
       prof.sets[0].pipsOn === 2 && prof.sets[0].pips === 6 &&
       prof.sets[0].rents.every((r) => /^\u20b9[\d,]+$/.test(r)),
     `${prof.count}; ${prof.sets.map((s) => `${s.set}:${s.badge}[${s.names.join(",")}]`).join(" ")}`);
-  note("WEAPONS shows the face-up cards the player carries",
-    prof.weapons.length >= 1 && prof.weapons.every((w) => w.face && w.targets >= 3) &&
-      prof.weapons.some((w) => w.name === "Antimatter Weapon"),
-    prof.weapons.map((w) => `${w.name} (${w.targets})`).join(", ") || prof.emptyWeapons);
+  note("WEAPONS shows the face-up cards the player carries, in a wrapping identical grid",
+    prof.weapons.length === 3 && prof.weapons.every((w) => w.face && w.targets >= 3) &&
+      prof.weapons.some((w) => w.name === "Antimatter Weapon") &&
+      prof.weapons.some((w) => w.name === "Eye of Shiva") &&
+      Math.max(...prof.weapons.map((w) => w.box.width)) -
+        Math.min(...prof.weapons.map((w) => w.box.width)) <= 0.5 &&
+      prof.weapons[2].box.top > prof.weapons[0].box.top + 1,
+    prof.weapons.map((w) => `${w.name} ${w.box.width.toFixed(0)}x${w.box.height.toFixed(0)}`).join(", ") ||
+      prof.emptyWeapons);
   note("LEDGER is newest first, salary on top, with the signed amount and balance",
     prof.ledger.length >= 4 && prof.ledger[0].kind === "salary" &&
       /Salary .* lap complete/.test(prof.ledger[0].text) &&
@@ -3405,6 +3416,73 @@ try {
       profClosed.open === false && profClosed.dieDisplay !== "none",
     `die before ${overDie.dieDisplay}, open ${profOpen.dieDisplay}, ` +
       `closed ${profClosed.dieDisplay}`);
+
+  // It also opens while a throw is still in the air, and stays open through it.
+  await host.eval("window.__econ.ensure(0)");
+  await sleep(200);
+  await host.eval(`(() => {
+    const b = document.querySelector(".board");
+    (async () => {
+      await window.__econ.quiet();
+      await b.play({ type: "roll", rng: (1 - 0.5) / 6 });
+    })();
+    return true;
+  })()`);
+  await sleep(180);
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(250);
+  const animOpen = await host.json(`
+    const b = document.querySelector(".board");
+    return { open: Boolean(b.querySelector(".board__profile")),
+             busy: b.dataset.busy, phase: b.game.phase };
+  `);
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return true;
+  })()`);
+  const animSettled = await host.json(`
+    const b = document.querySelector(".board");
+    return { open: Boolean(b.querySelector(".board__profile")),
+             phase: b.game.phase, busy: b.dataset.busy };
+  `);
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(300);
+  const animClosed = await host.json(`
+    const b = document.querySelector(".board");
+    const h = b.querySelector(".board__card");
+    return { open: Boolean(b.querySelector(".board__profile")),
+             cardVisible: Boolean(h && !h.hidden && getComputedStyle(h).visibility !== "hidden") };
+  `);
+  note("it opens while a throw is still in the air, and stays open through it",
+    animOpen.open && animSettled.open && animSettled.busy !== "true" &&
+      !animClosed.open && animClosed.cardVisible,
+    `open ${animOpen.open}, settled ${animSettled.open}, ` +
+      `closed ${animClosed.open}, card back ${animClosed.cardVisible}`);
+
+  // The other screen's own chip opens its own record, not the first player's.
+  await guest.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await window.__finishVisit();
+    document.querySelector('.who[data-seat="1"]').click();
+    return true;
+  })()`);
+  await sleep(300);
+  const guestOwn = await guest.json(`
+    const b = document.querySelector(".board");
+    const panel = b.querySelector(".board__profile");
+    return { open: Boolean(panel), seat: panel?.dataset.profileSeat,
+             name: panel?.querySelector(".profile__name")?.textContent,
+             die: getComputedStyle(b.querySelector(".board__dice")).display };
+  `);
+  note("the other screen's own chip opens its own record",
+    guestOwn.open && guestOwn.seat === "1" && guestOwn.name === "Vikram" &&
+      guestOwn.die === "none",
+    `${guestOwn.name} seat ${guestOwn.seat}, die ${guestOwn.die}`);
+  await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
+  await sleep(200);
 
   // A turn that changes while the record is open must not close it or change
   // whose record it is. The panel is re-read from the live game, not a snapshot.
@@ -3873,6 +3951,10 @@ try {
       u.noBefore === "none") && p.rows.every((r) => r.noBefore === "none")),
     pips.map((p) => p.size.join("x") + ": " + p.rows.length + " owned, " +
       p.unowned.length + " unowned").join(" | "));
+  const boardScan = await host.json(`return document.querySelector(".board").textContent;`);
+  note("no amount on the board is missing its separator and nothing says build",
+    !/\u20b9\d{4,}/.test(boardScan) && !/\bbuild/i.test(boardScan),
+    "board wording scanned");
 
   /* ------------------------------------------- Sell at 360, and the words */
 

@@ -2560,7 +2560,7 @@ button.board__cell--chest:focus-visible {
 
 .profile__civ {
   margin: 2px 0 0;
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-soft);
