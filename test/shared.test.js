@@ -513,6 +513,44 @@ test("the pill is drawn around its title, not beside it", () => {
   }
 });
 
+test("and the title fits inside its pill, with room on each side", () => {
+  // The title is written with a textLength, so the words are spaced to the
+  // width the card gives them. That width has to be the pill's own width less
+  // a margin, or the words run off the ends of the pill they sit on. The
+  // board does not draw cards, so this is where the property is kept honest.
+  for (const key of cardKeys()) {
+    const svg = cardSvg(key);
+    if (!svg.includes('<g class="title-pill">')) continue;
+    const pill = svg.match(
+      /<g class="title-pill">\s*<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"/,
+    );
+    const title = svg.match(/<text class="title-text"[^>]*textLength="([\d.]+)"/);
+    assert.ok(pill && title, `${key} has a pill and a title with a length`);
+    const width = Number(pill[3]);
+    const length = Number(title[1]);
+    assert.ok(
+      length > 0 && length <= width - 8,
+      `${key}'s title (${length}) fits inside its pill (${width})`,
+    );
+  }
+});
+
+test("the pill is soft enough for a white title to read against it", () => {
+  for (const key of cardKeys()) {
+    const svg = cardSvg(key);
+    if (!svg.includes('<g class="title-pill">')) continue;
+    const pill = svg.match(
+      /<rect x="([\d.]+)" y="([\d.]+)" width="([\d.]+)" height="([\d.]+)"[^>]*opacity="([\d.]+)"/,
+    );
+    assert.ok(pill, `${key}'s pill says how solid it is`);
+    const opacity = Number(pill[5]);
+    assert.ok(
+      opacity > 0.5 && opacity <= 1,
+      `${key}'s pill opacity ${opacity} keeps the white title legible`,
+    );
+  }
+});
+
 test("Lagrange Point is displayed without the L2 on the card", () => {
   // The card says LAGRANGE POINT. The board's cell says Lagrange Point L2.
   // They are different things and neither is allowed to change the other.

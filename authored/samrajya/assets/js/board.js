@@ -358,6 +358,9 @@ export function board({
   function openProfile(seat) {
     const wanted = Number(seat);
     if (!Number.isInteger(wanted)) return;
+    // The record is the middle of the board now. Anything being said steps
+    // aside and is said again when the record closes.
+    announce.defer();
     if (profileSeat === wanted) {
       closeProfile();
       return;
@@ -927,6 +930,28 @@ export function board({
     if (!reading) return;
     closeRead();
   });
+
+  /* Escape closes whatever is open, wherever the focus happens to be.
+
+     The record is opened from a chip, and a chip sits outside the board: a key
+     press on a chip never reaches a listener on the board itself, so for the
+     player who opened the record that way, Escape would do nothing at all.
+     The listener is therefore on the document, and it takes itself off again
+     as soon as the board it belongs to is gone. */
+  const onEscape = (event) => {
+    if (event.key !== "Escape") return;
+    if (!frame.isConnected) {
+      document.removeEventListener("keydown", onEscape, true);
+      return;
+    }
+    if (profileSeat !== null) {
+      closeProfile();
+      return;
+    }
+    if (!reading) return;
+    closeRead();
+  };
+  document.addEventListener("keydown", onEscape, true);
 
   /* ---------------------------------------------------------- the coins */
 

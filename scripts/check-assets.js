@@ -908,7 +908,7 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
 
   check(
     "an announcement that arrives while a profile is open waits, and is not dropped",
-    announceJs.includes("waiting.push(spec)") &&
+    /if \(profileOpen\(\)\) \{\s*\n\s*queue\.push\(/.test(announceJs) &&
       announceJs.includes("flush()") &&
       boardJs.includes("announce.flush()"),
     "the record owns the middle for as long as it is open; what happened during " +
@@ -916,9 +916,33 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
   );
   check(
     "and the game never waits for the middle to be free",
-    /waiting\.push\(spec\);\s*\n\s*return Promise\.resolve\(\);/.test(announceJs),
+    /queue\.push\(\{ spec, resolve: null \}\);\s*\n\s*return Promise\.resolve\(\);/.test(
+      announceJs,
+    ),
     "a deferred announcement resolves at once, so the action that caused it is " +
       "not held up by it",
+  );
+  check(
+    "an announcement that is on screen when a record opens steps aside, and is said again after",
+    announceJs.includes("defer()") &&
+      /token\.stopped = true/.test(announceJs) &&
+      /queue\.unshift\(item\)/.test(announceJs) &&
+      boardJs.includes("announce.defer()"),
+    "the record is the middle of the board while it is open, so the sentence " +
+      "steps aside and goes back to the front of the queue",
+  );
+  check(
+    "the queue is said one at a time, in the order it was queued",
+    /while \(queue\.length\)/.test(announceJs) &&
+      /const item = queue\.shift\(\)/.test(announceJs),
+    "one sentence at a time is the only way 'one at a time' can be true",
+  );
+  check(
+    "and Escape closes the record wherever the focus is",
+    /document\.addEventListener\("keydown", onEscape, true\)/.test(boardJs) &&
+      /document\.removeEventListener\("keydown", onEscape, true\)/.test(boardJs),
+    "the record is opened from a chip, which sits outside the board, so a key " +
+      "press on the chip would never reach a listener on the board itself",
   );
   check(
     "the whole chip is one button, and it is what opens the record",

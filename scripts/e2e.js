@@ -3639,6 +3639,36 @@ try {
       hostRentSamples.at(-1)?.money[1] === 1980,
     `host ${hostRentSamples.at(-1)?.money.join(" ")}`);
 
+  /* The test hook must not wait for a visit that is not this screen's to
+     answer. The payer is in a decision on the other screen; handing the turn
+     over from here must not wait for that decision to be answered. */
+  const ensured = await host.json(`
+    const t0 = performance.now();
+    const active = await window.__econ.ensure(0);
+    return { ms: Math.round(performance.now() - t0), active };
+  `);
+  note("the test hook hands the turn over without waiting for the other screen's visit",
+    ensured.active === 0 && ensured.ms < 6000,
+    `${ensured.ms}ms, active ${ensured.active}`);
+
+  /* And the counter that says how many times a sentence was said must count
+     sentences, not samples: a sentence sampled twice is one sentence. */
+  note("the appearance counter counts sentences, not samples",
+    appearances([
+      { hidden: true },
+      { hidden: false, label: "A" },
+      { hidden: false, label: "A" },
+      { hidden: true },
+    ], "A").count === 1 &&
+      appearances([
+        { hidden: true },
+        { hidden: false, label: "A" },
+        { hidden: true },
+        { hidden: false, label: "A" },
+        { hidden: true },
+      ], "A").count === 2,
+    "one sentence sampled twice is one sentence; two sentences are two");
+
   await guest.eval(`document.querySelector(".property-card__next")?.click(); true;`);
   await sleep(1800);
 
@@ -3646,18 +3676,83 @@ try {
 
   heading("AN ANNOUNCEMENT WAITS FOR THE PROFILE");
 
-  // The holder's record is open on one screen while the other screen pays rent
-  // on the square that holder owns. Nothing may be lost and nothing may be
-  // shown on top of the record.
+  /* A log of the announcement layer that records only its changes: one entry
+     for each time a sentence comes on screen, and one for each time it goes.
+     A sentence that is on screen while the phase changes is still one
+     sentence, and this counts it once. */
+  const ANN_LOG = `
+    window.__annLog = async (ms) => {
+      const b = document.querySelector(".board");
+      const n = b.querySelector(".board__announce");
+      const out = [];
+      const start = performance.now();
+      let lastVisible = null;
+      let lastKey = null;
+      const record = () => {
+        const visible = Boolean(n && !n.hidden);
+        const pick = (s) => (visible ? n.querySelector(s)?.textContent || "" : "");
+        const key = visible
+          ? [pick(".announce__label"), pick(".announce__big"), pick(".announce__sub")].join("|")
+          : "";
+        // The same sentence twice in a row is two sentences. The record is
+        // therefore taken from the layer's own changes and not from a sample:
+        // a sample can miss the moment between two announcements, and then
+        // two appearances look like one.
+        if (visible === lastVisible && key === lastKey) return;
+        lastVisible = visible;
+        lastKey = key;
+        out.push({
+          t: Math.round(performance.now() - start),
+          visible,
+          label: pick(".announce__label"),
+          big: pick(".announce__big"),
+          sub: pick(".announce__sub"),
+          profile: b.dataset.profile === "true",
+          busy: b.dataset.busy,
+        });
+      };
+      const mo = new MutationObserver(record);
+      mo.observe(b, {
+        attributes: true, attributeFilter: ["hidden", "data-profile"],
+        childList: true, subtree: true,
+      });
+      record();
+      await new Promise((r) => setTimeout(r, ms));
+      mo.disconnect();
+      return out;
+    };
+    /* Wait for the board to be quiet, then hand the turn over and throw.
+       A debug action sent while the board is busy is dropped, so waiting is
+       part of the action, not a pause after it. */
+    window.__hostTurn = async (face) => {
+      const b = document.querySelector(".board");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (let i = 0; i < 120 && b.dataset.busy === "true"; i++) await wait(50);
+      await b.play({ type: "debug", active: 0 });
+      await wait(150);
+      await b.play({ type: "debug", position: 0 });
+      await wait(150);
+      await b.play({ type: "roll", rng: (face - 0.5) / 6 });
+      return true;
+    };`;
+  await host.eval(ANN_LOG);
+  await guest.eval(ANN_LOG);
+
+  /** The appearances of one label in a log: one entry per time it came on. */
+  const said = (log, label) => log.filter((e) => e.visible && e.label === label);
+
+  /* The holder's record is open on one screen while the other screen plays
+     turns. Nothing may be lost, nothing may be shown on top of the record, and
+     the other screen must not be held up by it. */
   await host.eval(`(async () => {
     const b = document.querySelector(".board");
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
     await b.play({ type: "debug", reset: true });
     for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
-    await b.play({ type: "debug", owner: { id: "moon", seat: 0, level: 0 } });
+    await b.play({ type: "debug", owner: { id: "moon", seat: 1, level: 0 } });
     await b.play({ type: "debug", money: 2000 });
-    await b.play({ type: "debug", active: 1 });
+    await b.play({ type: "debug", active: 0 });
     await b.play({ type: "debug", position: 0 });
     b.coins.sync(b.game.pieces);
     return true;
@@ -3672,73 +3767,207 @@ try {
   })()`);
   await sleep(500);
 
-  // The holder opens their own record and keeps it open.
-  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  // The guest opens their own record, and keeps it open.
+  await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
   await sleep(300);
-  const profileUp = await host.json(`
+  const profileUp = await guest.json(`
     const b = document.querySelector(".board");
     return { open: Boolean(b.querySelector(".board__profile")),
              profile: b.dataset.profile === "true" };
   `);
 
-  const queuedWatch = host.json("return await window.__watchAnnounce(9000);");
-  const guestWatch = guest.json("return await window.__watchAnnounce(9000);");
+  const guestLog = guest.json("return await window.__annLog(16000);");
+  const hostLog = host.json("return await window.__annLog(16000);");
 
-  // The other player pays rent on the square the holder owns.
-  await guest.eval(`(() => {
-    const b = document.querySelector(".board");
-    (async () => {
-      await window.__finishVisit();
-      await b.play({ type: "debug", active: 1 });
-      await b.play({ type: "debug", position: 0 });
-      await b.play({ type: "roll", rng: (1 - 0.5) / 6 });
-    })();
-    return true;
-  })()`);
-  await sleep(2600);
+  // Turn one: the host buys a square. The host's screen says ACQUIRED now; the
+  // guest's screen has a record open, so it waits.
+  await host.eval("window.__hostTurn(2)");
+  await sleep(1500);
+  await host.eval(`document.querySelector(".property-card__buy").click(); true;`);
+  await sleep(1800);
 
-  const whileOpen = await host.json(`
+  // Turn two: the host lands on the square the guest owns, and pays rent.
+  await host.eval("window.__hostTurn(1)");
+  await sleep(2000);
+
+  const whileOpen = await guest.json(`
     const b = document.querySelector(".board");
     const n = b.querySelector(".board__announce");
     return { profile: b.dataset.profile === "true",
              open: Boolean(b.querySelector(".board__profile")),
-             announceHidden: n ? n.hidden : true,
-             announceText: n ? n.textContent : "" };
+             announceHidden: n ? n.hidden : true };
   `);
 
-  // Now the record closes, and the announcement it was holding its turn for
-  // comes out.
-  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
-  const queuedSamples = await queuedWatch;
-  const guestSamples = await guestWatch;
+  // The record closes - by the chip, this time - and the queue comes out.
+  await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
+  await sleep(4200);
+  const guestEntries = await guestLog;
+  const hostEntries = await hostLog;
 
-  const closedAt = queuedSamples.findIndex((s) => s.profile === false);
-  const saidWhileOpen = queuedSamples.filter(
-    (s) => !s.hidden && s.label === "RENT RECEIVED" && s.profile);
-  const hostSaid = appearances(queuedSamples, "RENT RECEIVED");
-  const guestSaid = appearances(guestSamples, "RENT PAID");
-  const guestSentence = guestSamples.find((s) => !s.hidden && s.label === "RENT PAID");
+  const guestAcquired = said(guestEntries, "ACQUIRED");
+  const guestRentSaid = said(guestEntries, "RENT RECEIVED");
+  const hostAcquired = said(hostEntries, "ACQUIRED");
+  const hostRentSaid = said(hostEntries, "RENT PAID");
+  const guestSaidWhileOpen = guestEntries.filter((e) => e.visible && e.profile);
+  const closedAt = guestEntries.findIndex((e) => e.profile === false);
+  const acquiredAt = guestEntries.findIndex((e) => e.visible && e.label === "ACQUIRED");
+  const rentAt = guestEntries.findIndex((e) => e.visible && e.label === "RENT RECEIVED");
 
   note("nothing is said on top of the record, and nothing is lost",
     profileUp.open && profileUp.profile &&
-      saidWhileOpen.length === 0 &&
+      guestSaidWhileOpen.length === 0 &&
       whileOpen.profile && whileOpen.announceHidden &&
-      hostSaid.count === 1 &&
-      closedAt > -1 && hostSaid.at >= closedAt,
+      guestAcquired.length === 1 && guestRentSaid.length === 1 &&
+      // Every sentence the record's screen said was said with the record
+      // closed: the record's own flag on the entry says so.
+      guestAcquired[0].profile === false && guestRentSaid[0].profile === false &&
+      acquiredAt < rentAt,
     `while open: profile ${whileOpen.profile}, layer hidden ${whileOpen.announceHidden}; ` +
-      `${saidWhileOpen.length} said too early, ${hostSaid.count} after the close ` +
-      `(closed at ${closedAt}, said at ${hostSaid.at})`);
-  note("the waiting announcement says the holder's own sentence, once",
-    hostSaid.count === 1 &&
-      queuedSamples[hostSaid.at].big === "+\u20b920" &&
-      queuedSamples[hostSaid.at].sub === "from Vikram \u00b7 Moon",
-    queuedSamples[hostSaid.at]
-      ? `${queuedSamples[hostSaid.at].label} ${queuedSamples[hostSaid.at].big} ${queuedSamples[hostSaid.at].sub}`
-      : "never said");
-  note("and the other screen says its own sentence at the same time, unhindered",
-    guestSaid.count === 1 && guestSentence.big === "\u2212\u20b920" &&
-      guestSentence.sub === "to Asha \u00b7 Moon",
-    guestSentence ? `${guestSentence.label} ${guestSentence.big} ${guestSentence.sub}` : "never said");
+      `${guestSaidWhileOpen.length} said too early; ` +
+      `${guestAcquired.length} acquired, ${guestRentSaid.length} rent after the close ` +
+      `(said at ${acquiredAt} and ${rentAt}, record closed at ${closedAt})`);
+  note("two announcements queued at once are said in order, once each",
+    guestAcquired.length === 1 && guestRentSaid.length === 1 &&
+      acquiredAt < rentAt &&
+      guestAcquired[0].big === "Lagrange Point L2" &&
+      guestAcquired[0].sub === "\u2212\u20b9250" &&
+      guestRentSaid[0].big === "+\u20b920" &&
+      guestRentSaid[0].sub === "from Asha \u00b7 Moon",
+    guestEntries
+      .filter((e) => e.visible)
+      .map((e) => `${e.label} ${e.big} ${e.sub}`).join(" | ") || "nothing said");
+  note("and the other screen says its own sentences at the same time, unhindered",
+    hostAcquired.length === 1 && hostRentSaid.length === 1 &&
+      hostEntries.findIndex((e) => e.visible && e.label === "ACQUIRED") <
+        hostEntries.findIndex((e) => e.visible && e.label === "RENT PAID") &&
+      hostRentSaid[0].big === "\u2212\u20b920" &&
+      hostRentSaid[0].sub === "to Vikram \u00b7 Moon",
+    hostEntries
+      .filter((e) => e.visible)
+      .map((e) => `${e.label} ${e.big} ${e.sub}`).join(" | ") || "nothing said");
+
+  /* --- the other two ways out of the record ----------------------------- */
+
+  // One announcement queued, and the record closed by the 32px button, and
+  // then by the Escape key. Both must flush what is waiting.
+  const flushBy = async (method) => {
+    await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
+    await sleep(300);
+    await host.eval("window.__hostTurn(1)");
+    await sleep(2000);
+    const log = guest.json("return await window.__annLog(6000);");
+    if (method === "button") {
+      await guest.eval(`document.querySelector(".profile__close").click(); true;`);
+    } else {
+      await guest.send("Input.dispatchKeyEvent", {
+        type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27,
+      });
+      await guest.send("Input.dispatchKeyEvent", {
+        type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27,
+      });
+    }
+    const entries = await log;
+    const closed = await guest.json(`
+      const b = document.querySelector(".board");
+      return { open: Boolean(b.querySelector(".board__profile")),
+               profile: b.dataset.profile === "true" };
+    `);
+    return { entries, closed };
+  };
+
+  const byButton = await flushBy("button");
+  const byEscape = await flushBy("escape");
+  const buttonRent = said(byButton.entries, "RENT RECEIVED");
+  const escapeRent = said(byEscape.entries, "RENT RECEIVED");
+  const buttonClosed = byButton.closed;
+  const escapeClosed = byEscape.closed;
+
+  note("the 32px button closes the record and says what was waiting",
+    buttonClosed.open === false && buttonClosed.profile === false &&
+      buttonRent.length === 1 &&
+      buttonRent[0].profile === false,
+    `closed ${!buttonClosed.open}; ${buttonRent.length} rent said ` +
+      `(profile ${buttonRent[0]?.profile})`);
+  note("and so does the Escape key, wherever the focus is",
+    escapeClosed.open === false && escapeClosed.profile === false &&
+      escapeRent.length === 1 &&
+      escapeRent[0].profile === false,
+    `closed ${!escapeClosed.open}; ${escapeRent.length} rent said ` +
+      `(profile ${escapeRent[0]?.profile})`);
+
+  /* --- an announcement that was on screen when the record opened --------- */
+
+  // The host buys a square; while its announcement is on screen the host opens
+  // their record. The announcement must not be read over the record, and it
+  // must not be lost either.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await window.__econ.quiet();
+    await b.play({ type: "debug", active: 0 });
+    await b.play({ type: "debug", position: 0 });
+    await b.play({ type: "roll", rng: (3 - 0.5) / 6 });
+    return true;
+  })()`);
+  await sleep(1500);
+  const interruptedLog = host.json("return await window.__annLog(9000);");
+  await host.eval(`(() => {
+    // The record opens while the announcement is still on screen. The chip
+    // sits outside the board, so it is found from the document.
+    setTimeout(() => document.querySelector('.who[data-seat="0"]').click(), 250);
+    document.querySelector(".property-card__buy")?.click();
+    return true;
+  })()`);
+  await sleep(2600);
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(2600);
+  const interrupted = await interruptedLog;
+  const interruptedAcquired = said(interrupted, "ACQUIRED");
+  const overProfile = interrupted.filter(
+    (e) => e.visible && e.profile && e.label === "ACQUIRED");
+  const firstBefore = interruptedAcquired.length
+    ? interruptedAcquired[0].t < interrupted.find((e) => e.profile)?.t
+    : false;
+
+  note("an announcement on screen when the record opens is not read over it, and is said again after",
+    overProfile.length === 0 && interruptedAcquired.length === 2 && firstBefore,
+    `${overProfile.length} shown over the record; ` +
+      `${interruptedAcquired.length} appearance(s) of ACQUIRED ` +
+      `(${interruptedAcquired.map((e) => e.t + (e.profile ? "p" : "")).join(",")})`);
+
+  /* --- an announcement that arrives while the queue is being said -------- */
+
+  // The record closes and the queue starts playing. While it is playing, the
+  // host acts again: that announcement must join the end of the queue, not
+  // the middle of it, and it must not be lost.
+  await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
+  await sleep(300);
+  await host.eval("window.__hostTurn(1)");
+  await sleep(2000);
+
+  const raceLog = guest.json("return await window.__annLog(9000);");
+  await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
+  // Wait for the queue to start playing, then act while it is on screen.
+  await guest.json(`
+    const b = document.querySelector(".board");
+    for (let i = 0; i < 100; i++) {
+      const n = b.querySelector(".board__announce");
+      if (n && !n.hidden) return true;
+      await new Promise((r) => setTimeout(r, 30));
+    }
+    return false;
+  `);
+  await host.eval("window.__hostTurn(1)");
+  await sleep(3200);
+  const raceEntries = await raceLog;
+  const raceSaid = said(raceEntries, "RENT RECEIVED");
+  const raceOrder = raceEntries.filter((e) => e.visible).map((e) => e.label);
+  const raceMoney = await guest.json(`return b.game.ledger.players.map((p) => p.money);`.replace("b.game", "document.querySelector('.board').game"));
+
+  note("an announcement that arrives while the queue is being said joins its end",
+    raceSaid.length === 2 &&
+      raceOrder.filter((l) => l === "RENT RECEIVED").length === 2 &&
+      raceOrder.join(",") === "RENT RECEIVED,RENT RECEIVED",
+    `${raceOrder.join(" \u2192 ") || "nothing said"}; purses ${raceMoney.join(" ")}`);
 
   // The payer answers the visit, so the turn is finished and the next section
   // starts from a board that is waiting rather than mid-decision.
