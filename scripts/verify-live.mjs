@@ -271,7 +271,7 @@ await guest.eval(`(() => {
 
 // The host plays until something is announced while the guest's record is open.
 let queued = [];
-for (let turn = 0; turn < 8; turn += 1) {
+for (let turn = 0; turn < 16; turn += 1) {
   const whoseTurn = await host.json(`return document.querySelector(".board").game.active;`);
   const page = whoseTurn === 0 ? host : guest;
   const played = await playTurn(page);
@@ -300,7 +300,11 @@ for (let turn = 0; turn < 8; turn += 1) {
     visible: !document.querySelector(".board__announce").hidden,
     text: document.querySelector(".board__announce").textContent,
   };`);
-  if (hostSaid.visible) { console.log("  host screen said:", hostSaid.text); break; }
+  if (hostSaid.visible) { console.log("  host screen said:", hostSaid.text); }
+  // Keep playing until the host has said something: that is the announcement
+  // the guest's record is holding.
+  const guestSaidAnything = await guest.json(`return !document.querySelector(".board__announce").hidden;`);
+  if (hostSaid.visible || guestSaidAnything) break;
 }
 
 // Close the record with the Escape key, as a player would.
