@@ -238,7 +238,7 @@ test("the copy is all there, and says what it says", () => {
   assert.equal(RAGNAROK.id, "ragnarok");
   assert.equal(RAGNAROK.title, "Welcome to Ragnarok");
   assert.equal(RAGNAROK.tagline, "The armoury at the end of time.");
-  assert.equal(RAGNAROK.oddsCaption, "Each draw: 30% for each weapon, 10% bad luck.");
+  assert.equal(RAGNAROK.oddsCaption, undefined, "the odds line is gone, not hidden");
   assert.ok(RAGNAROK.body.length > 120, "the body says what the chest is for");
   for (const w of WEAPONS) {
     assert.ok(w.blurb.length > 20, `${w.id} has a line about what it does`);

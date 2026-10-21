@@ -300,8 +300,7 @@ export function rupees(amount) {
   return `₹${GROUPING.format(Number.isFinite(value) ? value : 0)}`;
 }
 
-/** A price with no grouping, for the places that have room for a bare number. */
+/** The same formatter, for callers that used to ask for a bare number. */
 export function rupeesBare(amount) {
-  const value = Math.trunc(Number(amount));
-  return `₹${Number.isFinite(value) ? value : 0}`;
+  return rupees(amount);
 }

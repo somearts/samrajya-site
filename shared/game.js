@@ -73,7 +73,7 @@ import {
   upgrade as ledgerUpgrade,
 } from "./ledger.js";
 import { CELLS } from "./spaces.js";
-import { BAD_LUCK, RAGNAROK, drawWeapon } from "./weapons.js";
+import { BAD_LUCK, RAGNAROK, drawWeapon, weaponById } from "./weapons.js";
 
 export { MAX_UPGRADE, STARTING_MONEY };
 
@@ -198,6 +198,7 @@ function cloneGame(state) {
       properties: new Map(
         [...state.ledger.properties].map(([id, sheet]) => [id, { ...sheet }]),
       ),
+      history: [...(state.ledger.history || [])],
     },
     pieces: state.pieces.map((piece) => ({
       ...piece,
@@ -419,6 +420,26 @@ export function applyAction(state, action, rng = Math.random) {
           next.visit.paid = Boolean(verdict.paid);
           next.visit.short = verdict.shortfall || 0;
 
+          /* The two sides of one payment, written for the two people who will
+             read them. Both devices read the same ledger, so the payer's history
+             says what they paid and the holder's says what they received. */
+          recordEntry(next.ledger, {
+            turn: state.turn,
+            seat: active,
+            kind: "rent",
+            text: `Rent paid to ${nameOfSeat(next.ledger, owner)} · ${cell.name}`,
+            amount: -(verdict.amount || 0),
+          });
+          if ((verdict.amount || 0) > 0) {
+            recordEntry(next.ledger, {
+              turn: state.turn,
+              seat: owner,
+              kind: "rent",
+              text: `Rent received from ${nameOfSeat(next.ledger, active)} · ${cell.name}`,
+              amount: verdict.amount || 0,
+            });
+          }
+
           if (verdict.shortfall > 0) {
             /* The payer could not meet the whole rent. They have paid everything
                they hold and the ledger has recorded the rest as a short. This is
@@ -475,6 +496,13 @@ export function applyAction(state, action, rng = Math.random) {
 
       next.visit.bought = true;
       next.phase = PHASE.RESOLVING;
+      recordEntry(next.ledger, {
+        turn: state.turn,
+        seat: active,
+        kind: "buy",
+        text: `Bought ${landingCell(next)?.name || id}`,
+        amount: -verdict.spent,
+      });
       ok("bought", {
         seat: active,
         id,
@@ -517,6 +545,13 @@ export function applyAction(state, action, rng = Math.random) {
       if (!verdict.ok) return refused(state, action, verdict.why);
 
       next.visit.upgrades = (next.visit.upgrades || 0) + 1;
+      recordEntry(next.ledger, {
+        turn: state.turn,
+        seat: active,
+        kind: "upgrade",
+        text: `Upgraded ${landingCell(next)?.name || id} to ${verdict.upgrade.name}`,
+        amount: -verdict.spent,
+      });
       /* The visit stays open: a player may build once and then press Done, and
          the card has to stay on screen to show what happened. */
       ok("upgraded", {
@@ -539,6 +574,13 @@ export function applyAction(state, action, rng = Math.random) {
       const verdict = ledgerSell(next.ledger, id, actor);
       if (!verdict.ok) return refused(state, action, verdict.why);
 
+      recordEntry(next.ledger, {
+        turn: state.turn,
+        seat: actor,
+        kind: "sell",
+        text: `Sold ${CELLS.find((c) => c.id === id)?.name || id}`,
+        amount: verdict.payout,
+      });
       ok("sold", {
         seat: actor,
         id,
@@ -586,6 +628,13 @@ export function applyAction(state, action, rng = Math.random) {
       piece.weapons.push(weapon);
       next.visit.collected = true;
       next.phase = PHASE.RESOLVING;
+      recordEntry(next.ledger, {
+        turn: state.turn,
+        seat: active,
+        kind: "weapon",
+        text: `Drew ${weaponById(weapon)?.name || weapon}`,
+        amount: 0,
+      });
       ok("weaponCollected", {
         seat: active,
         weapon,

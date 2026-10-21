@@ -677,6 +677,91 @@ test("a fresh game's ledger is a real ledger with a sheet for every property", (
   });
 });
 
+/* ------------------------------------------------------- the ledger's history */
+
+test("crossing Start pays a salary and writes it in the ledger first", () => {
+  const before = game();
+  before.pieces[0].position = 26;
+  const { state, events } = take(before, { type: "roll" }, face(4));
+
+  assert.equal(events[0].type, "salary");
+  assert.equal(events[0].amount, 200);
+  assert.equal(events[0].seat, 0);
+  assert.equal(moneyOf(state.ledger, 0), 2200, "the salary arrives before the landing");
+
+  const first = state.ledger.history[0];
+  assert.equal(first.seat, 0);
+  assert.equal(first.kind, "salary");
+  assert.equal(first.text, "Salary · lap complete");
+  assert.equal(first.amount, 200);
+  assert.equal(first.balance, 2200);
+  assert.equal(first.turn, before.turn);
+});
+
+test("the first move out of Start does not pay a salary", () => {
+  const { state, events } = take(game(), { type: "roll" }, face(1));
+  assert.equal(events.some((e) => e.type === "salary"), false);
+  assert.equal(moneyOf(state.ledger, 0), 2000);
+  assert.equal(state.ledger.history.length, 0);
+});
+
+test("buying, upgrading, selling and rent all reach the history", () => {
+  // Buy.
+  let state = take(game(), { type: "roll" }, face(1)).state;
+  state = take(state, { type: "continue" }).state;
+  state = take(state, { type: "buy" }).state;
+  assert.equal(state.ledger.history[0].text, "Bought Moon");
+  assert.equal(state.ledger.history[0].amount, -priceOf("moon"));
+  assert.equal(state.ledger.history[0].balance, moneyOf(state.ledger, 0));
+
+  // Upgrade, on the next visit to a square in a full set.
+  const before = game();
+  buy(before.ledger, "moon", 0);
+  buy(before.ledger, "lagrange-l2", 0);
+  before.pieces[0].position = 0;
+  let own = take(before, { type: "roll" }, face(1)).state;
+  own = take(own, { type: "continue" }).state;
+  own = take(own, { type: "upgrade" }).state;
+  assert.equal(own.ledger.history[0].text, "Upgraded Moon to Lunar Outpost");
+  assert.equal(own.ledger.history[0].amount, -upgradeAt("moon", 0).cost);
+
+  // A sale, written as a positive amount.
+  const seller = game();
+  buy(seller.ledger, "moon", 0);
+  const payout = saleValue(seller.ledger, "moon");
+  const sold = take(seller, { type: "sell", id: "moon" }).state;
+  assert.equal(sold.ledger.history[0].text, "Sold Moon");
+  assert.equal(sold.ledger.history[0].amount, payout);
+  assert.equal(sold.ledger.history[0].balance, moneyOf(sold.ledger, 0));
+
+  // Rent, written once for each side.
+  const rented = game();
+  buy(rented.ledger, "moon", 0);
+  rented.active = 1;
+  rented.turn = 1;
+  const after = take(rented, { type: "roll" }, face(1)).state;
+  const paid = after.ledger.history.find(
+    (e) => e.seat === 1 && e.text.startsWith("Rent paid to"),
+  );
+  const received = after.ledger.history.find(
+    (e) => e.seat === 0 && e.text.startsWith("Rent received from"),
+  );
+  assert.equal(paid.text, "Rent paid to Sam · Moon");
+  assert.equal(paid.amount, -baseRentOf("moon"));
+  assert.equal(received.text, "Rent received from Smith · Moon");
+  assert.equal(received.amount, baseRentOf("moon"));
+});
+
+test("collecting a weapon writes what was drawn", () => {
+  let state = take(game(), { type: "roll" }, face(4)).state;
+  state = take(state, { type: "continue" }).state;
+  state = take(state, { type: "drawWeapon" }, () => 0.15).state;
+  state = take(state, { type: "collectWeapon" }).state;
+  assert.equal(state.ledger.history[0].text, "Drew Antimatter Weapon");
+  assert.equal(state.ledger.history[0].amount, 0);
+  assert.equal(state.ledger.history[0].kind, "weapon");
+});
+
 test("a refused action leaves the sequence number alone", () => {
   const state = game();
   const before = state.seq;

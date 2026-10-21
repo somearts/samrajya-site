@@ -30,6 +30,7 @@
 import { isIdentity, cleanName } from "../shared/identity.js";
 import { isCiv, nameOf } from "../shared/civilizations.js";
 import { applyAction, createGame, restoreGame, serializeGame } from "../shared/game.js";
+import { sheetFor } from "../shared/ledger.js";
 
 /** A refusal the caller can show a person. */
 class Refusal extends Error {
@@ -317,11 +318,18 @@ export class GameRoom {
         if (player) player.money = Math.max(0, Math.trunc(body.money));
       }
       if (body.owner && typeof body.owner === "object") {
-        const sheet = game.ledger.properties.get(String(body.owner.id));
+        const sheet = sheetFor(game.ledger, String(body.owner.id));
         if (sheet) {
           sheet.owner = body.owner.seat ?? null;
           sheet.upgradeLevel = Number.isInteger(body.owner.level) ? body.owner.level : 0;
         }
+      }
+      /* A known set of weapons, so a check about what a chip or a profile shows
+         does not depend on the odds. Refused unless the test hook is on. */
+      if (Array.isArray(body.weapons) && piece) {
+        piece.weapons = body.weapons
+          .filter((id) => typeof id === "string")
+          .slice(0, 6);
       }
       this.room.updatedAt = Date.now();
       await this.#persist();
