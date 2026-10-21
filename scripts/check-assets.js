@@ -945,6 +945,16 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
       "press on the chip would never reach a listener on the board itself",
   );
   check(
+    "a card that stood in for a decision is taken away when that decision is answered",
+    /const cardIsStale = \(\) =>/.test(boardJs) &&
+      /else if \(cardIsStale\(\)\)/.test(boardJs) &&
+      /await dismissCard\(\)/.test(boardJs) &&
+      /!isDecision\(\) && !reading/.test(boardJs),
+    "a card the other screen was showing for their decision must not stand " +
+      "over the next player's dice; a card this screen opened to read is the " +
+      "reader's and stays",
+  );
+  check(
     "the whole chip is one button, and it is what opens the record",
     /el\("button", \{/.test(viewsCode) &&
       /aria-label": `Open \$\{p\.name\}'s profile`/.test(viewsCode) &&

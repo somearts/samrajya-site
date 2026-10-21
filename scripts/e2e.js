@@ -3976,6 +3976,289 @@ try {
   await host.eval("window.__finishVisit()");
   await sleep(300);
 
+  /* --------------------------------- the card and the change of turn ------ */
+
+  heading("THE CARD AND THE CHANGE OF TURN");
+
+  /* What the middle of the board holds, and whether it is in the way of the
+     die. A card that belongs to a decision that has been answered has to go
+     before the next player can throw. */
+  const centreState = (page) =>
+    page.json(`return (() => {
+      const b = document.querySelector(".board");
+      const h = b.querySelector(".board__card");
+      const die = b.querySelector(".board__dice");
+      const r = (n) => { const x = n.getBoundingClientRect();
+        return { left: x.left, top: x.top, right: x.right, bottom: x.bottom }; };
+      const cardBox = h && !h.hidden ? r(h) : null;
+      const dieBox = getComputedStyle(die).display === "none" ? null : r(die);
+      const overlap = cardBox && dieBox
+        ? !(cardBox.right <= dieBox.left || cardBox.left >= dieBox.right ||
+             cardBox.bottom <= dieBox.top || cardBox.top >= dieBox.bottom)
+        : false;
+      return {
+        cardHidden: h ? h.hidden : null,
+        cardKind: h ? h.dataset.cardKind : null,
+        cardMode: h ? h.dataset.mode : null,
+        dieDisplay: getComputedStyle(die).display,
+        rollable: b.dataset.rollable,
+        phase: b.game.phase,
+        active: b.game.active,
+        profile: b.dataset.profile === "true",
+        overlap,
+      };
+    })();`);
+
+  /* Wait until the board is quiet and waiting for a throw. A board that is
+     still animating has no die to give, so measuring it would say nothing. */
+  const settleBoard = (page) =>
+    page.json(`return await (async () => {
+      const b = document.querySelector(".board");
+      for (let i = 0; i < 240; i++) {
+        if (b.dataset.busy !== "true" && b.game.phase === "AWAITING_ROLL") return true;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return false;
+    })();`);
+
+  /* One turn on a seat's own screen, thrown where the test says.
+     A press sent into an animation is dropped, so the board is waited for
+     between the steps, and the landing is checked afterwards: a turn that
+     did not land where it was asked to is not a turn, it is a dropped press. */
+  const TURN = `
+    window.__t = {
+      async quiet() {
+        const b = document.querySelector(".board");
+        for (let i = 0; i < 240; i++) {
+          if (b.dataset.busy !== "true") return true;
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        return false;
+      },
+      async turn(seat, face, expect) {
+        const b = document.querySelector(".board");
+        for (let attempt = 0; attempt < 6; attempt += 1) {
+          await this.quiet();
+          await b.play({ type: "debug", active: seat });
+          await this.quiet();
+          await b.play({ type: "debug", position: 0 });
+          await this.quiet();
+          await b.play({ type: "roll", rng: (face - 0.5) / 6 });
+          await this.quiet();
+          const landing = b.game.landing?.id || "";
+          if (landing === expect) return landing;
+        }
+        return b.game.landing?.id || "";
+      },
+    };`;
+  await host.eval(TURN);
+  await guest.eval(TURN);
+
+  const turnOf = async (page, seat, face, expect) => {
+    const landing = await page.json(
+      `return await window.__t.turn(${seat}, ${face}, ${JSON.stringify(expect)});`,
+    );
+    await sleep(1200);
+    return landing;
+  };
+
+  /* Answer a decision to buy, the way a player does: wait for the card to be
+     the live decision, then press Buy. */
+  const answerBuy = async (page) => {
+    const result = await page.json(`return await (async () => {
+      const b = document.querySelector(".board");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const seen = [];
+      for (let i = 0; i < 240; i++) {
+        const buy = document.querySelector(".property-card__buy");
+        const phase = b.game.phase;
+        const kind = b.game.landing?.kind || "";
+        if (b.dataset.busy !== "true" && phase === "DECISION" && kind === "buy") {
+          if (buy && !buy.disabled) {
+            buy.click();
+            await wait(600);
+            return { pressed: true, phase, kind, after: b.game.phase, afterKind: b.game.landing?.kind || "" };
+          }
+          seen.push("found but disabled");
+        }
+        await wait(50);
+      }
+      return { pressed: false, seen: seen.slice(0, 3), phase: b.game.phase, kind: b.game.landing?.kind || "" };
+    })();`);
+    await sleep(600);
+    return result;
+  };
+
+  // A clean board, with money enough to buy and to be charged.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 120 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", reset: true });
+    for (let i = 0; i < 120 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", money: 2000 });
+    return true;
+  })()`);
+  await guest.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 120 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", money: 2000 });
+    return true;
+  })()`);
+  await sleep(600);
+
+  // The first player lands on a square and is deciding.
+  const hostLanding = await turnOf(host, 0, 2, "lagrange-l2");
+  const hostDeciding = await centreState(host);
+  const guestWatching = await centreState(guest);
+  note("the other screen shows the decision as a read-only card while it is being made",
+    hostLanding === "lagrange-l2" &&
+      hostDeciding.cardHidden === false && hostDeciding.cardMode === "decision" &&
+      guestWatching.cardHidden === false && guestWatching.cardMode === "read" &&
+      guestWatching.cardKind === "property",
+    `landed ${hostLanding}, host ${hostDeciding.cardMode}/${hostDeciding.cardHidden}, ` +
+      `guest ${guestWatching.cardMode}/${guestWatching.cardHidden}`);
+
+  // The first player buys it: the visit is answered and the turn changes hands.
+  const hostBuy = await answerBuy(host);
+  await settleBoard(guest);
+  await settleBoard(host);
+  const afterBuyHost = await centreState(host);
+  const afterBuyGuest = await centreState(guest);
+  note("when the decision is answered, the card goes on both screens",
+    hostBuy.pressed === true &&
+      afterBuyHost.cardHidden === true && afterBuyGuest.cardHidden === true,
+    `buy ${JSON.stringify(hostBuy)}; ` +
+      `host hidden ${afterBuyHost.cardHidden}, guest hidden ${afterBuyGuest.cardHidden}`);
+  note("and the next player starts with a clear middle and a die they can use",
+    afterBuyGuest.cardHidden === true && afterBuyGuest.dieDisplay !== "none" &&
+      afterBuyGuest.rollable === "true" && afterBuyGuest.overlap === false &&
+      afterBuyGuest.active === 1,
+    `die ${afterBuyGuest.dieDisplay}, rollable ${afterBuyGuest.rollable}, ` +
+      `overlap ${afterBuyGuest.overlap}, active ${afterBuyGuest.active}`);
+
+  // The second player takes their turn, and it all happens the other way round.
+  const guestLanding = await turnOf(guest, 1, 1, "moon");
+  const guestDeciding = await centreState(guest);
+  const hostWatching = await centreState(host);
+  note("and the same happens the other way round",
+    guestLanding === "moon" &&
+      guestDeciding.cardHidden === false && guestDeciding.cardMode === "decision" &&
+      hostWatching.cardHidden === false && hostWatching.cardMode === "read",
+    `landed ${guestLanding}, guest ${guestDeciding.cardMode}/${guestDeciding.cardHidden}, ` +
+      `host ${hostWatching.cardMode}/${hostWatching.cardHidden}`);
+
+  await answerBuy(guest);
+  await settleBoard(host);
+  await settleBoard(guest);
+  const backToHost = await centreState(host);
+  note("so the first player is handed back a clear board and a usable die",
+    backToHost.cardHidden === true && backToHost.dieDisplay !== "none" &&
+      backToHost.rollable === "true" && backToHost.overlap === false &&
+      backToHost.active === 0,
+    `card hidden ${backToHost.cardHidden}, die ${backToHost.dieDisplay}, ` +
+      `rollable ${backToHost.rollable}, overlap ${backToHost.overlap}, ` +
+      `active ${backToHost.active}`);
+
+  /* Open and close a player's record, idempotently: a chip is a toggle, and a
+     test that means to open a record must not close one that is already
+     open. */
+  const openRecord = (page, seat) =>
+    page.json(`return await (async () => {
+      const b = document.querySelector(".board");
+      if (b.dataset.profile === "true") return true;
+      document.querySelector('.who[data-seat="${seat}"]').click();
+      await new Promise((r) => setTimeout(r, 250));
+      return b.dataset.profile === "true";
+    })();`);
+  const closeRecord = (page, seat) =>
+    page.json(`return await (async () => {
+      const b = document.querySelector(".board");
+      if (b.dataset.profile !== "true") return true;
+      document.querySelector('.who[data-seat="${seat}"]').click();
+      await new Promise((r) => setTimeout(r, 250));
+      return b.dataset.profile !== "true";
+    })();`);
+
+  /* A turn change while an announcement is waiting must not lose it. */
+  const recordOpened = await openRecord(guest, 1);
+  await sleep(400);
+  const turnChangeLog = guest.json("return await window.__annLog(14000);");
+  const changeLanding = await turnOf(host, 0, 3, "asteroid-belt");
+  await answerBuy(host);
+  await sleep(2600);
+  const duringRecord = await centreState(guest);
+  const recordWasOpen = duringRecord.profile === true;
+  await closeRecord(guest, 1);
+  await sleep(2600);
+  const turnChangeEntries = await turnChangeLog;
+  // Only the sentence this turn caused: the guest's own purchase may still be
+  // on screen when the log starts.
+  const turnChangeSaid = turnChangeEntries.filter(
+    (e) => e.visible && e.label === "ACQUIRED" && e.sub === "\u2212\u20b9300");
+  const afterRecord = await centreState(guest);
+  note("a turn change while an announcement is waiting still delivers it",
+    recordOpened === true &&
+      changeLanding === "asteroid-belt" &&
+      turnChangeSaid.length === 1 &&
+      turnChangeSaid[0].big === "Asteroid Belt",
+    `record opened ${recordOpened}; landed ${changeLanding}; ` +
+      `${turnChangeSaid.length} said: ` +
+      (turnChangeSaid[0] ? `${turnChangeSaid[0].label} ${turnChangeSaid[0].big} ${turnChangeSaid[0].sub}` : ""));
+  note("and the answered decision's card does not come back with the record",
+    recordWasOpen === true &&
+      afterRecord.cardHidden === true && afterRecord.overlap === false &&
+      afterRecord.dieDisplay !== "none",
+    `record open ${recordWasOpen}; after: card hidden ${afterRecord.cardHidden}, ` +
+      `overlap ${afterRecord.overlap}, die ${afterRecord.dieDisplay}`);
+
+  /* --- the other kind of card in the middle: a chest --------------------- */
+
+  // A chest is not a decision about a square, but it stands in the middle the
+  // same way and it has the same life: it is there for the visit and it is
+  // gone when the visit is over.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 200; i++) {
+      if (b.dataset.busy !== "true") break;
+      await wait(50);
+    }
+    await b.play({ type: "debug", active: 0 });
+    await wait(150);
+    await b.play({ type: "debug", position: 0 });
+    await wait(150);
+    // A chest keeps the turn open until the weapon is drawn and collected, so
+    // the roll's promise stays pending; it is not waited for here.
+    b.play({ type: "roll", rng: (4 - 0.5) / 6 }).catch(() => {});
+    return true;
+  })()`);
+  await sleep(2500);
+  const chestUpHost = await centreState(host);
+  const chestUpGuest = await centreState(guest);
+  note("a chest stands in the middle on both screens while the visit is open",
+    chestUpHost.cardKind === "chest" && chestUpGuest.cardKind === "chest" &&
+      chestUpHost.cardHidden === false && chestUpGuest.cardHidden === false,
+    `host ${chestUpHost.cardKind}/${chestUpHost.cardHidden}, ` +
+      `guest ${chestUpGuest.cardKind}/${chestUpGuest.cardHidden}`);
+
+  await host.eval(`window.__drawRng = 0.15; true;`);
+  await host.eval(`document.querySelector('.chest-card [data-action="draw"]')?.click(); true;`);
+  await sleep(2500);
+  await host.eval(`document.querySelector('.chest-card [data-action="collect"]')?.click(); true;`);
+  await sleep(3000);
+  await settleBoard(guest);
+  const chestGone = await centreState(guest);
+  note("and it goes when the visit is over, as the property card does",
+    chestGone.cardHidden === true && chestGone.overlap === false &&
+      chestGone.dieDisplay !== "none" && chestGone.rollable === "true",
+    `card hidden ${chestGone.cardHidden}, overlap ${chestGone.overlap}, ` +
+      `die ${chestGone.dieDisplay}, rollable ${chestGone.rollable}`);
+
+  await host.eval("window.__finishVisit()");
+  await sleep(300);
+
   /* ------------------------------------------- the skip and the quiet mode */
 
   heading("TAP TO SKIP, AND LESS MOTION");

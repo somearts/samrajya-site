@@ -600,6 +600,11 @@ export function board({
         // card. Their own board is the one with the buttons.
         if (game.phase === PHASE.DECISION && !isMyTurn()) {
           await openDecision();
+        } else if (cardIsStale()) {
+          // The decision that card was standing in for has been answered, so
+          // the card goes the same way the answering player's own card goes.
+          // The next player starts with a clear middle and a die they can see.
+          await dismissCard();
         }
       } finally {
         busy = false;
@@ -853,6 +858,20 @@ export function board({
     cardMode = "read";
     frame.dataset.cardMode = "read";
   }
+
+  /**
+   * Is the card on screen standing in for a decision that has been answered?
+   *
+   * Two cards can be on this screen and they do not belong to the same thing.
+   * A card this screen opened for itself to read belongs to the reader: it
+   * stays until they close it. A card that is here because the other player
+   * was making a decision belongs to that decision, and when the decision is
+   * answered the card has to go - or it stands over the next player's dice.
+   *
+   * A read card is the reader's (`reading` is true); a decision card is not.
+   */
+  const cardIsStale = () =>
+    !isDecision() && !reading && Boolean(holder()) && !holder().hidden;
 
   /* ------------------------------------------------------------------ cards */
 
