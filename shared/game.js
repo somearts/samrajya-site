@@ -266,12 +266,12 @@ export function visitOf(game) {
 export function upgradeOffer(game, id) {
   if (!game) return { ok: false, why: "There is no game." };
   if (game.phase !== PHASE.DECISION || game.landing?.kind !== "own") {
-    return { ok: false, why: "Land on this square to build." };
+    return { ok: false, why: "Land on this square to upgrade." };
   }
   if (game.landing.id !== id) return { ok: false, why: "You are not on this square." };
   if (game.visit?.bought) return { ok: false, why: "You bought this square this visit." };
   if ((game.visit?.upgrades || 0) >= 1) {
-    return { ok: false, why: "One build per visit. Land here again to build." };
+    return { ok: false, why: "One upgrade per visit. Land here again to upgrade." };
   }
   return canUpgrade(game.ledger, id, game.active);
 }
@@ -506,7 +506,7 @@ export function applyAction(state, action, rng = Math.random) {
     /* ------------------------------------------------------------ upgrading */
     case "upgrade": {
       if (state.phase !== PHASE.DECISION || state.landing?.kind !== "own") {
-        return refused(state, action, "Land on your own square to build.");
+        return refused(state, action, "Land on your own square to upgrade.");
       }
       if (actor !== active) return refused(state, action, "It is not your turn.");
       const id = state.landing.id;

@@ -267,9 +267,9 @@ export function canUpgrade(ledger, id, seat) {
     return no("Own every colony in this set to unlock upgrades.");
   }
   const upgrade = nextUpgrade(ledger, id);
-  if (!upgrade) return no("This square is built as far as it goes.");
+  if (!upgrade) return no("This square is upgraded as far as it goes.");
   if (player.money < upgrade.cost) {
-    return no(`You need ${upgrade.cost - player.money} more to build this.`);
+    return no(`You need ${upgrade.cost - player.money} more to upgrade this.`);
   }
   return yes({ upgrade });
 }

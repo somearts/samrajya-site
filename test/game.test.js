@@ -45,6 +45,7 @@ import {
   ownerOf,
   payRent,
   saleValue,
+  sell,
   sheetFor,
   upgrade,
 } from "../shared/ledger.js";
@@ -238,7 +239,8 @@ test("a move wraps at the end of the board, and the path is every square it touc
   before.pieces[0].position = 26;
   const { state, events } = take(before, { type: "roll" }, face(4));
   assert.equal(pieceAt(state, 0).position, 2);
-  assert.deepEqual(events[0].path, [26, 27, 0, 1, 2]);
+  // Crossing Start now emits a salary event first, so find the move itself.
+  assert.deepEqual(events.find((e) => e.type === "moved").path, [26, 27, 0, 1, 2]);
 });
 
 test("the game's wrap and the coin layer's wrap cannot disagree", () => {
@@ -337,7 +339,7 @@ test("landing on your own square offers one upgrade this visit", () => {
   assert.equal(state.phase, PHASE.DECISION, "the card stays open for Done");
 
   const again = refuse(state, { type: "upgrade" });
-  assert.equal(again.why, "One build per visit. Land here again to build.");
+  assert.equal(again.why, "One upgrade per visit. Land here again to upgrade.");
   assert.equal(levelOf(state.ledger, "moon"), 1);
 });
 
@@ -371,7 +373,7 @@ test("there is no way to upgrade outside a landing", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
   assert.equal(before.phase, PHASE.AWAITING_ROLL);
-  assert.equal(refuse(before, { type: "upgrade" }).why, "Land on your own square to build.");
+  assert.equal(refuse(before, { type: "upgrade" }).why, "Land on your own square to upgrade.");
   assert.equal(upgradeOffer(before, "moon").ok, false);
   assert.equal(levelOf(before.ledger, "moon"), 0);
 });
@@ -379,12 +381,13 @@ test("there is no way to upgrade outside a landing", () => {
 test("a finished square stays finished", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
+  buy(before.ledger, "lagrange-l2", 0);
   upgrade(before.ledger, "moon", 0);
   upgrade(before.ledger, "moon", 0);
   upgrade(before.ledger, "moon", 0);
   standOn(before, 1, "own");
   before.landing.id = "moon";
-  assert.equal(upgradeOffer(before, "moon").why, "This square is built as far as it goes.");
+  assert.equal(upgradeOffer(before, "moon").why, "This square is upgraded as far as it goes.");
 });
 
 /* ------------------------------------------------------------------ rent */
@@ -414,13 +417,14 @@ test("landing on somebody else's square pays the right rent to the right seat", 
 test("rent follows the upgrade level", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
+  buy(before.ledger, "lagrange-l2", 0);
   upgrade(before.ledger, "moon", 0);
   before.active = 1;
   before.turn = 1;
   const { state } = take(before, { type: "roll" }, face(1));
   assert.equal(
     moneyOf(state.ledger, 0),
-    2000 - priceOf("moon") - upgradeAt("moon", 0).cost + upgradeAt("moon", 0).rentAfter,
+    2000 - priceOf("moon") - priceOf("lagrange-l2") - upgradeAt("moon", 0).cost + upgradeAt("moon", 0).rentAfter,
   );
 });
 
@@ -526,6 +530,7 @@ test("selling returns the square to the bank, clears its builds, and pays", () =
   assert.equal(ENABLE_SELL, true);
   const before = game();
   buy(before.ledger, "moon", 0);
+  buy(before.ledger, "lagrange-l2", 0);
   upgrade(before.ledger, "moon", 0);
   const payout = saleValue(before.ledger, "moon");
   const { state, events } = take(before, { type: "sell", id: "moon" });
