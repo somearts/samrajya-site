@@ -65,6 +65,13 @@ export function announcementLayer(centre) {
 
   let chain = Promise.resolve();
   let skipping = null;
+  /* Announcements that arrived while a profile owned the middle. They are not
+     lost: they wait here and are played the moment the profile closes. */
+  const waiting = [];
+
+  /** Is a profile holding the middle right now? */
+  const profileOpen = () =>
+    centre.closest(".board")?.dataset.profile === "true";
 
   node.addEventListener("pointerdown", (event) => {
     event.preventDefault();
@@ -73,10 +80,13 @@ export function announcementLayer(centre) {
 
   async function play(spec) {
     if (!spec) return;
-    const board = centre.closest(".board");
-    // While a profile is open the middle belongs to the profile. The game is
-    // still moving; the announcement is simply not shown on top of it.
-    if (board?.dataset.profile === "true") return;
+    // A profile is the middle of the board while it is open, and so is the
+    // announcement. They cannot both have it, so the announcement waits for
+    // its turn rather than being shown on top of the profile or thrown away.
+    if (profileOpen()) {
+      waiting.push(spec);
+      return;
+    }
 
     node.className = `board__announce board__announce--${spec.tone || "plain"}`;
     node.style.setProperty("--motif", spec.color || "var(--ink)");
@@ -122,12 +132,28 @@ export function announcementLayer(centre) {
     node,
     show(spec) {
       if (!spec) return Promise.resolve();
+      // A deferred announcement is queued and played later, so the action that
+      // caused it is never held up by it: the game does not wait for the middle.
+      if (profileOpen()) {
+        waiting.push(spec);
+        return Promise.resolve();
+      }
       chain = chain.then(() => play(spec), () => play(spec));
+      return chain;
+    },
+    /** Play everything that was waiting for the middle to be free. */
+    flush() {
+      if (profileOpen() || waiting.length === 0) return Promise.resolve();
+      while (waiting.length) {
+        const spec = waiting.shift();
+        chain = chain.then(() => play(spec), () => play(spec));
+      }
       return chain;
     },
     /** Take the layer away with the board, without leaving a timer behind. */
     hide() {
       skipping?.();
+      waiting.length = 0;
       node.hidden = true;
       node.replaceChildren();
     },

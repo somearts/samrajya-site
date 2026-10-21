@@ -901,6 +901,49 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
     /clipSeq/.test(cardsCode) && cardsCode.includes("`card-${key}-${++clipSeq}`"),
   );
 
+  section("The middle");
+
+  const announceJs = await readFile(join(OUT, "assets", "js", "announcement.js"), "utf8");
+  const profileJs = await readFile(join(OUT, "assets", "js", "profile.js"), "utf8");
+
+  check(
+    "an announcement that arrives while a profile is open waits, and is not dropped",
+    announceJs.includes("waiting.push(spec)") &&
+      announceJs.includes("flush()") &&
+      boardJs.includes("announce.flush()"),
+    "the record owns the middle for as long as it is open; what happened during " +
+      "that time is said afterwards rather than swallowed",
+  );
+  check(
+    "and the game never waits for the middle to be free",
+    /waiting\.push\(spec\);\s*\n\s*return Promise\.resolve\(\);/.test(announceJs),
+    "a deferred announcement resolves at once, so the action that caused it is " +
+      "not held up by it",
+  );
+  check(
+    "the whole chip is one button, and it is what opens the record",
+    /el\("button", \{/.test(viewsCode) &&
+      /aria-label": `Open \$\{p\.name\}'s profile`/.test(viewsCode) &&
+      /onclick: \(\) => theBoard\.toggleProfile\(seat\)/.test(viewsCode),
+    "a chip that is not a button cannot be pressed to open anything",
+  );
+  check(
+    "the record is a grid child of the middle, and it stretches",
+    /grid-area: 1 \/ 1/.test(boardCss) && /place-self: stretch/.test(boardCss),
+  );
+  check(
+    "the record hides the die, the turn line and the card rather than removing them",
+    /\.board\[data-profile="true"\] \.board__dice/.test(boardCss) &&
+      /\.board\[data-profile="true"\] \.board__turn/.test(boardCss) &&
+      /\.board\[data-profile="true"\] \.board__card/.test(boardCss),
+    "so closing the record gives back exactly what was underneath it",
+  );
+  check(
+    "and the record is read from the live game, not from a copy of it",
+    /profilePanel\(\{/.test(boardJs) && /ledger: game\?\.ledger/.test(boardJs) &&
+      profileJs.includes("moneyOf(ledger"),
+  );
+
   section("Nothing secret");
 
   const suspicious = [

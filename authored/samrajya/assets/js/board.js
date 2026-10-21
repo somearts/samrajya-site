@@ -332,6 +332,9 @@ export function board({
     delete frame.dataset.profile;
     delete frame.dataset.profileSeat;
     centreArea.querySelector(".board__profile")?.remove();
+    // Anything that happened while the record was open is said now, in the
+    // order it happened, rather than being swallowed by the record.
+    announce.flush();
   }
 
   function renderProfile() {

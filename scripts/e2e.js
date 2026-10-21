@@ -63,6 +63,28 @@ function heading(title) {
   console.log(`\n${title}`);
 }
 
+/**
+ * How many times an announcement came on screen.
+ *
+ * A sample is not an appearance: the phase can change while a sentence is on
+ * screen, and that is a second sample of the same sentence. What matters is
+ * the layer going from hidden to shown.
+ */
+function appearances(samples, label) {
+  let count = 0;
+  let wasHidden = true;
+  let at = -1;
+  samples.forEach((s, n) => {
+    const visible = !s.hidden && s.label === label;
+    if (visible && wasHidden) {
+      count += 1;
+      if (at < 0) at = n;
+    }
+    wasHidden = s.hidden;
+  });
+  return { count, at };
+}
+
 /* --------------------------------------------------------------- page acts */
 
 const click = (page, text) => page.clickText(text);
@@ -1899,21 +1921,32 @@ try {
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       /* Hand the turn over only when this screen is ready to receive it: a
          debug action sent into a card, a walk or a banner is dropped by the
-         action lock and then silently does nothing. */
+         action lock and then silently does nothing.
+
+         A visit is only answered on the seat that owes it. Finishing a visit
+         from the other seat would wait for a card that is not this screen's
+         to answer, and that wait is long. */
       for (let k = 0; k < 24; k += 1) {
-        if (b.dataset.busy === "true" || b.dataset.reading === "true" ||
-            b.game.phase !== "AWAITING_ROLL") {
+        if (b.dataset.busy === "true") {
+          await wait(100);
+          continue;
+        }
+        if (b.dataset.reading === "true") {
+          b.querySelector(".property-card__close")?.click();
+          await wait(100);
+          continue;
+        }
+        if (b.game.phase === "DECISION" && b.game.active === seat) {
           await window.__finishVisit();
-          await wait(50);
           continue;
         }
         if (b.game.active !== seat) {
           await b.play({ type: "debug", active: seat });
-          await wait(100);
+          await wait(120);
           continue;
         }
         await b.play({ type: "debug", position: 0 });
-        await wait(100);
+        await wait(120);
         return b.game.active;
       }
       return b.game.active;
@@ -3045,12 +3078,13 @@ try {
           phase: b.game.phase,
           kind: b.game.landing?.kind || "",
           active: b.game.active,
+          profile: b.dataset.profile === "true",
           money: b.game.ledger.players.map((p) => p.money),
           rupees: b.querySelectorAll(".board__rupee").length,
         };
         const key = [sample.hidden, sample.label, sample.big, sample.sub,
           sample.cardHidden, sample.phase, sample.kind, sample.active,
-          sample.money.join(",")].join("|");
+          sample.profile, sample.money.join(",")].join("|");
         if (key !== last) {
           out.push(sample);
           last = key;
@@ -3098,7 +3132,7 @@ try {
   const afterSalary = salarySamples.find(
     (s) => salaryEnd && s.t >= salaryEnd.t && !s.cardHidden && s.cardVisible,
   );
-  const salaryRuns = salarySamples.filter((s) => !s.hidden && s.label === "SALARY").length;
+  const salaryRuns = appearances(salarySamples, "SALARY").count;
 
   note("passing Start says SALARY, +₹200 and Lap complete",
     Boolean(salaryFirst) && salaryFirst.big === "+\u20b9200" &&
@@ -3571,6 +3605,8 @@ try {
     samples.filter((s) => !s.hidden && s.label === label);
   const hostRent = rentOn(hostRentSamples, "RENT RECEIVED");
   const guestRent = rentOn(guestRentSamples, "RENT PAID");
+  const hostRentRuns = appearances(hostRentSamples, "RENT RECEIVED").count;
+  const guestRentRuns = appearances(guestRentSamples, "RENT PAID").count;
   const spanOf = (samples, first) => {
     const end = samples.find((s) => first && s.t > first.t && s.hidden);
     return end ? end.t - first.t : -1;
@@ -3585,15 +3621,15 @@ try {
   );
 
   note("the payer is told RENT PAID, with the amount and the holder",
-    guestRent.length === 1 && guestRent[0].big === "\u2212\u20b920" &&
+    guestRentRuns === 1 && guestRent[0].big === "\u2212\u20b920" &&
       guestRent[0].sub === "to Asha \u00b7 Moon" && Boolean(guestRentCard),
     guestRent[0] ? `${guestRent[0].label} ${guestRent[0].big} ${guestRent[0].sub}` : "none");
   note("and the holder is told RENT RECEIVED, with the payer's name",
-    hostRent.length === 1 && hostRent[0].big === "+\u20b920" &&
+    hostRentRuns === 1 && hostRent[0].big === "+\u20b920" &&
       hostRent[0].sub === "from Vikram \u00b7 Moon" && Boolean(hostRentCard),
     hostRent[0] ? `${hostRent[0].label} ${hostRent[0].big} ${hostRent[0].sub}` : "none");
   note("each sentence is said once, for the viewer it belongs to",
-    hostRent.length === 1 && guestRent.length === 1 &&
+    hostRentRuns === 1 && guestRentRuns === 1 &&
       hostRentSpan > 0 && guestRentSpan > 0 &&
       Math.abs(hostRentSpan - guestRentSpan) <= 200 &&
       hostRentSpan >= 1400 && hostRentSpan <= 2300,
@@ -3605,6 +3641,111 @@ try {
 
   await guest.eval(`document.querySelector(".property-card__next")?.click(); true;`);
   await sleep(1800);
+
+  /* ------------------------------------- an announcement waits its turn ---- */
+
+  heading("AN ANNOUNCEMENT WAITS FOR THE PROFILE");
+
+  // The holder's record is open on one screen while the other screen pays rent
+  // on the square that holder owns. Nothing may be lost and nothing may be
+  // shown on top of the record.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", reset: true });
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", owner: { id: "moon", seat: 0, level: 0 } });
+    await b.play({ type: "debug", money: 2000 });
+    await b.play({ type: "debug", active: 1 });
+    await b.play({ type: "debug", position: 0 });
+    b.coins.sync(b.game.pieces);
+    return true;
+  })()`);
+  await guest.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", money: 2000 });
+    await b.play({ type: "debug", position: 0 });
+    return true;
+  })()`);
+  await sleep(500);
+
+  // The holder opens their own record and keeps it open.
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(300);
+  const profileUp = await host.json(`
+    const b = document.querySelector(".board");
+    return { open: Boolean(b.querySelector(".board__profile")),
+             profile: b.dataset.profile === "true" };
+  `);
+
+  const queuedWatch = host.json("return await window.__watchAnnounce(9000);");
+  const guestWatch = guest.json("return await window.__watchAnnounce(9000);");
+
+  // The other player pays rent on the square the holder owns.
+  await guest.eval(`(() => {
+    const b = document.querySelector(".board");
+    (async () => {
+      await window.__finishVisit();
+      await b.play({ type: "debug", active: 1 });
+      await b.play({ type: "debug", position: 0 });
+      await b.play({ type: "roll", rng: (1 - 0.5) / 6 });
+    })();
+    return true;
+  })()`);
+  await sleep(2600);
+
+  const whileOpen = await host.json(`
+    const b = document.querySelector(".board");
+    const n = b.querySelector(".board__announce");
+    return { profile: b.dataset.profile === "true",
+             open: Boolean(b.querySelector(".board__profile")),
+             announceHidden: n ? n.hidden : true,
+             announceText: n ? n.textContent : "" };
+  `);
+
+  // Now the record closes, and the announcement it was holding its turn for
+  // comes out.
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  const queuedSamples = await queuedWatch;
+  const guestSamples = await guestWatch;
+
+  const closedAt = queuedSamples.findIndex((s) => s.profile === false);
+  const saidWhileOpen = queuedSamples.filter(
+    (s) => !s.hidden && s.label === "RENT RECEIVED" && s.profile);
+  const hostSaid = appearances(queuedSamples, "RENT RECEIVED");
+  const guestSaid = appearances(guestSamples, "RENT PAID");
+  const guestSentence = guestSamples.find((s) => !s.hidden && s.label === "RENT PAID");
+
+  note("nothing is said on top of the record, and nothing is lost",
+    profileUp.open && profileUp.profile &&
+      saidWhileOpen.length === 0 &&
+      whileOpen.profile && whileOpen.announceHidden &&
+      hostSaid.count === 1 &&
+      closedAt > -1 && hostSaid.at >= closedAt,
+    `while open: profile ${whileOpen.profile}, layer hidden ${whileOpen.announceHidden}; ` +
+      `${saidWhileOpen.length} said too early, ${hostSaid.count} after the close ` +
+      `(closed at ${closedAt}, said at ${hostSaid.at})`);
+  note("the waiting announcement says the holder's own sentence, once",
+    hostSaid.count === 1 &&
+      queuedSamples[hostSaid.at].big === "+\u20b920" &&
+      queuedSamples[hostSaid.at].sub === "from Vikram \u00b7 Moon",
+    queuedSamples[hostSaid.at]
+      ? `${queuedSamples[hostSaid.at].label} ${queuedSamples[hostSaid.at].big} ${queuedSamples[hostSaid.at].sub}`
+      : "never said");
+  note("and the other screen says its own sentence at the same time, unhindered",
+    guestSaid.count === 1 && guestSentence.big === "\u2212\u20b920" &&
+      guestSentence.sub === "to Asha \u00b7 Moon",
+    guestSentence ? `${guestSentence.label} ${guestSentence.big} ${guestSentence.sub}` : "never said");
+
+  // The payer answers the visit, so the turn is finished and the next section
+  // starts from a board that is waiting rather than mid-decision.
+  await guest.eval(`document.querySelector(".property-card__next")?.click(); true;`);
+  await sleep(1600);
+  await host.eval("window.__finishVisit()");
+  await sleep(300);
 
   /* ------------------------------------------- the skip and the quiet mode */
 
@@ -3660,9 +3801,10 @@ try {
   })()`);
   const redSamples = await redWatch;
   const redSalary = redSamples.filter((s) => !s.hidden && s.label === "SALARY");
+  const redRuns = appearances(redSamples, "SALARY").count;
   const maxRupees = Math.max(...redSamples.map((s) => s.rupees), 0);
   note("a reader who asks for less motion gets the same words and no travel",
-    reduced === true && redSalary.length === 1 && redSalary[0].big === "+\u20b9200" &&
+    reduced === true && redRuns === 1 && redSalary[0].big === "+\u20b9200" &&
       maxRupees === 0,
     `matchMedia ${reduced}; ${redSalary.length} salary; ${maxRupees} coin token(s)`);
   await host.send("Emulation.setEmulatedMedia", {
