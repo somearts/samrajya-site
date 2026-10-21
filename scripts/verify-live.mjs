@@ -245,6 +245,32 @@ for (let turn = 0; turn < 14; turn += 1) {
 console.log("host owns:", hostOwns.join(" ") || "nothing");
 console.log("guest owns:", guestOwns.join(" ") || "nothing");
 
+/* --- the card that stood in for a decision ------------------------------ */
+
+const stale = await guest.json(`return (() => {
+  const b = document.querySelector(".board");
+  const h = b.querySelector(".board__card");
+  const die = b.querySelector(".board__dice");
+  const r = (n) => { const x = n.getBoundingClientRect();
+    return { left: x.left, top: x.top, right: x.right, bottom: x.bottom }; };
+  const cardBox = h && !h.hidden ? r(h) : null;
+  const dieBox = getComputedStyle(die).display === "none" ? null : r(die);
+  const overlap = cardBox && dieBox
+    ? !(cardBox.right <= dieBox.left || cardBox.left >= dieBox.right ||
+         cardBox.bottom <= dieBox.top || cardBox.top >= dieBox.bottom)
+    : false;
+  return {
+    cardHidden: h ? h.hidden : null,
+    cardKind: h ? h.dataset.cardKind : null,
+    dieDisplay: getComputedStyle(die).display,
+    rollable: b.dataset.rollable,
+    overlap,
+    phase: b.game.phase,
+    active: b.game.active,
+  };
+})();`);
+console.log("the other screen after the turn changed hands:", JSON.stringify(stale));
+
 /* --- the record is open while the other screen plays -------------------- */
 
 await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
