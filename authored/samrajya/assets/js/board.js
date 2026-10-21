@@ -51,23 +51,24 @@ import { RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
 import { hideCard, showCard, syncCard } from "./property-card.js";
 import {
   markBoard,
-  rentMessage,
   rentShortMessage,
   syncActive,
   syncPurses,
   toast,
 } from "./economy-ui.js";
 import { turnPill } from "./turn.js";
+import { profilePanel } from "./profile.js";
+import { announcementLayer } from "./announcement.js";
+import { announcementFor } from "./shared/announcements.js";
 import { isPurchasable } from "./shared/properties.js";
 import { ENABLE_SELL, PHASE, restoreGame } from "./shared/game.js";
-import { rupees } from "./shared/economy.js";
+import { coinColor } from "./shared/civilizations.js";
 import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
 import {
   banner,
   cardAway,
+  flyCoins,
   flyRent,
-  lift,
-  passedLabel,
   pipPulse,
   ringDraw,
   shake,
@@ -201,6 +202,15 @@ function plainCell(cell) {
   // A property is a button because it is a place a player can buy, and the card
   // that says so comes up when it is pressed. The handler lives on the board
   // rather than on the cell so that the cell carries no behaviour of its own.
+  const label = nameLines(cell);
+  label.append(
+    el("span", { class: "board__pips", "aria-hidden": "true" }, [
+      el("span", { class: "board__pip", "data-on": "false" }),
+      el("span", { class: "board__pip", "data-on": "false" }),
+      el("span", { class: "board__pip", "data-on": "false" }),
+    ]),
+  );
+
   return el(
     "button",
     {
@@ -214,7 +224,7 @@ function plainCell(cell) {
         style: { backgroundColor: cell.color },
         "aria-hidden": "true",
       }),
-      nameLines(cell),
+      label,
     ],
   );
 }
@@ -278,6 +288,10 @@ export function board({
   const turn = turnPill(players);
   centreArea.append(turn.node);
 
+  // The big announcement lives inside the middle, in the same cell as the die
+  // and the card, and above both. It is created once and reused.
+  const announce = announcementLayer(centreArea);
+
   /* ------------------------------------------------------------- the game */
 
   let game = given;
@@ -304,6 +318,56 @@ export function board({
      in every real game. */
   frame.play = (action, rng) => run(action, { rng });
 
+  /* ------------------------------------------------------------- the profile
+     A chip opens one player's record in the middle. The card and the die are
+     not removed - they are only hidden - so closing the profile gives back
+     exactly what was underneath it, even if the turn moved on while it was
+     open. The profile itself is re-read from the live game on every paint, so
+     its figures are never a photograph of an older turn. */
+  let profileSeat = null;
+
+  function closeProfile() {
+    if (profileSeat === null) return;
+    profileSeat = null;
+    delete frame.dataset.profile;
+    delete frame.dataset.profileSeat;
+    centreArea.querySelector(".board__profile")?.remove();
+  }
+
+  function renderProfile() {
+    if (profileSeat === null) return;
+    const existing = centreArea.querySelector(".board__profile");
+    const top = existing?.scrollTop || 0;
+    const panel = profilePanel({
+      ledger: game?.ledger,
+      game,
+      players,
+      seat: profileSeat,
+      onClose: closeProfile,
+    });
+    if (existing) existing.replaceWith(panel);
+    else centreArea.append(panel);
+    panel.scrollTop = top;
+    frame.dataset.profile = "true";
+    frame.dataset.profileSeat = String(profileSeat);
+  }
+
+  function openProfile(seat) {
+    const wanted = Number(seat);
+    if (!Number.isInteger(wanted)) return;
+    if (profileSeat === wanted) {
+      closeProfile();
+      return;
+    }
+    profileSeat = wanted;
+    renderProfile();
+  }
+
+  frame.openProfile = openProfile;
+  frame.closeProfile = closeProfile;
+  frame.toggleProfile = openProfile;
+
+
   const root = () => frame.closest(".board-screen") || document;
   const holder = () => frame.querySelector(".board__card");
   const cellAt = (id) => frame.querySelector(`.board__cell[data-id="${id}"]`);
@@ -321,6 +385,7 @@ export function board({
     }
     syncCard(frame, context());
     paintPhase();
+    renderProfile();
   };
 
   /**
@@ -542,6 +607,21 @@ export function board({
     })();
   };
 
+  /** The chip for a seat on this screen, or null. */
+  const chip = (seat) => root().querySelector(`.who[data-seat="${Number(seat)}"]`);
+
+  /** The colour of a seat's own coin, for the announcement's motif. */
+  const seatColour = (seat) =>
+    coinColor(game?.ledger?.players?.find((p) => p.seat === Number(seat))?.civ) ||
+    "var(--ink)";
+
+  /** Say what happened, worded for this viewer, or say nothing. */
+  async function say(event) {
+    const spec = announcementFor(event, { viewer: mySeat, ledger: game?.ledger });
+    if (!spec) return;
+    await announce.show({ ...spec, color: seatColour(spec.seat) });
+  }
+
   /** Play the events in the order they happened. */
   async function playEvents(events) {
     for (const event of events) {
@@ -573,13 +653,17 @@ export function board({
           // changes hands on screen at the same moment the money leaves.
           markBoard(frame, game.ledger);
           ringDraw(cellAt(event.id));
-          // Count the purse while the price is lifting, not half a second
-          // later: a "-₹400" floating over a balance that still says the old
-          // figure is two answers to the same question.
+          // Count the purse while the coins are travelling: the balance and
+          // the money are two answers to the same question.
           paint({ animate: true });
-          lift(root(), frame, event.seat, `-${rupees(event.price)}`, { tone: "spend" });
-          toast(frame, `Bought ${event.name}`, { tone: "good" });
-          await wait(560);
+          await Promise.all([
+            say(event),
+            flyCoins(frame, {
+              from: chip(event.seat),
+              to: cellAt(event.id),
+              amount: event.price,
+            }),
+          ]);
           break;
         }
 
@@ -587,31 +671,45 @@ export function board({
           markBoard(frame, game.ledger);
           pipPulse(cellAt(event.id));
           paint({ animate: true });
-          lift(root(), frame, event.seat, `-${rupees(event.cost)}`, { tone: "spend" });
-          toast(frame, `${event.name} built`, { tone: "good" });
-          await wait(420);
+          await say(event);
           break;
         }
 
         case "sold": {
           markBoard(frame, game.ledger);
           paint({ animate: true });
-          lift(root(), frame, event.seat, `+${rupees(event.payout)}`, { tone: "earn" });
-          toast(frame, `Sold for ${rupees(event.payout)}`, { tone: "good" });
-          await wait(320);
+          await Promise.all([
+            say(event),
+            flyCoins(frame, {
+              from: cellAt(event.id),
+              to: chip(event.seat),
+              amount: event.payout,
+            }),
+          ]);
           break;
         }
 
         case "passed": {
-          await passedLabel(root(), frame, event.seat);
+          await say(event);
           break;
         }
 
         case "rentPaid": {
-          await flyRent(root(), frame, event);
           paint({ animate: true });
-          toast(frame, rentMessage(game.ledger, event), { tone: "rent" });
-          await wait(260);
+          await Promise.all([say(event), flyRent(root(), frame, event)]);
+          break;
+        }
+
+        case "salary": {
+          paint({ animate: true });
+          await Promise.all([
+            say(event),
+            flyCoins(frame, {
+              from: cellAt("start"),
+              to: chip(event.seat),
+              amount: event.amount,
+            }),
+          ]);
           break;
         }
 
@@ -619,10 +717,13 @@ export function board({
           // What the payer could actually hand over still flies; the rest is the
           // short, and the notice is the only thing that says the visit was not
           // an ordinary rent. Nothing else happens because of it.
-          if (event.amount > 0) await flyRent(root(), frame, event);
-          paint({ animate: true });
+          if (event.amount > 0) {
+            paint({ animate: true });
+            await Promise.all([say(event), flyRent(root(), frame, event)]);
+          } else {
+            await say(event);
+          }
           toast(frame, rentShortMessage(event), { tone: "refused" });
-          await wait(event.amount > 0 ? 260 : 420);
           break;
         }
 
@@ -808,6 +909,7 @@ export function board({
   // and opens, because the cell's own click runs after this; a decision card
   // has no outside to close it, and ignores this entirely.
   frame.addEventListener("pointerdown", (event) => {
+    if (profileSeat !== null) return;
     if (!reading) return;
     if (event.target.closest?.(".board__card")) return;
     closeRead();
@@ -815,6 +917,10 @@ export function board({
 
   frame.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
+    if (profileSeat !== null) {
+      closeProfile();
+      return;
+    }
     if (!reading) return;
     closeRead();
   });

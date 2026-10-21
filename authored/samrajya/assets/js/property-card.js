@@ -37,7 +37,7 @@ import { el } from "./dom.js";
 import { cardArt } from "./cards.js";
 import { propertyArt } from "./property-art.js";
 import { propertyFor } from "./shared/properties.js";
-import { upgradesOf, rupees, rupeesBare } from "./shared/economy.js";
+import { upgradesOf, rupees } from "./shared/economy.js";
 import {
   MAX_UPGRADE,
   canBuy,
@@ -144,7 +144,7 @@ export function propertyCard(property, ctx) {
       ]),
       el("p", { class: "property-card__price" }, [
         el("span", { "aria-hidden": "true", text: "₹" }),
-        el("span", { text: String(property.price) }),
+        el("span", { text: rupees(property.price).slice(1) }),
       ]),
     ]),
 
@@ -293,7 +293,7 @@ export function syncCard(board, ctx) {
   const status = card.querySelector(".property-card__status");
   status.textContent =
     owner === null
-      ? `Unowned • ${rupeesBare(propertyFor(id).price)}`
+      ? `Unowned • ${rupees(propertyFor(id).price)}`
       : owner === seat
         ? "You own this"
         : `Owned by ${nameOfSeat(ledger, owner)} • Rent ${rupees(rent)}`;
@@ -363,7 +363,7 @@ export function syncCard(board, ctx) {
     // pill two hundred pixels wide, where it wrapped into four ragged lines. It
     // stays, as the button's title, so the reason is still there to be found.
     slot.querySelector(".property-card__buy-cost").textContent = affordable
-      ? rupeesBare(price)
+      ? rupees(price)
       : `${rupees(price - money)} short`;
     button.title = affordable ? `Buy for ${rupees(price)}` : verdict.why;
     button.onclick = () => ctx?.onBuy?.();
@@ -479,7 +479,7 @@ export function syncCard(board, ctx) {
       if (can) button.onclick = () => ctx?.onUpgrade?.(n);
       else button.onclick = null;
 
-      node.querySelector(".build__cost-figure").textContent = String(step.cost);
+      node.querySelector(".build__cost-figure").textContent = rupees(step.cost).slice(1);
     }
   }
 

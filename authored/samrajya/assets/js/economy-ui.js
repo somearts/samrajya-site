@@ -153,6 +153,10 @@ export function markBoard(root, ledger) {
     // beats up to three child nodes per square, which is what keeps repainting
     // all twenty cheap enough to do on every purchase.
     cell.style.setProperty("--pips", level);
+    const pips = cell.querySelectorAll(".board__pip");
+    pips.forEach((pip, n) => {
+      pip.dataset.on = n < level ? "true" : "false";
+    });
   }
 }
 

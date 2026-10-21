@@ -212,8 +212,6 @@ export function chestCard({ drawable = false } = {}) {
           title: "Draw only when you land here",
         }),
 
-    el("p", { class: "chest-card__odds", text: RAGNAROK.oddsCaption }),
-
     el("div", { class: "chest-card__result", hidden: true }),
   ]);
 

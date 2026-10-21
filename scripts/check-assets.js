@@ -429,7 +429,7 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
     "the server has no turn, so two players in one room will not agree on it - which the file says rather than hides",
   );
   check(
-    "the card's type is thirty per cent larger, floors included",
+    "the card's body copy is readable, and the labels stay labels",
     /font-size:\s*max\(11\.05px, calc\(var\(--cell\) \* 0\.1625\)\)/.test(boardCss) &&
       /font-size:\s*max\(12\.35px, calc\(var\(--cell\) \* 0\.208\)\)/.test(boardCss) &&
       /font-size:\s*max\(7\.8px, calc\(var\(--cell\) \* 0\.104\)\)/.test(boardCss) &&
@@ -438,9 +438,9 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
       // the property card - and a count of the whole stylesheet would have
       // failed the moment a second card reused a size, which is the opposite of
       // what the count was for.
-      /\.property-card__description \{[^}]*max\(9\.1px, calc\(var\(--cell\) \* 0\.1235\)\)/.test(boardCss) &&
-      /\.property-card__advantage-text \{[^}]*max\(9\.1px, calc\(var\(--cell\) \* 0\.1235\)\)/.test(boardCss),
-    "the floors bind at the smallest cell, so raising only the multiplier would have changed nothing there",
+      /\.property-card__description \{[^}]*max\(12px, calc\(var\(--cell\) \* 0\.16\)\)/.test(boardCss) &&
+      /\.property-card__advantage-text \{[^}]*max\(12px, calc\(var\(--cell\) \* 0\.16\)\)/.test(boardCss),
+    "body at 12px or more on the smallest phone, with the small caps still the quietest line",
   );
   check(
     "and the matchup is drawn between the two identities",

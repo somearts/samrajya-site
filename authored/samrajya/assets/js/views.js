@@ -553,11 +553,15 @@ export function boardView(state, actions) {
         const money = purseOf(ledger, seat);
         return [
           i > 0 ? el("span", { class: "who__vs", text: "VS" }) : null,
-          el("div", {
+          el("button", {
+            type: "button",
             class: `who${room.seat === seat ? " who--me" : ""}`,
             "data-seat": String(seat),
             "data-civ": p.civ || "",
+            "aria-label": `Open ${p.name}'s profile`,
+            title: `Open ${p.name}'s profile`,
             style: { "--coin": coinColor(p.civ) || "var(--ink)" },
+            onclick: () => theBoard.toggleProfile(seat),
           }, [
             el("span", { class: "who__coin", "aria-hidden": "true" }),
             el("span", { class: "who__name", text: p.name }),

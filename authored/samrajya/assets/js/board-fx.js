@@ -89,31 +89,29 @@ export async function lift(root, board, seat, text, { tone = "spend" } = {}) {
 }
 
 /**
- * Rupee tokens flying from the payer's chip to the holder's, with the two
- * deltas beside them. Both balances count afterwards; that is the board's job,
- * because the figures belong to the ledger.
+ * Rupee tokens flying from one node to another, along a gentle arc.
+ *
+ * Six to eight discs, staggered, over a little under a second. `amount` only
+ * chooses how many - the number itself is said by the announcement, not by a
+ * label on a coin.
  */
-export async function flyRent(root, board, { from, to, amount }) {
-  const payer = chipFor(root, board, from);
-  const holder = chipFor(root, board, to);
-  if (!payer || !holder) return;
+export async function flyCoins(board, { from, to, amount = 0 } = {}) {
+  if (!board || !from || !to) return;
 
-  const start = localTo(board, payer);
-  const end = localTo(board, holder);
+  const start = localTo(board, from);
+  const end = localTo(board, to);
   if (!start || !end) return;
 
+  const count = Math.max(6, Math.min(8, Math.round((Number(amount) || 0) / 80)));
+
   if (prefersStill()) {
-    await Promise.all([
-      lift(root, board, from, `-${rupees(amount)}`, { tone: "spend" }),
-      lift(root, board, to, `+${rupees(amount)}`, { tone: "earn" }),
-    ]);
+    await wait(220);
     return;
   }
 
-  const count = Math.max(3, Math.min(6, Math.round(amount / 120)));
   const tokens = [];
   for (let n = 0; n < count; n += 1) {
-    const token = el("span", { class: "board__rupee", "aria-hidden": "true", text: "₹" });
+    const token = el("span", { class: "board__rupee", "aria-hidden": "true", text: "\u20b9" });
     token.style.left = `${start.left}px`;
     token.style.top = `${start.top}px`;
     board.append(token);
@@ -122,23 +120,32 @@ export async function flyRent(root, board, { from, to, amount }) {
 
   const dx = end.left - start.left;
   const dy = end.top - start.top;
+  // The arc lifts sideways as well as up, alternating a little, so seven coins
+  // do not run along one line like a queue.
+  const bend = Math.max(18, Math.min(52, Math.abs(dx) * 0.18 + Math.abs(dy) * 0.12));
+
   await Promise.all(
     tokens.map((token, n) =>
       token
         .animate(
           [
             { transform: "translate(-50%, -50%) scale(.7)", opacity: 0, offset: 0 },
-            { transform: "translate(-50%, -50%) scale(1)", opacity: 1, offset: 0.12 },
+            { transform: "translate(-50%, -50%) scale(1)", opacity: 1, offset: 0.1 },
             {
-              transform: `translate(calc(-50% + ${dx * 0.55}px), calc(-50% + ${dy * 0.55 - 22}px)) scale(1)`,
+              transform:
+                `translate(calc(-50% + ${dx * 0.55}px), ` +
+                `calc(-50% + ${dy * 0.55 - bend}px)) scale(1)`,
               opacity: 1,
               offset: 0.55,
             },
-            { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.7)`, opacity: 0 },
+            {
+              transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.7)`,
+              opacity: 0,
+            },
           ],
           {
-            duration: 560,
-            delay: n * 40,
+            duration: 660,
+            delay: n * 34,
             easing: "cubic-bezier(.3,.7,.4,1)",
             fill: "forwards",
           },
@@ -147,11 +154,18 @@ export async function flyRent(root, board, { from, to, amount }) {
     ),
   );
   for (const token of tokens) token.remove();
+}
 
-  await Promise.all([
-    lift(root, board, from, `-${rupees(amount)}`, { tone: "spend" }),
-    lift(root, board, to, `+${rupees(amount)}`, { tone: "earn" }),
-  ]);
+/**
+ * Rupee tokens flying from the payer's chip to the holder's, with the two
+ * deltas beside them. Both balances count afterwards; that is the board's job,
+ * because the figures belong to the ledger.
+ */
+export async function flyRent(root, board, { from, to, amount }) {
+  const payer = chipFor(root, board, from);
+  const holder = chipFor(root, board, to);
+  if (!payer || !holder) return;
+  await flyCoins(board, { from: payer, to: holder, amount });
 }
 
 /** The owner's ring drawing itself around a square, clockwise. */

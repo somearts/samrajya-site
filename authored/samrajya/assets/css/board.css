@@ -83,6 +83,13 @@
   --chest-wash: #000000;
   --wash-strength: 7%;
 
+  /* The one destructive action on the board. A clear, calm red rather than a
+     warning red: selling is allowed, reversible only by buying again, and the
+     pill has to be findable without shouting over the set colours. */
+  --sell: #b04338;
+  --sell-deep: #8f332b;
+  --sell-ink: #fffaf4;
+
   /* The air between the property card and the tiles that bound it. A share of
      the cell rather than a fixed number of pixels, so the card floats by the
      same amount at every board size. */
@@ -248,42 +255,38 @@
   pointer-events: none;
 }
 
-/* No pips on a square nobody has built anything on: an unowned square has
-   `--pips: 0`, and zero of anything is simply nothing.
-
-   They live in the TOP RIGHT corner. They used to run along the bottom edge,
-   which was the one strip of the tile the coins did not use - until the coins
-   moved down there. Now the lower strip belongs to the coins, the name owns the
-   middle, and the corner is the only part of a tile left over. */
-.board__cell::before {
-  content: "";
-  position: absolute;
-  right: calc(var(--cell) * 0.07);
-  top: calc(var(--cell) * 0.06);
-  z-index: 2;
-  width: calc(var(--cell) * 0.26);
-  height: max(2px, calc(var(--cell) * 0.026));
-  pointer-events: none;
-
-  /* One mark per build. The stripes are drawn here rather than as child nodes
-     so that twenty squares cost twenty custom properties and nothing else. */
-  background: repeating-linear-gradient(
-    to right,
-    color-mix(in srgb, var(--owner, var(--ink)) 62%, transparent) 0,
-    color-mix(in srgb, var(--owner, var(--ink)) 62%, transparent) calc(var(--cell) * 0.072),
-    transparent calc(var(--cell) * 0.072),
-    transparent calc(var(--cell) * 0.094)
-  );
-  background-size: calc(var(--pips, 0) * var(--cell) * 0.094) 100%;
-  background-repeat: no-repeat;
-  opacity: min(1, var(--pips, 0));
+/* The pips say how far a square is built, and they belong to the name: three
+   marks immediately under it, the first `level` of them filled in the holder's
+   colour and the rest outlined. The old marks sat in the top-right corner,
+   where they were neither read with the name nor clearly owned; under the name
+   they are the third line of the tile and the coin strip keeps the bottom.
+   `--pips` and each mark's `data-on` are written by economy-ui.js, which walks
+   all twenty squares, so building costs one walk rather than three nodes. */
+.board__pips {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: max(2px, calc(var(--cell) * 0.045));
+  margin-top: max(2px, calc(var(--cell) * 0.04));
 }
 
-/* A square with no pips has no ring either, so it is not drawn at all. `opacity`
-   on the element is the cheapest way to say nothing: no width to reserve, no
-   layout to move when the level changes. */
-.board__cell:not([data-owner])::before {
-  content: none;
+.board__pip {
+  width: max(4px, calc(var(--cell) * 0.072));
+  height: max(4px, calc(var(--cell) * 0.072));
+  border: 1px solid var(--owner, currentColor);
+  border-radius: 50%;
+  background: transparent;
+  box-sizing: border-box;
+}
+
+.board__pip[data-on="true"] {
+  background: var(--owner, currentColor);
+}
+
+/* An unowned square has no pips at all, and its name sits exactly where it
+   always did. */
+.board__cell:not([data-owner]) .board__pips {
+  display: none;
 }
 
 /* --------------------------------------------------------------- the coins
@@ -739,9 +742,10 @@
 }
 
 .property-card__name span {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
 }
 
 .property-card__price {
@@ -766,15 +770,15 @@
   align-content: center;
   gap: 0.15em;
   margin: 0;
-  font-size: max(9.1px, calc(var(--cell) * 0.1235));
-  line-height: 1.28;
+  font-size: max(12px, calc(var(--cell) * 0.16));
+  line-height: 1.4;
   color: var(--ink-soft);
 }
 
 .property-card__description span {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .property-card__advantage {
@@ -792,14 +796,11 @@
 }
 
 .property-card__advantage-text {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: block;
+  overflow: visible;
   margin: 0;
-  font-size: max(9.1px, calc(var(--cell) * 0.1235));
-  line-height: 1.28;
+  font-size: max(12px, calc(var(--cell) * 0.16));
+  line-height: 1.4;
   color: var(--ink);
 }
 
@@ -840,18 +841,20 @@
 
 .property-card__status {
   margin: 0;
-  font-size: max(9.1px, calc(var(--cell) * 0.1235));
+  font-size: max(12px, calc(var(--cell) * 0.16));
   font-weight: 500;
-  line-height: 1.2;
+  line-height: 1.35;
   letter-spacing: 0.01em;
   color: var(--ink);
+  font-variant-numeric: tabular-nums;
 }
 
 .property-card__rent {
   margin: 0;
-  font-size: max(8.3px, calc(var(--cell) * 0.1126));
-  line-height: 1.2;
+  font-size: max(11.5px, calc(var(--cell) * 0.15));
+  line-height: 1.35;
   color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
 }
 
 /* The Buy button.
@@ -973,30 +976,40 @@
    element, which is why the build rows carry matching bottom padding: the fade
    has to land on that padding and not on the last button, whether or not there
    is anything to scroll. */
+/* THE CARD OWNS THE MIDDLE
+
+   With the die gone the card has the whole hole in the board, four cells by
+   eight, from the row under the top edge down to the row the Start and Fight
+   squares sit on. It is not a popup floating in a bigger room any more; it is
+   the room. The holder is a three-row grid: the card, the upgrades (which take
+   whatever is left and never push a button out of reach), and the Sell pill,
+   which is pinned to the bottom. When there are no upgrades to show - a rent
+   card - the card itself takes the whole height.
+
+   There is no fade at the bottom. A mask that fades the last line was an
+   apology for content that did not fit, and the answer was to give the card
+   the space instead of hiding the end of it. */
 .board__card[data-card-kind="property"] {
-  height: auto;
-  /* Seven cells and five and a half lines: the middle starts one cell and two
-     lines into the board, the holder one gap further in, and the die's top is
-     eight cells and seven and a half lines down, less half the die. One line
-     short of that, so rounding at another size cannot put it over. */
-  max-height: calc(
-    7 * var(--cell) + 4.5 * var(--hair) - var(--die-half) - var(--card-gap)
-  );
-  --scroll-fade: calc(var(--cell) * 0.26);
-  overflow-y: auto;
+  left: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
+  top: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
+  width: calc(var(--cell) * 4 + var(--hair) * 3 - var(--card-gap) * 2);
+  height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+  max-height: none;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  overflow: hidden;
   overscroll-behavior: contain;
-  scrollbar-width: none;
-  /* An opacity stencil, not a colour: black is fully shown, transparent is not. */
-  -webkit-mask-image: linear-gradient(
-    to bottom,
-    #000 calc(100% - var(--scroll-fade)),
-    transparent
-  );
-  mask-image: linear-gradient(
-    to bottom,
-    #000 calc(100% - var(--scroll-fade)),
-    transparent
-  );
+}
+
+/* A rent card has neither upgrades nor Sell, so the card is the only row and
+   stretches to the full height. */
+.board__card[data-card-kind="property"][data-decision="rent"] {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.board__card[hidden] {
+  display: none;
 }
 
 .board__card[data-card-kind="property"]::-webkit-scrollbar {
@@ -1004,33 +1017,24 @@
 }
 
 .board__card[data-card-kind="property"] .property-card {
-  /* Three rows at its shortest, and taller when it has to be. The holder around
-     it grows and scrolls; the board never does. */
   height: auto;
-  min-height: calc(var(--cell) * 3 + var(--hair) * 2 - var(--card-gap) * 2);
-
-  /* The row gap stops being a percentage here, and that is the whole reason the
-     Buy button used to hang out of the bottom of the card.
-
-     A percentage row gap resolves against the height of the grid's content box.
-     On a card with a fixed height that is a number, and 4% was a number. On a
-     card that sizes itself to its contents the height is not known while the
-     rows are being measured, so the gaps measure as nothing and the rows take
-     the whole height - and then the gaps are charged afterwards, on top, and
-     push the last row past the bottom edge. Which is exactly what a half-drawn
-     Buy button looks like.
-
-     A gap in cells is the same air at every size and can be known up front. The
-     column gap stays a percentage, because the width is never in doubt. */
-  row-gap: calc(var(--cell) * 0.1);
+  min-height: 0;
+  row-gap: 12px;
   column-gap: 4%;
 }
 
-/* Room under the last build for the fade to fall on. Invisible when it is not
-   needed, and the difference between a button that fades at the end of a scroll
-   and one that does not. */
+/* The upgrades get the leftover height between the card and the Sell pill. They
+   scroll inside themselves rather than moving the two controls that must always
+   be reachable. */
 .board__card[data-card-kind="property"] .builds {
-  padding-bottom: var(--scroll-fade);
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.board__card[data-card-kind="property"] .builds::-webkit-scrollbar {
+  display: none;
 }
 
 /* THE THREE BUILDS
@@ -1301,19 +1305,24 @@
 }
 
 /* The three faces. Portrait, because a playing card is taller than it is wide,
-   and they sit in one row because three is what there are. */
+   and they sit in one row because three is what there are. Every column is the
+   same fraction of the card so no slot can be wider than another, and every
+   slot has the same aspect ratio and the same fixed label area, so the three
+   are identical whatever their weapon is called. */
 .chest-card__slots {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: calc(var(--cell) * 0.07);
 }
 
 .chest-card__slot {
   position: relative;
   display: grid;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   gap: calc(var(--cell) * 0.04);
-  aspect-ratio: 5 / 6.4;
+  min-width: 0;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
   padding: calc(var(--cell) * 0.05);
   border-radius: 6px;
   background: var(--card-inset);
@@ -1361,6 +1370,10 @@
 }
 
 .chest-card__slot-name {
+  display: grid;
+  place-items: center;
+  height: 2.36em;
+  overflow: hidden;
   font-size: max(8.6px, calc(var(--cell) * 0.1144));
   letter-spacing: 0.02em;
   line-height: 1.18;
@@ -1378,14 +1391,12 @@
   display: none;
 }
 
-/* The drawn one is face up, centred, and smaller than the two that are gone -
-   not because it matters less, but because the answer is what the card is for
-   now and the card needs room to say it. */
+/* The drawn one keeps its column's width and its own aspect ratio. Moving it to
+   the middle column centres the answer; changing its size would make the one
+   card the player is reading a different object from the three they chose
+   between. */
 .chest-card__slot.is-drawn {
-  grid-column: 1 / -1;
-  aspect-ratio: 5 / 4.4;
-  justify-self: center;
-  width: 46%;
+  grid-column: 2;
 }
 
 /* ONCE THE DRAW IS ANSWERED, the card stops explaining itself.
@@ -1396,11 +1407,9 @@
    answer and the button, and that fits. */
 .chest-card[data-phase="revealed"] .chest-card__tagline,
 .chest-card[data-phase="revealed"] .chest-card__body,
-.chest-card[data-phase="revealed"] .chest-card__odds,
 .chest-card[data-phase="revealed"] .chest-card__draw,
 .chest-card[data-phase="bad-luck"] .chest-card__tagline,
 .chest-card[data-phase="bad-luck"] .chest-card__body,
-.chest-card[data-phase="bad-luck"] .chest-card__odds,
 .chest-card[data-phase="bad-luck"] .chest-card__draw {
   display: none;
 }
@@ -1455,14 +1464,6 @@
   border-color: color-mix(in srgb, var(--weapon) 70%, #121110);
   color: color-mix(in srgb, var(--weapon) 62%, #121110);
   margin-top: calc(var(--cell) * 0.04);
-}
-
-.chest-card__odds {
-  margin: 0;
-  font-size: max(9.4px, calc(var(--cell) * 0.1248));
-  letter-spacing: 0.04em;
-  text-align: center;
-  color: var(--ink-soft);
 }
 
 .chest-card__result {
@@ -1950,18 +1951,24 @@ button.board__cell--chest:focus-visible {
     transform 250ms ease-out;
 }
 
-.board[data-rollable="false"] .board__dice {
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(0.82);
-  pointer-events: none;
-}
-
 .board[data-rollable="false"] .board__turn {
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.94);
 }
 
+/* A hidden die is GONE, not transparent. An invisible box the size of the die
+   still reserves the middle's centre and still catches a thumb; `display:none`
+   removes it from both. The one exception is the throw itself: the state has
+   already left AWAITING_ROLL while the coin is walking, and the die has to stay
+   up for the length of its own throw. */
+.board[data-rollable="false"]:not([data-throwing="true"]) .board__dice,
+.board[data-reading="true"]:not([data-throwing="true"]) .board__dice,
+.board[data-profile="true"] .board__dice {
+  display: none;
+}
+
 .board[data-throwing="true"] .board__dice {
+  display: block;
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
   pointer-events: none;
@@ -1969,9 +1976,21 @@ button.board__cell--chest:focus-visible {
 
 /* The read-only card owns the middle while it is up, and the die waits at the
    edge of the board rather than being pressed through the card. */
-.board[data-reading="true"] .board__dice,
 .board[data-reading="true"] .board__turn {
   opacity: 0;
+  pointer-events: none;
+}
+
+/* The profile replaces the whole middle: no die, no turn line, no card. The card
+   and the die are hidden rather than removed, so closing the profile restores
+   exactly what was underneath - including a decision that arrived while it was
+   open. */
+.board[data-profile="true"] .board__turn {
+  display: none;
+}
+
+.board[data-profile="true"] .board__card {
+  visibility: hidden;
   pointer-events: none;
 }
 
@@ -1994,8 +2013,8 @@ button.board__cell--chest:focus-visible {
   left: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
   top: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
   width: calc(var(--cell) * 4 + var(--hair) * 3 - var(--card-gap) * 2);
-  height: calc(var(--cell) * 8 + var(--hair) * 9 - var(--card-gap) * 2);
-  max-height: calc(var(--cell) * 8 + var(--hair) * 9 - var(--card-gap) * 2);
+  height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+  max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
   overflow: hidden;
   overscroll-behavior: contain;
   /* No fade: there is nothing below to scroll to. A mask here would dim the
@@ -2038,13 +2057,9 @@ button.board__cell--chest:focus-visible {
   padding-top: 0;
 }
 
-/* The advantage keeps one line in a decision. Two are still in the data, and
-   the full card shows both; this is the one place where the rectangle is fixed
-   and the prose has to give way rather than push a button off the edge. */
-.board__card[data-mode="decision"] .property-card__advantage-text {
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
-}
+/* The advantage keeps its whole text on a decision too. The card has the whole
+   middle now; there is no fixed three-row rectangle whose edge has to slice a
+   sentence, so the words are allowed to finish. */
 
 .board__card[data-mode="decision"] .property-card__advantage {
   padding-top: 3%;
@@ -2137,40 +2152,50 @@ button.board__cell--chest:focus-visible {
 
 /* --------------------------------------------------------------- the sell pill
 
-   The quietest control on the board. It is not part of a turn and it should not
-   look like it is: a line of small caps under the builds, with a hairline above
-   it, and no fill at all. The confirm step is the label changing, not a second
-   button appearing, so the card never moves under the finger that is using it. */
+   A real pill, in the board's one calm red, with the amount in the label rather
+   than in a question that appears afterwards. It is the only destructive action
+   in the game, and it is allowed to be findable: a hairline of small caps that
+   a player has to hunt for was hiding a decision rather than making it quiet.
+   The confirm step is still the label changing, so the button never moves under
+   the finger that is using it. */
 
 .property-card__sell {
-  display: block;
-  width: 100%;
-  margin-top: calc(var(--cell) * 0.075);
-  padding: calc(var(--cell) * 0.06) 0.6em calc(var(--cell) * 0.02);
-  border: 0;
-  border-top: 1px solid rgb(18 17 16 / 0.09);
-  background: none;
-  font-size: max(8px, calc(var(--cell) * 0.108));
+  justify-self: center;
+  align-self: end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45em;
+  min-height: 30px;
+  padding: 6px 16px;
+  border: 1px solid var(--sell);
+  border-radius: 999px;
+  background: var(--sell);
+  font-size: 11.5px;
   font-weight: 500;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
+  line-height: 1;
   text-transform: uppercase;
-  text-align: center;
-  color: var(--ink-soft);
+  white-space: nowrap;
+  color: var(--sell-ink);
   cursor: pointer;
   pointer-events: auto;
+  transition: background 140ms ease-out, border-color 140ms ease-out;
 }
 
 .property-card__sell:hover {
-  color: var(--ink);
+  background: var(--sell-deep);
+  border-color: var(--sell-deep);
 }
 
 .property-card__sell[data-armed="true"] {
-  color: var(--ink);
+  background: var(--sell-deep);
+  border-color: var(--sell-deep);
 }
 
 .property-card__sell:focus-visible {
   outline: 2px solid var(--ink);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
 
 .property-card__sell[hidden] {
@@ -2220,6 +2245,23 @@ button.board__cell--chest:focus-visible {
   border-radius: 3px;
   flex: 1 1 0;
   min-width: 0;
+  /* A real button, because the whole chip is the way into that player's
+     profile. The reset keeps it looking exactly as it did as a div. */
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.who:hover {
+  background: color-mix(in srgb, var(--coin, var(--ink)) 5%, transparent);
+}
+
+.who:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
 }
 
 .who__coin {
@@ -2455,6 +2497,460 @@ button.board__cell--chest:focus-visible {
   0%   { box-shadow: inset 0 0 0 rgb(0 0 0 / 0); }
   45%  { box-shadow: inset 0 0 calc(var(--cell) * 0.3) rgb(0 0 0 / 0.32); }
   100% { box-shadow: inset 0 0 calc(var(--cell) * 0.18) rgb(0 0 0 / 0.26); }
+}
+
+/* ============================================================== the profile
+
+   One player's record, in the same cell as the die and the card and above
+   both. It is a scrolling sheet with the scrollbar hidden: the middle of the
+   board is the one place a strip of browser chrome would be worse than no
+   affordance. Everything inside uses the same 4px spacing scale, the same
+   hairline and the same soft shadow as the property card. */
+
+.board__profile {
+  grid-area: 1 / 1;
+  place-self: stretch;
+  position: relative;
+  z-index: 20;
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: 16px;
+  border-radius: 10px;
+  background: var(--cell-ground);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.7) inset,
+    0 2px 10px rgb(18 17 16 / 0.13);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+.board__profile::-webkit-scrollbar {
+  display: none;
+}
+
+.profile__head {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile__coin {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--coin, var(--ink));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--coin, var(--ink)) 55%, white),
+    0 1px 2px rgb(18 17 16 / 0.22);
+}
+
+.profile__name {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  overflow-wrap: anywhere;
+}
+
+.profile__civ {
+  margin: 2px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.profile__close {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgb(18 17 16 / 0.16);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--cell-ground) 88%, transparent);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.profile__close:hover {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--ink) 34%, transparent);
+}
+
+.profile__close:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+.profile__money {
+  margin-top: 12px;
+}
+
+.profile__cash {
+  margin: 0;
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile__worth {
+  margin: 4px 0 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.profile__section {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgb(18 17 16 / 0.09);
+}
+
+.profile__section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.profile__label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.profile__count {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  text-align: right;
+}
+
+.profile__empty {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.profile-set + .profile-set {
+  margin-top: 12px;
+}
+
+.profile-set__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.profile-set__pill {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.profile-set__label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.profile-set__badge {
+  margin-left: auto;
+  padding: 2px 6px;
+  border: 1px solid rgb(18 17 16 / 0.14);
+  border-radius: 999px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.profile-set__badge--full {
+  border-color: color-mix(in srgb, var(--ink) 42%, transparent);
+  color: var(--ink);
+}
+
+.profile-colony {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid rgb(18 17 16 / 0.06);
+}
+
+.profile-colony__pill {
+  width: 10px;
+  height: 4px;
+  border-radius: 999px;
+}
+
+.profile-colony__name {
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.profile-colony__rent {
+  font-size: 12px;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.profile-pips {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.profile-pip {
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--ink-soft);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.profile-pip[data-on="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.profile-weapons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 8px;
+}
+
+.profile-weapon {
+  display: grid;
+  grid-template-rows: auto 4px auto auto 1fr;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgb(18 17 16 / 0.08);
+  border-radius: 6px;
+  background: var(--card-inset);
+}
+
+.profile-weapon__face {
+  display: grid;
+  place-items: center;
+  height: 42px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--weapon, var(--ink)) 10%, var(--card-inset));
+}
+
+.profile-weapon__emblem {
+  width: 28px;
+  height: 35px;
+}
+
+.profile-weapon__emblem .chest-card__emblem {
+  width: 100%;
+  height: 100%;
+}
+
+.profile-weapon__pill {
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--weapon, var(--ink));
+}
+
+.profile-weapon__name {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.profile-weapon__reach {
+  margin: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.profile-weapon__targets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  align-content: start;
+}
+
+.profile-weapon__target {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.profile-ledger__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid rgb(18 17 16 / 0.06);
+}
+
+.profile-ledger__row:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.profile-ledger__turn {
+  font-size: 10px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.profile-ledger__text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.profile-ledger__money {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-ledger__amount {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.profile-ledger__balance {
+  display: block;
+  margin-top: 1px;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* ========================================================== the announcement
+
+   One layer, the whole middle, one thing at a time. The label is the quiet
+   line, the amount or the name is the loud one, and the sub-line says who or
+   what. The motif is a soft disc in the acting player's own coin colour - the
+   same colour as their chip, their coin and their owner's ring. */
+
+.board__announce {
+  grid-area: 1 / 1;
+  place-self: stretch;
+  position: relative;
+  z-index: 40;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--centre-ground) 92%, var(--motif, var(--ink)));
+  text-align: center;
+  cursor: pointer;
+}
+
+.board__announce[hidden] {
+  display: none;
+}
+
+.announce__motif {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(58%, 150px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--motif, var(--ink)) 16%, transparent) 0%,
+    transparent 70%
+  );
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.announce__label {
+  position: relative;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.announce__big {
+  position: relative;
+  margin: 0;
+  max-width: 100%;
+  font-size: 44px;
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.announce__sub {
+  position: relative;
+  margin: 0;
+  max-width: 100%;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 370px) {
+  .announce__big {
+    font-size: 38px;
+  }
+
+  .profile__cash {
+    font-size: 32px;
+  }
 }
 
 /* The gentle refusal. A pill that cannot do what it was pressed for shakes
