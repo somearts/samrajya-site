@@ -87,6 +87,63 @@ const waitRollable = (page) =>
     return false;
   `);
 
+/* Wait until the board is not busy: a press sent into an animation is
+   dropped, and the press would simply never happen. */
+const waitIdle = (page) =>
+  page.json(`
+    const b = document.querySelector(".board");
+    for (let i = 0; i < 200; i++) {
+      if (b.dataset.busy !== "true") return true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return false;
+  `);
+
+/* Answer whatever the turn put on this screen: a buy, a chest, a pass. */
+const answerVisit = async (page) => {
+  for (let round = 0; round < 6; round += 1) {
+    await waitIdle(page);
+    const state = await page.json(`return {
+      kind: document.querySelector(".board").game.landing?.kind || "",
+      phase: document.querySelector(".board").game.phase,
+      chest: Boolean(document.querySelector(".chest-card")),
+      buy: Boolean(document.querySelector(".property-card__buy:not([hidden])")),
+      next: Boolean(document.querySelector(".property-card__next:not([hidden])")),
+    };`);
+    if (state.kind === "buy" && state.buy) {
+      await page.eval(`(() => {
+        const buy = document.querySelector(".property-card__buy");
+        if (buy && !buy.disabled) buy.click();
+        return true;
+      })()`);
+      await sleep(900);
+      continue;
+    }
+    if (state.chest) {
+      await page.eval(`(() => {
+        const draw = document.querySelector('.chest-card [data-action="draw"]');
+        const collect = document.querySelector('.chest-card [data-action="collect"]');
+        if (draw && !draw.disabled) draw.click();
+        else if (collect && !collect.disabled) collect.click();
+        return true;
+      })()`);
+      await sleep(900);
+      continue;
+    }
+    if (state.next) {
+      await page.eval(`(() => {
+        const next = document.querySelector(".property-card__next");
+        if (next && !next.hidden && getComputedStyle(next).display !== "none") next.click();
+        return true;
+      })()`);
+      await sleep(900);
+      continue;
+    }
+    break;
+  }
+  await waitIdle(page);
+};
+
 /* One real turn: throw, answer whatever it put up, and hand the turn on. */
 const playTurn = async (page) => {
   const ready = await waitRollable(page);
@@ -105,22 +162,7 @@ const playTurn = async (page) => {
     }
     return true;
   `);
-  // Buy if the card offers it, then answer the visit.
-  const kind = await page.json(`return document.querySelector(".board").game.landing?.kind || "";`);
-  if (kind === "buy") {
-    await page.eval(`(() => {
-      const buy = document.querySelector(".property-card__buy");
-      if (buy && !buy.disabled) buy.click();
-      return true;
-    })()`);
-    await sleep(900);
-  }
-  await page.eval(`(() => {
-    const next = document.querySelector(".property-card__next");
-    if (next && !next.hidden && getComputedStyle(next).display !== "none") next.click();
-    return true;
-  })()`);
-  await sleep(1200);
+  await answerVisit(page);
   const state = await page.json(`return {
     landing: document.querySelector(".board").game.landing?.id || "",
     kind: document.querySelector(".board").game.landing?.kind || "",
@@ -214,12 +256,22 @@ const recordOpen = await guest.json(`return {
 };`);
 console.log("the guest's record:", JSON.stringify(recordOpen));
 
-const guestLog = guest.json("return await window.__annLog(20000);");
-const hostLog = host.json("return await window.__annLog(20000);");
+const guestLog = guest.json("return await window.__annLog(60000);");
+const hostLog = host.json("return await window.__annLog(60000);");
+await guest.eval(`(() => {
+  const b = document.querySelector(".board");
+  window.__snaps = [];
+  const orig = b.applySnapshot.bind(b);
+  b.applySnapshot = (s) => {
+    window.__snaps.push({ seq: s?.state?.seq, events: (s?.events || []).map((e) => e.type) });
+    return orig(s);
+  };
+  return true;
+})()`);
 
 // The host plays until something is announced while the guest's record is open.
 let queued = [];
-for (let turn = 0; turn < 12; turn += 1) {
+for (let turn = 0; turn < 8; turn += 1) {
   const whoseTurn = await host.json(`return document.querySelector(".board").game.active;`);
   const page = whoseTurn === 0 ? host : guest;
   const played = await playTurn(page);
@@ -227,9 +279,19 @@ for (let turn = 0; turn < 12; turn += 1) {
     visible: !document.querySelector(".board__announce").hidden,
     text: document.querySelector(".board__announce").textContent,
     profile: document.querySelector(".board").dataset.profile === "true",
+    seq: document.querySelector(".board").game.seq,
+    phase: document.querySelector(".board").game.phase,
+    turn: document.querySelector(".board__turn").textContent,
+  };`);
+  const hostSeen = await host.json(`return {
+    seq: document.querySelector(".board").game.seq,
+    phase: document.querySelector(".board").game.phase,
+    turn: document.querySelector(".board__turn").textContent,
   };`);
   console.log(`turn ${turn}: seat ${whoseTurn} rolled ${played.landing || "nothing"}`,
-    `guest layer visible ${said.visible}`);
+    `guest layer visible ${said.visible}`,
+    `| host seq ${hostSeen.seq} ${hostSeen.phase} "${hostSeen.turn}"`,
+    `| guest seq ${said.seq} ${said.phase} "${said.turn}"`);
   if (said.visible) { queued.push(said.text); break; }
   if (played.kind === "rent" || played.kind === "buy") {
     // the host bought or was charged: an announcement is on its way
@@ -255,6 +317,17 @@ const afterEscape = await guest.json(`return {
 };`);
 console.log("after Escape:", JSON.stringify(afterEscape));
 
+// Watch the layer directly for a few seconds: what the record was holding.
+for (let i = 0; i < 14; i += 1) {
+  await sleep(500);
+  const now = await guest.json(`return {
+    hidden: document.querySelector(".board__announce").hidden,
+    text: document.querySelector(".board__announce").textContent,
+  };`);
+  console.log(`  +${((i + 1) * 0.5).toFixed(1)}s`, JSON.stringify(now));
+  if (!now.hidden && now.text) break;
+}
+
 await sleep(6000);
 const guestEntries = await guestLog;
 const hostEntries = await hostLog;
@@ -270,6 +343,7 @@ console.log("  said while the record was open:", saidWhileOpen.length);
 console.log("  said after it closed:", saidAfter.length,
   saidAfter.map((e) => `${e.label} ${e.big} ${e.sub}`).join(" | "));
 console.log("  the record closed on Escape:", !afterEscape.open);
+console.log("  guest snapshots:", JSON.stringify(await guest.json("return window.__snaps;")));
 
 await host.close();
 await guest.close();
