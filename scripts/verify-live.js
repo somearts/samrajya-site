@@ -268,8 +268,6 @@ async function main() {
         createKey,
         name: "Asha",
         civ: "indus-valley",
-        guestName: "Vikram",
-        guestCiv: "mesopotamian",
       }),
     ),
   );
@@ -307,7 +305,7 @@ async function main() {
   );
   check("and it is a different room", second.body?.roomId !== codes[0], `${codes[0]} vs ${second.body?.roomId}`);
 
-  const missingRoom = await api(host, "/rooms/zzzzzzzz");
+  const missingRoom = await api(host, "/rooms/0000");
   check(
     "a room that does not exist is refused",
     missingRoom.status === 404,
@@ -321,9 +319,18 @@ async function main() {
   const body = created.body;
   if (body?.roomId) {
     const code = body.roomId;
-    check("the room id has the right shape", /^[a-z2-9]{8}$/.test(code), code);
+    check("the room id is four digits", /^[1-9][0-9]{3}$/.test(code), code);
     check("the creator holds seat 1", body.seat === 0, `seat ${body.seat}`);
-    check("the second player is reserved, not seated", body.players?.[1]?.joined === false, said(created));
+    check(
+    "the second player is reserved, not seated",
+    body.players?.[1]?.joined === false,
+    said(created),
+  );
+  check(
+    "and the lobby seats nobody in it, because they fill it in themselves",
+    body.players?.[1]?.name === null && body.players?.[1]?.civ === null,
+    JSON.stringify(body.players?.[1]),
+  );
     check("no board is invented", body.board === null, JSON.stringify(body.board));
 
     const readBack = await api(host, `/rooms/${code}`);
@@ -335,6 +342,17 @@ async function main() {
       "a share link serves the game",
       link.ok && linkHtml.includes("Samrajya Kalchakra"),
       `status ${link.status}`,
+    );
+
+    // The same link in its other shape. A number in the path is read out of the
+    // address by the page, so the Worker has to serve the game for it rather
+    // than answer with a 404.
+    const path = await get(`${GAME}/${code}`);
+    const pathHtml = authorContent(await path.text());
+    check(
+      "and so does the same number in the path",
+      path.ok && pathHtml.includes("Samrajya Kalchakra"),
+      `status ${path.status}`,
     );
 
     // The rules the two setup screens lean on, tried in the order a player
@@ -376,6 +394,26 @@ async function main() {
     const third = await api(stranger, `/rooms/${code}/join`, "POST", { name: "Third", civ: "aztec" });
     check("a third player is refused", third.status === 409 && third.body?.code === "ROOM_FULL", said(third));
 
+    // Four digits are typed by hand, so a number nobody is sitting at is an
+    // ordinary mistake. It must say so, not fail at the far end. A few
+    // candidates, because any one of them could in principle be a live table.
+    let nowhere = null;
+    for (const empty of ["1000", "2000", "3000"]) {
+      const attempt = await api(stranger, `/rooms/${empty}/join`, "POST", {
+        name: "Third",
+        civ: "aztec",
+      });
+      if (attempt.status === 404) {
+        nowhere = attempt;
+        break;
+      }
+    }
+    check(
+      "a number nobody is sitting at says so",
+      nowhere?.status === 404 && nowhere?.body?.code === "NO_ROOM",
+      said(nowhere || {}),
+    );
+
     const peek = await api(stranger, `/rooms/${code}`);
     check(
       "a stranger can read the room but holds no seat",
@@ -395,7 +433,7 @@ async function main() {
   );
   check(
     "the live endpoint refuses a room that does not exist",
-    (await api(identity(), "/rooms/zzzzzzzz/live")).status === 404,
+    (await api(identity(), "/rooms/0000/live")).status === 404,
     "not a socket to begin with, but the room is gone either way",
   );
 
@@ -407,8 +445,6 @@ async function main() {
       createKey: identity(),
       name: "Watcher",
       civ: "indus-valley",
-      guestName: "Joiner",
-      guestCiv: "aztec",
     });
     liveCode = live.body?.roomId || null;
     check("a fresh room for the live channel", live.status === 200 && !!liveCode, said(live));
@@ -433,7 +469,7 @@ async function main() {
       `seat ${onConnect?.room?.seat}`,
     );
     check(
-      "and the second seat is still only reserved",
+      "and the second seat is still an empty chair",
       onConnect?.room?.players?.[1]?.joined === false,
       JSON.stringify(onConnect?.room?.players?.[1]),
     );

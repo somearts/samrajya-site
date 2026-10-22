@@ -293,6 +293,116 @@ async function main() {
 
   /* ------------------------------------------------------------ the geometry */
 
+  /* ------------------------------------------------------------- the way in */
+  section("The way in");
+
+  const appCode = await readFile(join(OUT, "assets", "js", "app.js"), "utf8");
+  const sessionCode = await readFile(join(OUT, "assets", "js", "session.js"), "utf8");
+  const identityCode = await readFile(join(OUT, "assets", "js", "shared", "identity.js"), "utf8");
+  const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
+  const workerCode = await readFile(join(PROJECT, "src", "index.js"), "utf8");
+  const roomSource = await readFile(join(PROJECT, "src", "room.js"), "utf8");
+  const screenCss = await readFile(join(OUT, "assets", "css", "kalchakra.css"), "utf8");
+
+  check(
+    "the create form asks for one player only",
+    viewsCode.includes('step: "1 of 1"') &&
+      !viewsCode.includes("guestName") &&
+      !viewsCode.includes("Player 2 - "),
+    "the second seat is filled in by the second player, on their own device",
+  );
+  check(
+    "and nobody is asked to describe their opponent",
+    !/their name|their civilization/i.test(viewsCode),
+  );
+  check(
+    "every civilization choice shows the colour its coin is drawn in",
+    viewsCode.includes('class: "civ__swatch"') &&
+      viewsCode.includes('"--coin": civ.coin') &&
+      screenCss.includes(".civ__swatch") &&
+      /background:\s*var\(--coin\)/.test(screenCss),
+    "the same value the board draws the coin with, not a second list of colours",
+  );
+  check(
+    "a civilization already taken is shown, disabled, rather than hidden",
+    viewsCode.includes("disabled: taken") && viewsCode.includes(", taken"),
+  );
+
+  check(
+    "the room code is four digits",
+    /ROOM_CODE_LENGTH = 4/.test(identityCode) && identityCode.includes("[1-9][0-9]{3}"),
+    "short enough to read across a room and type with a thumb",
+  );
+  check(
+    "and the number is derived per attempt, so a clash is the next number",
+    identityCode.includes("samrajya/room/v2|") &&
+      /deriveCode\(identity, createKey, attempt = 0\)/.test(identityCode),
+  );
+  check(
+    "a create that finds its number taken asks for the next one",
+    workerCode.includes("ROOM_CODE_TRIES") &&
+      workerCode.includes('refusal !== "ROOM_TAKEN"') &&
+      workerCode.includes("deriveCode(identity, createKey, attempt)"),
+    "a busy code costs one round trip, never a second room",
+  );
+  check(
+    "and the Worker only routes four-digit rooms",
+    workerCode.includes("rooms\\/([1-9][0-9]{3})"),
+  );
+  check(
+    "a four-digit link serves the game rather than a 404",
+    workerCode.includes("samrajya\\/[1-9][0-9]{3}") &&
+      workerCode.includes('new URL("/samrajya/", url)'),
+    "golake.app/samrajya/7889 is the same door as ?room=7889",
+  );
+  check(
+    "and the page takes that number out of the address once it has read it",
+    appCode.includes("pathname.replace") &&
+      appCode.includes("[1-9][0-9]{3}\\/?$"),
+    "a refresh goes to the room this tab remembers, not to an old link",
+  );
+  check(
+    "the room does not reserve a second seat at creation",
+    !roomSource.includes("hasReservedPair") &&
+      roomSource.includes("players: [seatFor(identity, host, \"HOST\", true), emptySeat()]"),
+  );
+
+  check(
+    "the lobby shows the code as four digits",
+    viewsCode.includes("lobby__digit") && screenCss.includes(".lobby__digit"),
+  );
+  check(
+    "and every seat carries its civilization's colour, its name and its state",
+    viewsCode.includes("seat__coin") &&
+      viewsCode.includes("seat__civ") &&
+      viewsCode.includes("seat__state--ready") &&
+      screenCss.includes(".seat__state--ready"),
+  );
+  check(
+    "the join is announced in a sentence that names the civilization",
+    viewsCode.includes("has joined as") && viewsCode.includes("Civilization"),
+  );
+  check(
+    "the host starts, and the guest is told to wait for that",
+    viewsCode.includes('"Start Game"') && viewsCode.includes("Waiting for ${host?.name"),
+  );
+  check(
+    "a start pushes both screens to the board, from the room the server sends",
+    appCode.includes('room.status === "PLAYING" && room.board') &&
+      appCode.includes("state.applySnapshot?.({ state: room.board, events: [] })"),
+    "neither player presses anything twice, and nobody refreshes",
+  );
+  check(
+    "and the code is taken out of the address bar once it has been used",
+    appCode.includes("dropUrlCode") && /history\.replaceState/.test(appCode),
+    "a stale ?room= is how a reload reopens a game everybody left",
+  );
+  check(
+    "leaving forgets the room as well as the note of it",
+    appCode.includes("session.forget()") && sessionCode.includes("forget()"),
+  );
+
+  /* ---------------------------------------------------------------- geometry */
   section("The board's geometry");
 
   const boardJs = await readFile(join(OUT, "assets", "js", "board.js"), "utf8");
@@ -300,7 +410,6 @@ async function main() {
   const diceCode = await readFile(join(OUT, "assets", "js", "dice.js"), "utf8");
 const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "utf8");
 const turnCode = await readFile(join(OUT, "assets", "js", "turn.js"), "utf8");
-const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
 
   check(
     "six columns of one cell size",

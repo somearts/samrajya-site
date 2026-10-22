@@ -31,8 +31,12 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { launch, sleep } from "./lib/browser.mjs";
 import { CELLS } from "../shared/spaces.js";
+import { CIVILIZATIONS } from "../shared/civilizations.js";
 import { baseRentOf, rupees } from "../shared/economy.js";
 import { propertyFor } from "../shared/properties.js";
+
+/** The colour each civilization's coin is drawn in, from the module that owns it. */
+const COIN = Object.fromEntries(CIVILIZATIONS.map((c) => [c.id, c.coin]));
 
 /* The eight sets, the colonies in each, and their names and rents - read from
    the board's own data, so a set that changes changes here too. */
@@ -70,13 +74,26 @@ if (SHOTS) await mkdir(SHOTS, { recursive: true });
 
 const results = [];
 let section = "";
+let stopAfter = null;
 
 function note(label, ok, detail = "") {
   results.push({ section, label, ok: Boolean(ok), detail: String(detail) });
   console.log(`  ${ok ? "ok  " : "FAIL"} ${label}${!ok && detail ? `  ${detail}` : ""}`);
 }
 
+/**
+ * Start a section. `--upto "some words"` stops the run when the *next* section
+ * begins, so one section can be driven in isolation without waiting for the
+ * twenty minutes that follow it. Everything before it still runs: the state a
+ * section is given is worth as much as the section itself.
+ */
+class StopEarly extends Error {}
+
 function heading(title) {
+  if (stopAfter) throw new StopEarly(`stopped after "${stopAfter}"`);
+  if (arg("--upto", null) && title.toLowerCase().includes(arg("--upto", "").toLowerCase())) {
+    stopAfter = title;
+  }
   section = title;
   console.log(`\n${title}`);
 }
@@ -150,10 +167,20 @@ const text = (page) =>
     return (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim();
   })()`);
 
-const hasField = (page, who) =>
-  page.eval(`!!document.querySelector('input[aria-label*=${JSON.stringify(who)}]')`);
-
 const hasComplaint = (page) => page.eval(`!!document.querySelector(".field__error")`);
+
+/* Wait for the page to reach a state, rather than for a guessed number of
+   milliseconds. Returns false when the wait runs out, so a check can say so
+   rather than the whole run hanging. */
+const until = (page, expr, ms = 25000) =>
+  page.json(`return await (async () => {
+    const wait = (t) => new Promise((r) => setTimeout(r, t));
+    for (let i = 0; i < ${Math.ceil(ms / 50)}; i++) {
+      if (${expr}) return true;
+      await wait(50);
+    }
+    return false;
+  })();`);
 
 async function shot(page, name) {
   if (!SHOTS) return;
@@ -416,17 +443,26 @@ try {
 
   await click(host, "create");
   await sleep(600);
-  note("step one asks for Player 1", (await hasField(host, "Player 1")) && (await nameField(host)) === "");
+  note(
+    "one form, for one player",
+    (await host.eval(`!!document.querySelector('input[name=p1name]')`)) &&
+      !(await host.eval(`!!document.querySelector('input[name=p2name]')`)),
+  );
   note("and puts the caret in the field", await host.eval("document.activeElement?.tagName === 'INPUT'"));
+  note(
+    "the creator is never asked to describe the other player",
+    !/player 2|their name|their civilization/i.test(await text(host)),
+    (await text(host)).slice(0, 110),
+  );
 
-  await click(host, "next");
+  await click(host, "create");
   await sleep(400);
-  note("an empty name is refused", await hasField(host, "Player 1"));
-  note("with something to read about it", await hasComplaint(host));
+  note("an empty name is refused", await hasComplaint(host));
 
   await fill(host, HOST_NAME);
   await sleep(250);
   note("typing clears the complaint", !(await hasComplaint(host)));
+
   const chose = await pickCiv(host, HOST_CIV);
   const checked = await host.json(`
     return !!document.querySelector(
@@ -435,25 +471,36 @@ try {
   `);
   note("a civilization can be chosen", chose && checked, `${HOST_CIV} ${checked ? "checked" : "not checked"}`);
 
-  await click(host, "next");
-  await sleep(700);
-  note("step two asks for Player 2", await hasField(host, "Player 2"));
+  /* The colours, as the browser paints them: four discs, four different
+     colours, each the value its coin is drawn in. */
+  const swatches = await host.json(`
+    return [...document.querySelectorAll(".civ[data-civ]")].map((b) => {
+      const dot = b.querySelector(".civ__swatch");
+      return {
+        id: b.dataset.civ,
+        coin: b.style.getPropertyValue("--coin").trim(),
+        swatch: dot ? getComputedStyle(dot).backgroundColor : null,
+        size: dot ? Math.round(dot.getBoundingClientRect().width) : 0,
+      };
+    });
+  `);
   note(
-    "and Player 1's civilization is not offered to Player 2",
-    (await civState(host)).some((c) => c.id === HOST_CIV && c.dis),
-    JSON.stringify(await civState(host)),
+    "every civilization carries its colour",
+    swatches.length === 4 &&
+      swatches.every((s) => /^rgb\(/.test(s.swatch || "") && s.size >= 12),
+    swatches.map((s) => `${s.id} ${s.swatch} ${s.size}px`).join(" | "),
   );
-
-  await fill(host, GUEST_NAME);
-  await pickCiv(host, GUEST_CIV);
-  await sleep(250);
-  await click(host, "review");
-  await sleep(800);
-
-  const review = await text(host);
-  note("step three is the review", /review/i.test(review), review.slice(0, 70));
-  note("and it shows both players", review.includes(HOST_NAME) && review.includes(GUEST_NAME), review.slice(0, 110));
-  await shot(host, `${W}-review`);
+  note(
+    "and the four colours are four different colours",
+    new Set(swatches.map((s) => s.swatch)).size === 4,
+    swatches.map((s) => s.swatch).join(" | "),
+  );
+  note(
+    "each one is the colour its coin is drawn in",
+    swatches.every((s) => s.coin.toLowerCase() === (COIN[s.id] || "").toLowerCase()),
+    swatches.map((s) => `${s.id} ${s.coin}`).join(" | "),
+  );
+  await shot(host, `${W}-create`);
 
   await click(host, "create");
   await sleep(1500);
@@ -463,22 +510,41 @@ try {
     const i = document.querySelector("#invite");
     return i ? i.value : "";
   })()`);
-  const code = (invite.match(/room=([a-z0-9]+)/i) || [])[1] || "";
+  const code = (invite.match(/room=([0-9]+)/) || [])[1] || "";
+  const digits = await host.json(
+    `return [...document.querySelectorAll(".lobby__digit")].map((d) => d.textContent.trim());`,
+  );
 
-  note("creating gives a room with a real code", /^[a-z0-9]{8}$/.test(code), invite || lobby.slice(0, 80));
-  note("the host is told who they are", lobby.includes(HOST_NAME), lobby.slice(0, 110));
-  note("and that the other seat is waiting", lobby.includes(GUEST_NAME), lobby.slice(0, 110));
+  note("creating goes straight to the lobby", /lobby/i.test(lobby), lobby.slice(0, 90));
+  note("with a four-digit code", /^[1-9][0-9]{3}$/.test(code), invite || lobby.slice(0, 80));
+  note("shown as four separate digits", digits.length === 4 && digits.join("") === code, digits.join(","));
+  note("the host is named at the table", lobby.includes(HOST_NAME), lobby.slice(0, 110));
+  note(
+    "and the other seat is still an empty chair",
+    /player 2/i.test(lobby) && /waiting/i.test(lobby),
+    lobby.slice(0, 110),
+  );
+  note("the link carries the same code", invite.includes(`room=${code}`), invite);
+  note(
+    "Start Game is not offered until someone joins",
+    await host.eval(`(() => {
+      const b = document.querySelector(".panel .btn--primary");
+      return !!b && b.disabled;
+    })()`),
+    await host.eval(`document.querySelector(".panel .btn--primary")?.textContent.trim()`),
+  );
   await shot(host, `${W}-lobby-waiting`);
 
   /* ------------------------------------------------------------------- join */
 
   heading("JOIN");
 
-  // The invite does not prefill the code, so the joiner types it, as a person would.
+  // The guest types the code, as a person with the code would.
   await guest.goto(URL_);
   await sleep(700);
   await click(guest, "join");
   await sleep(700);
+  note("the join form asks for the code first", (await nameField(guest)) === "");
   await guest.eval(`(() => {
     const i = document.querySelector("input[name=code]");
     if (!i) return false;
@@ -493,15 +559,97 @@ try {
 
   const arriving = await text(guest);
   note("the joiner is told who they are joining", arriving.includes(HOST_NAME), arriving.slice(0, 110));
-  note("and the name is already reserved", (await nameField(guest)) === GUEST_NAME, await nameField(guest));
+  note(
+    "and fills in their own name, not one someone else chose",
+    (await nameField(guest)) === "",
+    `"${await nameField(guest)}"`,
+  );
+  note(
+    "and the host's civilization is not offered",
+    (await civState(guest)).some((c) => c.id === HOST_CIV && c.dis),
+    JSON.stringify(await civState(guest)),
+  );
+
+  await fill(guest, GUEST_NAME);
   await pickCiv(guest, GUEST_CIV);
   await sleep(250);
   await click(guest, "join");
-  await sleep(1600);
+  await sleep(1200);
+
+  /* The host has not been touched since it created the room. The arrival comes
+     down the socket, and this is the check that it does. */
+  const sawGuest = await until(
+    host,
+    `document.querySelector(".panel")?.innerText.includes(${JSON.stringify(GUEST_NAME)})`,
+    12000,
+  );
+  const hostLobby = await text(host);
+  note("the host is told the joiner arrived, without touching the page", sawGuest, hostLobby.slice(0, 120));
+  note(
+    "in a sentence that names the civilization",
+    /has joined as [A-Za-z ]+ Civilization/i.test(hostLobby),
+    hostLobby.slice(0, 150),
+  );
+  note(
+    "and Start Game is now offered",
+    await host.eval(`(() => {
+      const b = document.querySelector(".panel .btn--primary");
+      return !!b && !b.disabled && /start/i.test(b.textContent);
+    })()`),
+    await host.eval(`document.querySelector(".panel .btn--primary")?.textContent.trim()`),
+  );
 
   const together = await text(guest);
-  note("the joiner reaches the lobby", /both players are in the room/i.test(together), together.slice(0, 110));
+  note("the joiner reaches the same lobby", /lobby/i.test(together) && together.includes(HOST_NAME), together.slice(0, 120));
+  note("and their own seat reads Ready", /ready/i.test(together), together.slice(0, 160));
   await shot(guest, `${W}-lobby-both`);
+
+  // A refresh must come back to THIS room. The old code stayed in the URL and
+  // a reload could reopen a game everybody had left.
+  await guest.goto(URL_);
+  const backAgain = await until(
+    guest,
+    `document.querySelector(".panel")?.innerText.includes(${JSON.stringify(HOST_NAME)})`,
+    12000,
+  );
+  note("a refresh comes back to the same room", backAgain, (await text(guest)).slice(0, 120));
+
+  // And the same for a second visit to the shared link: it is the room this tab
+  // is already in, and the code does not stay in the address afterwards.
+  await guest.goto(`${URL_}?room=${code}`);
+  const viaLink = await until(
+    guest,
+    `document.querySelector(".panel")?.innerText.includes(${JSON.stringify(HOST_NAME)})`,
+    12000,
+  );
+  note("a shared link comes back to the same room", viaLink, (await text(guest)).slice(0, 120));
+  note(
+    "and the code is taken out of the address bar once it has been used",
+    (await guest.eval("location.search")) === "",
+    await guest.eval("location.search"),
+  );
+
+  /* ------------------------------------------------------------------ start */
+
+  heading("START");
+
+  await click(host, "start");
+  const hostArrived = await until(host, `!!document.querySelector(".board")`, 15000);
+  const guestArrived = await until(guest, `!!document.querySelector(".board")`, 15000);
+  note("Start Game moves the host to the board", hostArrived);
+  note("and the guest, with no refresh and no second press", guestArrived);
+
+  const rooms = await Promise.all([
+    host.eval(`document.querySelector(".board")?.dataset.room || ""`),
+    guest.eval(`document.querySelector(".board")?.dataset.room || ""`),
+  ]);
+  note("both boards are the same room", rooms[0] === rooms[1] && rooms[0] === code, rooms.join(" / "));
+  const turns = await Promise.all([
+    host.eval(`document.querySelector(".board")?.game?.active ?? null`),
+    guest.eval(`document.querySelector(".board")?.game?.active ?? null`),
+  ]);
+  note("and both are on the same turn", turns[0] !== null && turns[0] === turns[1], turns.join(" / "));
+  await shot(host, `${W}-board-start`);
 
   /* ------------------------------------------------------------------ board */
 
@@ -1897,9 +2045,16 @@ try {
       // The coins' places are taken at once, before the first tick: a
       // background tab has its timers throttled, and the first sample could
       // otherwise arrive after the coin had already moved.
-      const first = [...b.querySelectorAll(".coin")].map((c) => c.style.left).join("|");
+      //
+      // Both axes, because a walk of two squares up a column changes top and
+      // leaves left exactly as it was. Reading only left would call that move
+      // "no move" on a board where it plainly happened.
+      const place = (c) => c.style.left + "," + c.style.top;
+      const first = [...b.querySelectorAll(".coin")].map(place).join("|");
       const samples = [{
         t: 0, first,
+        connected: b.isConnected,
+        seq: b.game?.seq ?? -1,
         display: getComputedStyle(die).display,
         die: b.dataset.die,
         w: Math.round(die.getBoundingClientRect().width),
@@ -1914,13 +2069,15 @@ try {
         const box = die.getBoundingClientRect();
         samples.push({
           t,
+          connected: b.isConnected,
+          seq: b.game?.seq ?? -1,
           display: getComputedStyle(die).display,
           // What the board says about the die, beside what the browser shows.
           die: b.dataset.die,
           w: Math.round(box.width),
           // Every coin on the board, so the one that moved is the one that
           // moved - the thrower's coin, on both screens.
-          lefts: [...b.querySelectorAll(".coin")].map((c) => c.style.left).join("|"),
+          lefts: [...b.querySelectorAll(".coin")].map(place).join("|"),
           face: die.dataset.face,
           rolling: die.dataset.rolling,
           phase: b.game.phase,
@@ -1988,12 +2145,40 @@ try {
       hostMovedAt - tumbleEnd >= 700 && hostMovedAt - tumbleEnd <= 1000,
     `the die settled at ${tumbleEnd}ms, the coin moved at ${hostMovedAt}ms ` +
       `(${hostMovedAt - tumbleEnd}ms later)`);
+  const guestBoardState = await guest.eval(
+    `document.querySelector(".board") ? (document.querySelector(".board").game ? "playing" : "waiting") : "none"`,
+  );
+  const seqs = await Promise.all([
+    host.eval(`document.querySelector(".board")?.game?.seq ?? -1`),
+    guest.eval(`document.querySelector(".board")?.game?.seq ?? -1`),
+  ]);
+  const guestShape = await guest.eval(`(() => {
+    const b = document.querySelector(".board");
+    if (!b) return "no board";
+    const box = b.getBoundingClientRect();
+    const coins = [...b.querySelectorAll(".coin")];
+    return JSON.stringify({
+      board: [Math.round(box.width), Math.round(box.height)],
+      cells: b.querySelectorAll(".board__cell").length,
+      coins: coins.map((c) => [c.style.left, c.style.top, Math.round(c.getBoundingClientRect().width)]),
+      pieces: b.game?.pieces,
+      profile: b.dataset.profile || "false",
+      throwing: b.dataset.throwing || "false",
+      announce: b.querySelector(".board__announce")?.hidden ?? null,
+    });
+  })()`);
   note("and both devices move the coin at the same moment",
     hostMovedAt !== undefined && guestMovedAt !== undefined &&
       Math.abs(hostMovedAt - guestMovedAt) <= 150,
     `host ${hostMovedAt}ms, guest ${guestMovedAt}ms ` +
       `(${hostSamples.length}/${guestSamples.length} samples, ` +
-      `${new Set(hostSamples.map((s) => s.lefts)).size}/${new Set(guestSamples.map((s) => s.lefts)).size} coin places)`);
+      `${new Set(hostSamples.map((s) => s.lefts)).size}/${new Set(guestSamples.map((s) => s.lefts)).size} coin places; ` +
+      `seq ${seqs[0]}/${seqs[1]}, guest ${guestBoardState}, ` +
+      `watched seq ${guestSamples[0]?.seq}->${guestSamples.at(-1)?.seq}, ` +
+      `phases ${[...new Set(guestSamples.map((s) => s.phase))].join(",")}, ` +
+      `watched board ${guestSamples.filter((s) => s.connected).length}/${guestSamples.length} samples on the page, ` +
+      `coins "${firstLeftsOf(guestSamples)}" -> "${guestSamples.at(-1)?.lefts}", ` +
+      `shape ${guestShape})`);
   // With the card up, the die is out of the middle: the last sample that has
   // the card up is the one that says what the card does to the die.
   const withCard = [...hostSamples].reverse().find((s) => s.card);
@@ -4030,19 +4215,6 @@ try {
   /** The appearances of one label in a log: one entry per time it came on. */
   const said = (log, label) => log.filter((e) => e.visible && e.label === label);
 
-  /* Waiting for the board rather than for the clock: a turn now takes the
-     die's tumble, its hold and the walk, and a fixed pause that was long
-     enough for the old throw is short for this one. */
-  const until = (page, expr, ms = 25000) =>
-    page.json(`return await (async () => {
-      const wait = (t) => new Promise((r) => setTimeout(r, t));
-      for (let i = 0; i < ${Math.ceil(ms / 50)}; i++) {
-        if (${expr}) return true;
-        await wait(50);
-      }
-      return false;
-    })();`);
-
   /* Quiet: nothing is being animated. A card on the board is not busy - the
      other player's visit shows a read-only card here, and a chip can be
      pressed with it up. */
@@ -5183,16 +5355,35 @@ try {
 
   await clickReal(host, "leave");
   await sleep(700);
-  await clickReal(host, "start over");
+
+  // Leaving the board goes back to the room, not out of the door: the game is
+  // still there and the other player may still be in it. The number is on the
+  // screen, and so is the way back to the board.
+  const backInLobby = await text(host);
+  const tileDigits = await host.eval(`
+    [...document.querySelectorAll(".lobby__digit")].map((d) => d.textContent.trim()).join("")
+  `);
+  note(
+    "leaving the board lands in the room, where the game can be picked up again",
+    /return to the board/i.test(backInLobby) && tileDigits === code,
+    `${tileDigits} vs ${code} — ${backInLobby.slice(0, 100)}`,
+  );
+
+  await clickReal(host, "leave the game");
   await sleep(800);
   const back = await host.json(`
     return [...document.querySelectorAll("button")].map((b) => b.textContent.trim());
   `);
   note(
-    "Start over returns to the welcome screen",
+    "leaving the room returns to the welcome screen",
     back.length === 2 && /create/i.test(back[0]) && /join/i.test(back[1]),
     back.join(" | "),
   );
+} catch (error) {
+  // The stop a `--upto` run asks for is not a failure: the summary below still
+  // counts what was checked, and the exit code still answers for it.
+  if (!(error instanceof StopEarly)) throw error;
+  console.log(`\n${error.message}`);
 } finally {
   await host?.close();
   await guest?.close();
