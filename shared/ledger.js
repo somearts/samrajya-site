@@ -184,6 +184,38 @@ export function hasMonopoly(ledger, id, seat) {
   return members.every((m) => ownerOf(ledger, m) === seat);
 }
 
+/**
+ * The seat with every colony in this square's set, or null.
+ *
+ * A set is complete when ONE player has all of it. Two players each with part
+ * of it is not a set, and neither is a set with a hole in it.
+ *
+ * The test is `every`, not `some`: one colony owned by one player says
+ * nothing about the set, and a line that claimed otherwise would be a lie.
+ */
+export function setHolder(ledger, id) {
+  const members = setMembers(ledger, id);
+  if (members.length === 0) return null;
+  const first = ownerOf(ledger, members[0]);
+  if (first === null) return null;
+  return members.every((m) => ownerOf(ledger, m) === first) ? first : null;
+}
+
+/**
+ * Would the next level on this square break the even-building rule?
+ *
+ * Within a set, no colony may be more than one level above the lowest colony
+ * in it. A set at levels 0, 1 and 2 is not a set anybody may build in: the
+ * third colony would stand two levels above the first.
+ */
+export function evenUpgradeBlocked(ledger, id) {
+  const members = setMembers(ledger, id);
+  if (members.length === 0) return false;
+  const level = levelOf(ledger, id);
+  const after = members.map((m) => (m === id ? level + 1 : levelOf(ledger, m)));
+  return Math.max(...after) > Math.min(...after) + 1;
+}
+
 /** The set this square belongs to, or null. */
 export function setOf(ledger, id) {
   return CELLS.find((c) => c.id === id)?.set || null;
@@ -194,10 +226,31 @@ export function levelOf(ledger, id) {
   return sheetIfOwned(ledger, id)?.upgradeLevel ?? 0;
 }
 
+/**
+ * The rent a square charges when its owner holds the whole set with nothing
+ * built on it: twice the base rent.
+ *
+ * A set that is complete and unbuilt is worth more than the sum of its parts,
+ * and the extra is charged on every colony in it. Once anything is built in the
+ * set, the ordinary rent for each level applies again.
+ */
+export function fullSetRent(ledger, id) {
+  if (!isPriced(id)) return null;
+  if (setHolder(ledger, id) === null) return null;
+  const members = setMembers(ledger, id);
+  if (members.some((m) => levelOf(ledger, m) > 0)) return null;
+  return (rentFor(id, 0) || 0) * 2;
+}
+
 /** What a square charges whoever lands on it. */
 export function rentAt(ledger, id) {
   if (!isPriced(id)) return null;
-  return rentFor(id, levelOf(ledger, id));
+  const level = levelOf(ledger, id);
+  if (level === 0) {
+    const doubled = fullSetRent(ledger, id);
+    if (doubled !== null) return doubled;
+  }
+  return rentFor(id, level);
 }
 
 /* -------------------------------------------------------------------- buying */
@@ -260,11 +313,13 @@ export function canUpgrade(ledger, id, seat) {
   // the set. A sale that breaks the set re-locks further upgrades, but levels
   // already built stay.
   if (!hasMonopoly(ledger, id, seat)) {
-    const holder = setMembers(ledger, id).map((m) => ownerOf(ledger, m)).find((o) => o !== null && o !== seat);
-    if (holder !== undefined) {
-      return no(`${nameOfSeat(ledger, holder)} holds every colony in this set.`);
-    }
-    return no("Own every colony in this set to unlock upgrades.");
+    const members = setMembers(ledger, id);
+    return no(`Own all ${members.length} colonies in this set to unlock upgrades.`);
+  }
+  // Even building: no colony in a set may stand more than one level above the
+  // lowest colony in it.
+  if (evenUpgradeBlocked(ledger, id)) {
+    return no("Upgrade the other colonies in this set first.");
   }
   const upgrade = nextUpgrade(ledger, id);
   if (!upgrade) return no("This square is upgraded as far as it goes.");

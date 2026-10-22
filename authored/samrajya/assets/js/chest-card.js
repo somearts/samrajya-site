@@ -318,18 +318,6 @@ export async function showChest(
   // is holding. The stylesheet reads it; nothing else needs to know.
   holder.dataset.cardKind = "chest";
 
-  if (!still()) {
-    await holder
-      .animate(
-        [
-          { transform: "rotateY(-88deg)", opacity: 0 },
-          { transform: "rotateY(0deg)", opacity: 1 },
-        ],
-        { duration: 320, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
-      )
-      .finished.catch(() => {});
-  }
-
   const card = holder.firstElementChild;
   if (!drawable) {
     // Opened by hand: there is nothing to do here, and saying so with a
@@ -352,7 +340,14 @@ export async function showChest(
   const result = card.querySelector(".chest-card__result");
   const slots = [...card.querySelectorAll(".chest-card__slot")];
 
-  const drawn = await new Promise((resolve) => {
+  /* THE BUTTON IS LIVE AT ONCE.
+
+     The card turns in over three hundred milliseconds, and the listener used to
+     be attached after that turn - so a player who tapped the moment the card
+     appeared was tapping a button that was not listening yet, and nothing
+     happened at all. The turn is decoration: it must not delay the card being
+     playable. */
+  const drawnPromise = new Promise((resolve) => {
     drawButton.addEventListener("click", async () => {
       drawButton.disabled = true;
       card.dataset.phase = "drawing";
@@ -382,6 +377,21 @@ export async function showChest(
       resolve(outcome);
     }, { once: true });
   });
+
+  /* The card's turn-in, now that the button is listening. */
+  if (!still()) {
+    await holder
+      .animate(
+        [
+          { transform: "rotateY(-88deg)", opacity: 0 },
+          { transform: "rotateY(0deg)", opacity: 1 },
+        ],
+        { duration: 320, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
+      )
+      .finished.catch(() => {});
+  }
+
+  const drawn = await drawnPromise;
 
   /* Nothing came of it: say so, wait, and let the player go. */
   if (drawn === "bad-luck") {

@@ -857,6 +857,20 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The full-set rent, when it applies. A quiet line under the rent, saying
+   why the number is the number it is. */
+.property-card__fullset {
+  margin: 1px 0 0;
+  font-size: max(10px, calc(var(--cell) * 0.13));
+  line-height: 1.35;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.property-card__fullset[hidden] {
+  display: none;
+}
+
 /* The Buy button.
 
    Large on purpose, and in the property's own accent rather than in the board's
@@ -1061,6 +1075,29 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-soft);
+}
+
+/* THE QUIET LINES UNDER UPGRADES
+
+   The line that says how many colonies the set has, and the line under it
+   that says who owns each one. Both are quiet text: the same muted grey as
+   the UPGRADES label, because neither of them is a button and neither of them
+   is asking to be pressed. */
+.builds__lock,
+.builds__status {
+  margin: 0 0 1px 2px;
+  font-size: max(9px, calc(var(--cell) * 0.118));
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.builds__status {
+  font-size: max(8.6px, calc(var(--cell) * 0.112));
+}
+
+.builds__lock[hidden],
+.builds__status[hidden] {
+  display: none;
 }
 
 .build {
@@ -1958,17 +1995,19 @@ button.board__cell--chest:focus-visible {
 
 /* A hidden die is GONE, not transparent. An invisible box the size of the die
    still reserves the middle's centre and still catches a thumb; `display:none`
-   removes it from both. The one exception is the throw itself: the state has
-   already left AWAITING_ROLL while the coin is walking, and the die has to stay
-   up for the length of its own throw. */
-.board[data-rollable="false"]:not([data-throwing="true"]) .board__dice,
-.board[data-reading="true"]:not([data-throwing="true"]) .board__dice,
-.board[data-profile="true"] .board__dice {
+   removes it from both.
+
+   Whether the die is hidden is one question with one answer, and the answer
+   lives in dice.js (`dieVisible`): the die is out of the way when something
+   else wants the middle - a card, an announcement, a player's record - and it
+   is on the board the rest of the time. It used to follow the phase instead,
+   which meant a tap took it off the screen for as long as the server took to
+   answer. The stylesheet only carries the answer out. */
+.board[data-die="hidden"] .board__dice {
   display: none;
 }
 
 .board[data-throwing="true"] .board__dice {
-  display: block;
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
   pointer-events: none;

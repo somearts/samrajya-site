@@ -41,7 +41,8 @@
 
 import { el } from "./dom.js";
 import { cornerMark } from "./corner-art.js";
-import { dice, throwTo } from "./dice.js";
+import { dice, dieVisible, prefersStill, throwTo } from "./dice.js";
+import { DICE_DELAY_MS, DICE_HOLD_MS, DICE_ROLL_MS, pause } from "./timing.js";
 // The layer draws the coins; the rules they obey - including the name a seat
 // goes by - are in coins.js, which imports nothing and is tested on its own.
 import { coins } from "./coin-layer.js";
@@ -325,6 +326,11 @@ export function board({
      open. The profile itself is re-read from the live game on every paint, so
      its figures are never a photograph of an older turn. */
   let profileSeat = null;
+  /* Which card is mounted, and for which decision. The same decision can be
+     offered twice - by the answer to an action, and by the copy of that action
+     that comes down the socket - and a card that is built twice is a card whose
+     buttons belong to a card nobody can see. */
+  let cardKey = null;
 
   function closeProfile() {
     if (profileSeat === null) return;
@@ -332,6 +338,8 @@ export function board({
     delete frame.dataset.profile;
     delete frame.dataset.profileSeat;
     centreArea.querySelector(".board__profile")?.remove();
+    // The middle is the board's again, so the die comes back to it.
+    paintPhase();
     // Anything that happened while the record was open is said now, in the
     // order it happened, rather than being swallowed by the record.
     announce.flush();
@@ -367,6 +375,8 @@ export function board({
     }
     profileSeat = wanted;
     renderProfile();
+    // The record is the middle of the board now, so the die gives way to it.
+    paintPhase();
   }
 
   frame.openProfile = openProfile;
@@ -398,6 +408,12 @@ export function board({
    * The die, the turn line, and the tab stops, all from pointer-events and from
    * the phase. A decision has no die; neither does a read-only card, because a
    * card that can be dismissed by a tap is not a card you can throw past.
+   *
+   * Whether the die is on the board at all is one question with one answer:
+   * `dieVisible`. The die used to follow the phase, and a tap changed the
+   * phase - so the die left the screen for as long as the server took to
+   * answer, and came back. It is on the board now for as long as nothing
+   * else wants the middle.
    */
   const paintPhase = () => {
     if (!game) {
@@ -405,6 +421,7 @@ export function board({
       frame.dataset.active = "";
       frame.dataset.rollable = "false";
       frame.dataset.busy = busy ? "true" : "false";
+      frame.dataset.die = "hidden";
       return;
     }
     frame.dataset.phase = game.phase;
@@ -419,6 +436,15 @@ export function board({
     die?.setAttribute("tabindex", rollable ? "0" : "-1");
     die?.setAttribute("aria-hidden", String(!rollable));
     frame.dataset.rollable = rollable ? "true" : "false";
+    frame.dataset.die = dieVisible(game, {
+      seat: mySeat,
+      throwing: frame.dataset.throwing === "true",
+      card: Boolean(holder() && !holder().hidden),
+      announcement: Boolean(announce?.node && !announce.node.hidden),
+      profile: profileSeat !== null,
+    })
+      ? "shown"
+      : "hidden";
   };
 
   /* --------------------------------------------------------------- the ctx */
@@ -638,15 +664,30 @@ export function board({
     for (const event of events) {
       switch (event.type) {
         case "moved": {
-          // The state has already left AWAITING_ROLL, so the die would be
-          // hidden by then. `data-throwing` keeps it up for exactly the length
-          // of its own throw, then the phase takes it away.
+          /* THE DIE GOES FIRST.
+             The coin does not move while the die is still tumbling. The die
+             tumbles for DICE_ROLL_MS, the face is held for DICE_HOLD_MS - still,
+             to be read - and only then does the coin start to walk. Both devices
+             are playing the same event, so both wait the same time and the
+             coin starts at the same moment on both phones.
+
+             A reader who has asked for reduced motion gets no tumble, but the
+             hold is kept: the face still sits there before anything moves. */
           frame.dataset.throwing = "true";
-          await Promise.all([
-            pieces.walk(event.path, event.seat),
-            die ? throwTo(die, event.face) : Promise.resolve(),
-          ]);
+          paintPhase();
+          const still = prefersStill();
+          const started = performance.now();
+          if (die) await throwTo(die, event.face);
+          if (!still) {
+            // The ticks are scaled to DICE_ROLL_MS, and the chain between them
+            // costs a little; the remainder is waited out, so the throw takes
+            // exactly as long as the timings say and not a few ticks more.
+            await pause(Math.max(0, DICE_ROLL_MS - (performance.now() - started)));
+          }
+          await pause(DICE_HOLD_MS);
+          await pieces.walk(event.path, event.seat);
           delete frame.dataset.throwing;
+          paintPhase();
           break;
         }
 
@@ -806,6 +847,16 @@ export function board({
     // is it is a decision with buttons; on the other screen it is a read-only
     // card, because the buttons would only be refused.
     const mine = isMyTurn();
+    // The turn is in the key as well as the square: the same square can be
+    // landed on twice in a game, and the second visit is a different card.
+    const key = `${game.turn}:${landing.id}:${mine ? "decision" : "read"}`;
+
+    /* The same decision can be offered twice: once by the answer to the
+       action, and once by the copy of that action that comes down the socket.
+       A card that is built twice is a card whose buttons belong to a card
+       nobody can see - so the card that is already up stays up. */
+    if (cardKey === key && holder() && !holder().hidden) return;
+    cardKey = key;
 
     if (landing.kind === "chest") {
       cardMode = mine ? "decision" : "read";
@@ -829,11 +880,16 @@ export function board({
           collect: async () => {
             await step({ type: "collectWeapon" });
           },
+          // The chest closes itself when the visit is over, and the board has
+          // to be told, so the die comes back to the middle.
+          onClose: () => closeRead(),
           onWeapon: () => paint({ animate: false }),
         });
       } else {
         showChest(frame, { drawable: false, onClose: () => closeRead() });
       }
+      // The card is in the middle now, so the die gives way to it.
+      paintPhase();
       cardMode = "read";
       frame.dataset.reading = "false";
       // Bad luck leaves the visit open until it is acknowledged; collecting
@@ -848,15 +904,23 @@ export function board({
     cardMode = mine ? "decision" : "read";
     reading = false;
     paintPhase();
-    await showCard(frame, landing.id, context());
+    try {
+      await showCard(frame, landing.id, context());
+    } finally {
+      // The card is in the middle now, so the die gives way to it.
+      paintPhase();
+    }
   }
 
   /** Slide the decision card away and take it out of the holder. */
   async function dismissCard() {
     await cardAway(holder());
     hideCard(frame);
+    cardKey = null;
     cardMode = "read";
     frame.dataset.cardMode = "read";
+    // The middle is empty again, so the die comes back.
+    paintPhase();
   }
 
   /**
@@ -881,22 +945,31 @@ export function board({
     if (isDecision()) return;
     reading = true;
     cardMode = "read";
+    cardKey = `${game.turn}:${id}:read`;
     paintPhase();
 
     if (id === RAGNAROK.id) {
       showChest(frame, { drawable: false, onClose: () => closeRead() });
+      // The card is in the middle now, so the die gives way to it.
+      paintPhase();
       return;
     }
     if (!isPurchasable(id)) {
       closeRead();
       return;
     }
-    showCard(frame, id, context());
+    // The card's turn can be interrupted, and then the promise it returns is
+    // refused rather than settled - so the middle is put right either way.
+    showCard(frame, id, context()).finally(() => {
+      // The card is in the middle now, so the die gives way to it.
+      paintPhase();
+    });
   }
 
   function closeRead() {
     reading = false;
     cardMode = "read";
+    cardKey = null;
     hideCard(frame);
     paintPhase();
   }

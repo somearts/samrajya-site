@@ -348,6 +348,9 @@ test("a second visit allows the second level, in order", () => {
   buy(before.ledger, "moon", 0);
   buy(before.ledger, "lagrange-l2", 0);
   upgrade(before.ledger, "moon", 0);
+  // Even building: the mate of the set stands at the same level, or the second
+  // level is refused - which is a rule, not a lost turn.
+  upgrade(before.ledger, "lagrange-l2", 0);
   before.pieces[0].position = 0;
   let state = take(before, { type: "roll" }, face(1)).state;
   state = take(state, { type: "continue" }).state;
@@ -380,11 +383,14 @@ test("there is no way to upgrade outside a landing", () => {
 
 test("a finished square stays finished", () => {
   const before = game();
+  before.ledger.players[0].money = 9000;
   buy(before.ledger, "moon", 0);
   buy(before.ledger, "lagrange-l2", 0);
-  upgrade(before.ledger, "moon", 0);
-  upgrade(before.ledger, "moon", 0);
-  upgrade(before.ledger, "moon", 0);
+  // Even building: both colonies of the set climb together.
+  for (let n = 0; n < 3; n += 1) {
+    assert.equal(upgrade(before.ledger, "moon", 0).ok, true);
+    assert.equal(upgrade(before.ledger, "lagrange-l2", 0).ok, true);
+  }
   standOn(before, 1, "own");
   before.landing.id = "moon";
   assert.equal(upgradeOffer(before, "moon").why, "This square is upgraded as far as it goes.");

@@ -51,6 +51,10 @@
 
 export const DICE_FACES = Object.freeze([1, 2, 3, 4, 5, 6]);
 
+/* The timings live in one place, so the player who threw and the player
+   watching are reading the same numbers. */
+import { DICE_ROLL_MS } from "./timing.js";
+
 /**
  * The pips, on a three-by-three lattice inside the rim.
  *
@@ -146,6 +150,29 @@ export function prefersStill() {
 }
 
 /**
+ * Whether the die is on the board.
+ *
+ * One place decides it, and it is asked every time the board is repainted.
+ * The die used to come and go with the phase: a tap changed the phase, the
+ * phase took the die away, and the die came back a second later - a flicker
+ * nobody had asked for, and the reason the die seemed to vanish.
+ *
+ * The die is out of the way only when something else wants the middle: a
+ * card, an announcement, or a player's record. Otherwise it is there, and it
+ * belongs to the player whose turn it is - except while a throw is being
+ * played, when both players are watching the same die and both must see it.
+ *
+ * @param {object} state  the game: whose turn it is, and what phase
+ * @param {object} ui    what is in the middle: card, announcement, profile,
+ *                       throwing, and the seat this board belongs to
+ */
+export function dieVisible(state, ui = {}) {
+  if (ui.card || ui.announcement || ui.profile) return false;
+  if (ui.throwing) return true;
+  return Number(state?.active) === Number(ui.seat);
+}
+
+/**
  * Throw the die and settle on a face already chosen.
  *
  * This is the half of `roll` that draws nothing: the game has rolled, the face
@@ -211,8 +238,22 @@ function defaultWait(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Fast, then slower, then slower again: about 660ms. */
-const TICKS = Object.freeze([...Array(6).fill(55), ...Array(4).fill(95), ...Array(2).fill(150)]);
+/** Fast, then slower, then slower again: the shape of a die finding its face. */
+const WEIGHTS = Object.freeze([...Array(6).fill(55), ...Array(4).fill(95), ...Array(2).fill(150)]);
+
+/**
+ * The ticks, scaled to fill DICE_ROLL_MS exactly.
+ *
+ * The shape is the shape it always was - quick ticks that get slower - and
+ * the length is the one the timings say. The last tick takes up whatever the
+ * rounding leaves over, so the throw is exactly as long as DICE_ROLL_MS and
+ * not a few milliseconds more.
+ */
+const weightSum = WEIGHTS.reduce((a, b) => a + b, 0);
+const scaled = WEIGHTS.map((w) => Math.round((w * DICE_ROLL_MS) / weightSum));
+const TICKS = Object.freeze(
+  scaled.map((ms, n) => (n === scaled.length - 1 ? ms + DICE_ROLL_MS - scaled.reduce((a, b) => a + b, 0) : ms)),
+);
 
 /**
  * Make the die throwable by pointer and by keyboard, once.

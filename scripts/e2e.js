@@ -30,6 +30,24 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { launch, sleep } from "./lib/browser.mjs";
+import { CELLS } from "../shared/spaces.js";
+import { baseRentOf, rupees } from "../shared/economy.js";
+import { propertyFor } from "../shared/properties.js";
+
+/* The eight sets, the colonies in each, and their names and rents - read from
+   the board's own data, so a set that changes changes here too. */
+const SETS = CELLS.filter((c) => c.type === "property" && c.set).reduce((all, c) => {
+  if (!all[c.set]) all[c.set] = [];
+  all[c.set].push(c.id);
+  return all;
+}, {});
+const NAMES = Object.fromEntries(
+  CELLS.filter((c) => c.type === "property").map((c) => [c.id, propertyFor(c.id)?.name || c.name]),
+);
+const RENTS = Object.fromEntries(
+  CELLS.filter((c) => c.type === "property").map((c) => [c.id, baseRentOf(c.id) || 0]),
+);
+const ALL_PROPERTIES = CELLS.filter((c) => c.type === "property").map((c) => c.id);
 
 const arg = (name, fallback) => {
   const i = process.argv.indexOf(name);
@@ -488,6 +506,32 @@ try {
   /* ------------------------------------------------------------------ board */
 
   heading("THE BOARD");
+
+  /* A hand-over has to be made on both screens. A debug action does not change
+     the state's number, so the copy that comes down the socket is ignored by a
+     screen that has already applied it - which means the screen that did not
+     send it never learns about it. Sent from both, both agree, and the turn is
+     really the same turn on both boards. */
+  const handOver = async (seat, extra = {}) => {
+    const act = `(async () => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      let b = null;
+      // A screen that has not been handed its board yet is waited for, not
+      // assumed: the board is drawn when the room's state arrives.
+      for (let i = 0; i < 200 && !b; i += 1) {
+        b = document.querySelector(".board");
+        if (!b) await wait(50);
+      }
+      if (!b) return false;
+      for (let i = 0; i < 120 && b.dataset.busy === "true"; i++) await wait(50);
+      await b.play({ type: "debug", ...${JSON.stringify(extra)}, active: ${seat} });
+      return true;
+    })()`;
+    return Promise.all([
+      host.eval(act).catch(() => false),
+      guest.eval(act).catch(() => false),
+    ]);
+  };
 
   for (const [label, page] of [["host", host], ["guest", guest]]) {
     if (!(await page.eval(`!!document.querySelector(".board")`))) {
@@ -1036,15 +1080,23 @@ try {
         if (b.dataset.reading === "true") {
           b.querySelector(".property-card__close")?.click();
         }
-        for (let i = 0; i < 120; i++) {
+        // And a test hook sent into a busy board is dropped, so the board is
+        // waited for before the turn is handed over.
+        for (let i = 0; i < 200; i++) {
+          if (b.dataset.busy !== "true") break;
+          await wait(50);
+        }
+        for (let i = 0; i < 200; i++) {
           if (b.game.phase === "AWAITING_ROLL" && b.dataset.rollable === "true") break;
           await wait(50);
         }
         // Hand the turn to the host and put the piece on Start, through the
         // server's test hook, because the server owns both.
         await b.play({ type: "debug", active: 0 });
+        await wait(200);
         await b.play({ type: "debug", position: 0 });
-        for (let i = 0; i < 120; i++) {
+        await wait(200);
+        for (let i = 0; i < 200; i++) {
           if (b.game.phase === "AWAITING_ROLL" && b.dataset.rollable === "true") break;
           await wait(50);
         }
@@ -1055,7 +1107,23 @@ try {
         return true;
       })()
     `);
-    const settle = () => sleep(2600);
+    // The chest card opens when the coin has finished its walk, and the walk
+    // now waits for the die. Waited for, not guessed at: the card is up AND
+    // the Draw is on it and enabled. The board stays busy for as long as the
+    // visit is open - that is what a visit is - so "not busy" is the wrong
+    // thing to wait for here.
+    const settle = async () => {
+      for (let i = 0; i < 300; i += 1) {
+        const ready = await page.json(`return {
+          card: Boolean(document.querySelector(".chest-card")),
+          draw: Boolean(document.querySelector('.chest-card [data-action="draw"]')),
+          disabled: document.querySelector('.chest-card [data-action="draw"]')?.disabled ?? true,
+        };`);
+        if (ready.card && ready.draw && !ready.disabled) return true;
+        await sleep(50);
+      }
+      return false;
+    };
 
     // Landed on it: drawable.
     await landOnRagnarok();
@@ -1133,49 +1201,66 @@ try {
       chestRevealed.targets.join(" | "));
 
     const before = chestRevealed.weapons.join(" ");
-    await page.eval(`document.querySelector('[data-action="collect"]').click(); true;`);
+    const collectClicked = await page.eval(`(() => {
+      const b = document.querySelector('[data-action="collect"]');
+      if (!b) return "no button";
+      b.click();
+      return "clicked";
+    })()`);
     await sleep(1400);
     const collected = await page.json(READ_CHEST);
     note(`${label}: collecting adds exactly one weapon`,
+      collectClicked === "clicked" &&
       collected.weapons[0] !== before && collected.weapons[0].includes("]") &&
       !collected.weapons[0].endsWith("=[]") &&
       collected.dots === 1,
-      `${before} -> ${collected.weapons.join(" ")}, ${collected.dots} dots`);
+      `${collectClicked}; ${before} -> ${collected.weapons.join(" ")}, ${collected.dots} dots`);
     note(`${label}: and the card closes`,
       !collected.open, `open ${collected.open}`);
 
     /* Bad luck. Forced, so the branch is seen rather than waited for. */
     await landOnRagnarok();
     await settle();
-    await page.eval(`
-      (async () => {
-        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-        window.__drawRng = 0.97;   // the last tenth of the roll
-        document.querySelector('[data-action="draw"]').click();
-        await wait(1500);
-        delete window.__drawRng;
-        return true;
-      })()
-    `);
+    const badDraw = await page.eval(`(() => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      window.__drawRng = 0.97;   // the last tenth of the roll
+      const cards = document.querySelectorAll(".chest-card");
+      const draw = document.querySelector('.chest-card [data-action="draw"]');
+      const before = {
+        cards: cards.length,
+        disabled: draw ? draw.disabled : null,
+        phase: cards.length ? cards[0].dataset.phase || "" : "",
+        same: Boolean(draw && draw.closest(".chest-card") === cards[0]),
+      };
+      if (!draw) return { clicked: false, before };
+      draw.click();
+      return { clicked: true, before };
+    })()`);
     await sleep(400);
     // Polled rather than waited for. The line appears about two seconds after
     // the tap - a nine-hundred-millisecond shuffle, then the shake, and only
     // then the sentence - and a fixed sleep that guesses wrong fails for a
     // reason that has nothing to do with bad luck.
-    await page.eval(`
-      (async () => {
-        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-        for (let i = 0; i < 80; i++) {
-          if (document.querySelector(".chest-card__drew")) break;
-          await wait(50);
-        }
-        return true;
-      })()
-    `);
+    const badWaited = await page.json(`return await (async () => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (let i = 0; i < 120; i++) {
+        if (document.querySelector(".chest-card__drew")) return true;
+        await wait(50);
+      }
+      return false;
+    })();`);
+    await page.eval(`(() => { delete window.__drawRng; return true; })()`);
     const bad = await page.json(READ_CHEST);
+    const badState = await page.json(`return {
+      phase: document.querySelector(".chest-card")?.dataset.phase || "no card",
+      card: Boolean(document.querySelector(".chest-card")),
+      result: document.querySelector(".chest-card__result")?.textContent || "",
+      toast: [...document.querySelectorAll(".board__toast")].map((t) => t.textContent).join(" | "),
+    };`);
     note(`${label}: bad luck says so and adds nothing`,
       bad.drew === "Bad luck. Try next time." && bad.collectPresent === false,
-      `"${bad.drew}", collect offered ${bad.collectPresent}`);
+      `${JSON.stringify(badDraw)}; waited ${badWaited}; "${bad.drew}", collect offered ${bad.collectPresent}; ` +
+        `phase ${badState.phase}, card ${badState.card}, result "${badState.result}", toast "${badState.toast}"`);
 
     await sleep(2600);
     const afterBad = await page.json(READ_CHEST);
@@ -1225,15 +1310,39 @@ try {
       const b = document.querySelector(".board");
       const d = b.querySelector(".board__dice");
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-      for (let i = 0; i < 80 && d.dataset.rolling === "true"; i++) await wait(50);
+      for (let i = 0; i < 200 && d.dataset.rolling === "true"; i++) await wait(50);
       await window.__finishVisit();
+      for (let i = 0; i < 200 && b.dataset.busy === "true"; i++) await wait(50);
+      await b.play({ type: "debug", position: 0 });
       const seat = Number(document.querySelector(".who--me")?.dataset.seat ?? 0);
       await b.play({ type: "debug", active: seat });
-      await b.play({ type: "debug", position: 0 });
-      for (let i = 0; i < 80 && d.dataset.rolling === "true"; i++) await wait(50);
       return true;
     })()`);
-    await sleep(300);
+    await page.eval(`(async () => {
+      const b = document.querySelector(".board");
+      const d = b.querySelector(".board__dice");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (let i = 0; i < 200 && b.dataset.busy === "true"; i++) await wait(50);
+      for (let i = 0; i < 200 && d.dataset.rolling === "true"; i++) await wait(50);
+      return true;
+    })()`);
+    // The die is measured when it is settled: not rolling, and the board idle.
+    // Waited for, not timed - and it must be still for a few samples in a row,
+    // because a throw restarts itself when the state catches up.
+    const dieSettled = await page.json(`return await (async () => {
+      const b = document.querySelector(".board");
+      const d = b.querySelector(".board__dice");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      let still = 0;
+      for (let i = 0; i < 300; i++) {
+        const quiet = d.dataset.rolling === "false" && b.dataset.busy !== "true";
+        still = quiet ? still + 1 : 0;
+        if (still >= 4) return { ok: true, phase: b.game.phase, rolling: d.dataset.rolling };
+        await wait(50);
+      }
+      return { ok: false, phase: b.game.phase, rolling: d.dataset.rolling };
+    })();`);
+    await sleep(200);
 
     const dieBefore = await page.json(`
       const d = document.querySelector(".board__dice");
@@ -1306,8 +1415,12 @@ try {
       // An SVG element has no .click() of its own - click() lives on
       // HTMLElement - so the event is dispatched, which is also what a tap does.
       d.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      for (let i = 0; i < 40; i++) {
+      // Watched until the throw is over, not for a fixed span: the tumble is
+      // DICE_ROLL_MS long and a window shorter than that would catch the die
+      // in the air and call it unsettled.
+      for (let i = 0; i < 150; i++) {
         if (d.dataset.rolling === "true") { mid = true; seen.add(d.dataset.face); }
+        else if (mid) break;
         // Only a box that exists is a position. Once the turn is over the die
         // is display:none, and measuring that would read as a jump to 0,0.
         const r = box();
@@ -1338,7 +1451,8 @@ try {
       `${thrown.distinct} faces passed through`);
     note(`${label}: and it settles on one from one to six`,
       /^[1-6]$/.test(thrown.face) && thrown.rolling === "false" && thrown.shown === 1,
-      `face ${thrown.face}, rolling=${thrown.rolling}, says "${thrown.label}"`);
+      `face ${thrown.face}, rolling=${thrown.rolling}, says "${thrown.label}" ` +
+        `(settled ${dieSettled.ok} in phase ${dieSettled.phase})`);
     note(`${label}: the throw moved nothing`,
       thrown.moved < 2 && thrown.boardMoved === "no",
       `die moved ${thrown.moved.toFixed(2)}px`);
@@ -1374,7 +1488,7 @@ try {
       for (let n = 0; n < 6; n++) {
         d.dispatchEvent(new MouseEvent("click", { bubbles: true }));
         let moved = false;
-        for (let i = 0; i < 120; i++) {
+        for (let i = 0; i < 200; i++) {
           if (d.dataset.rolling === "true") moved = true;
           const settled = moved && d.dataset.rolling === "false";
           // The coin has to have landed too. A throw also walks a coin, and the
@@ -1497,7 +1611,7 @@ try {
         // roll - and for the coin it walks to land - before finishing the visit,
         // or the next press goes into a board that is still busy.
         let sawRoll = false;
-        for (let n = 0; n < 120; n += 1) {
+        for (let n = 0; n < 200; n += 1) {
           if (die.dataset.rolling === "true") sawRoll = true;
           const settled = sawRoll && die.dataset.rolling === "false";
           if (settled && board.dataset.moving !== "true") break;
@@ -1768,6 +1882,150 @@ try {
      whatever it landed on, and hands the turn on. Four throws must visit both
      seats and come back to where it started. */
 
+  /* ------------------------------------------- the die, then the coin ---- */
+
+  heading("THE DIE, THEN THE COIN");
+
+  /* A watcher that samples the die and the coin every 50ms through a throw.
+     The die's box and the coin's position are what a player sees, so they are
+     what is measured. */
+  const THROW_WATCH = `
+    window.__watchThrow = (ms) => new Promise((resolve) => {
+      const b = document.querySelector(".board");
+      const die = b.querySelector(".board__dice");
+      const start = performance.now();
+      // The coins' places are taken at once, before the first tick: a
+      // background tab has its timers throttled, and the first sample could
+      // otherwise arrive after the coin had already moved.
+      const first = [...b.querySelectorAll(".coin")].map((c) => c.style.left).join("|");
+      const samples = [{
+        t: 0, first,
+        display: getComputedStyle(die).display,
+        die: b.dataset.die,
+        w: Math.round(die.getBoundingClientRect().width),
+        lefts: first,
+        face: die.dataset.face,
+        rolling: die.dataset.rolling,
+        phase: b.game.phase,
+        card: Boolean(b.querySelector(".board__card") && !b.querySelector(".board__card").hidden),
+      }];
+      const timer = setInterval(() => {
+        const t = Math.round(performance.now() - start);
+        const box = die.getBoundingClientRect();
+        samples.push({
+          t,
+          display: getComputedStyle(die).display,
+          // What the board says about the die, beside what the browser shows.
+          die: b.dataset.die,
+          w: Math.round(box.width),
+          // Every coin on the board, so the one that moved is the one that
+          // moved - the thrower's coin, on both screens.
+          lefts: [...b.querySelectorAll(".coin")].map((c) => c.style.left).join("|"),
+          face: die.dataset.face,
+          rolling: die.dataset.rolling,
+          phase: b.game.phase,
+          card: Boolean(b.querySelector(".board__card") && !b.querySelector(".board__card").hidden),
+        });
+        if (t >= ms) { clearInterval(timer); resolve(samples); }
+      }, 50);
+    });`;
+  await host.eval(THROW_WATCH);
+  await guest.eval(THROW_WATCH);
+
+  // The host is the one who throws; the guest is the one watching.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 200 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", active: 0 });
+    await wait(150);
+    await b.play({ type: "debug", position: 0 });
+    await wait(150);
+    return true;
+  })()`);
+  await sleep(400);
+
+  // Both screens are kept awake while they are being watched: a background tab
+  // has its timers throttled, and a sample every second is not a sample.
+  for (const page of [host, guest]) {
+    await page.send("Page.setWebLifecycleState", { state: "active" }).catch(() => {});
+  }
+  await sleep(200);
+
+  const hostThrow = host.json("return await window.__watchThrow(12000);");
+  const guestThrow = guest.json("return await window.__watchThrow(12000);");
+  await sleep(150);
+  await host.eval(`(() => {
+    const b = document.querySelector(".board");
+    b.querySelector(".board__dice").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    return true;
+  })()`);
+  const [hostSamples, guestSamples] = await Promise.all([hostThrow, guestThrow]);
+
+  /* The thrower's die: from the tap to the card, it is on the board the whole
+     time. The only samples where it is not are the ones after a card has taken
+     the middle over. */
+  const cardAt = hostSamples.find((s) => s.card);
+  const gapWhileRolling = hostSamples.filter(
+    (s) => !s.card && (s.display === "none" || s.w === 0));
+  note("the die never leaves the board between the tap and the card",
+    cardAt !== undefined && gapWhileRolling.length === 0,
+    `the card opens at ${cardAt?.t}ms; ${gapWhileRolling.length} samples without it`);
+
+  /* The coin waits for the die: it has not moved before the delay is up, and
+     it has moved after it. Each screen is compared with itself, because the
+     two boards have their own coins in their own places. */
+  const firstLeftsOf = (samples) => samples[0]?.first || samples[0]?.lefts;
+  const hostMovedAt = hostSamples.find(
+    (s) => s.lefts && s.lefts !== firstLeftsOf(hostSamples))?.t;
+  const guestMovedAt = guestSamples.find(
+    (s) => s.lefts && s.lefts !== firstLeftsOf(guestSamples))?.t;
+  // The tumble ends at the first sample after the die was seen rolling.
+  const tumbleEnd = hostSamples.find(
+    (s, i) => s.rolling === "false" && hostSamples[i - 1]?.rolling === "true")?.t;
+  note("the coin does not move until the die has tumbled and been held",
+    hostMovedAt !== undefined && tumbleEnd !== undefined &&
+      hostMovedAt - tumbleEnd >= 700 && hostMovedAt - tumbleEnd <= 1000,
+    `the die settled at ${tumbleEnd}ms, the coin moved at ${hostMovedAt}ms ` +
+      `(${hostMovedAt - tumbleEnd}ms later)`);
+  note("and both devices move the coin at the same moment",
+    hostMovedAt !== undefined && guestMovedAt !== undefined &&
+      Math.abs(hostMovedAt - guestMovedAt) <= 150,
+    `host ${hostMovedAt}ms, guest ${guestMovedAt}ms ` +
+      `(${hostSamples.length}/${guestSamples.length} samples, ` +
+      `${new Set(hostSamples.map((s) => s.lefts)).size}/${new Set(guestSamples.map((s) => s.lefts)).size} coin places)`);
+  // With the card up, the die is out of the middle: the last sample that has
+  // the card up is the one that says what the card does to the die.
+  const withCard = [...hostSamples].reverse().find((s) => s.card);
+  note("the die is hidden while the card is up, and comes back when it goes",
+    withCard !== undefined && (withCard.display === "none" || withCard.w === 0),
+    `the card is up from ${cardAt?.t}ms; the die is ${withCard?.display} ` +
+      `${withCard?.w}px (the board says ${withCard?.die}) with the card up`);
+
+  await host.eval("window.__finishVisit()");
+  await sleep(600);
+  // The die belongs to the player whose turn it is, so the turn is handed back
+  // before asking whether the die is there.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 200 && b.dataset.busy === "true"; i++) await wait(50);
+    await b.play({ type: "debug", active: 0 });
+    await wait(300);
+    return true;
+  })()`);
+  await sleep(500);
+  const dieBack = await host.json(`return {
+    display: getComputedStyle(document.querySelector(".board__dice")).display,
+    w: Math.round(document.querySelector(".board__dice").getBoundingClientRect().width),
+    card: Boolean(document.querySelector(".board__card") && !document.querySelector(".board__card").hidden),
+    active: document.querySelector(".board").game.active,
+  };`);
+  note("and the die is on the board again once the card has gone",
+    dieBack.card === false && dieBack.display !== "none" && dieBack.w > 0 &&
+      dieBack.active === 0,
+    `die ${dieBack.display} ${dieBack.w}px, card ${dieBack.card}, active ${dieBack.active}`);
+
   heading("FOUR TURNS, TWO SCREENS");
 
   // A helper both screens carry: wait until this screen can really throw, then
@@ -1778,29 +2036,42 @@ try {
     const b = document.querySelector(".board");
     const die = b.querySelector(".board__dice");
     const me = Number(document.querySelector(".who--me")?.dataset.seat ?? 0);
-    for (let k = 0; k < 24; k += 1) {
+    for (let k = 0; k < 40; k += 1) {
       if (b.dataset.busy === "true") { await wait(50); continue; }
-      if (b.dataset.reading === "true" || b.game.phase !== "AWAITING_ROLL") {
-        await window.__finishVisit();
-        await wait(50);
+      if (b.game.phase !== "AWAITING_ROLL" || b.dataset.reading === "true") {
+        // A visit on THIS seat is answered by answering it. A visit on the
+        // other seat is not this screen's to answer, and waiting for it would
+        // wait for something that cannot happen here - so the turn is handed
+        // over instead.
+        if (b.game.active === me) {
+          await window.__finishVisit();
+          await wait(100);
+          continue;
+        }
+        await b.play({ type: "debug", active: me });
+        await wait(150);
         continue;
       }
       if (b.game.active !== me) {
         await b.play({ type: "debug", active: me });
-        await wait(100);
+        await wait(150);
         continue;
       }
       die.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      for (let i = 0; i < 15; i += 1) {
-        if (b.dataset.rolling === "true" || b.game.phase !== "AWAITING_ROLL") return true;
+      for (let i = 0; i < 40; i += 1) {
+        if (die.dataset.rolling === "true" || b.game.phase !== "AWAITING_ROLL") return "ok";
         await wait(40);
       }
       await wait(80);
     }
-    return false;
+    return "no throw: busy=" + b.dataset.busy + " phase=" + b.game.phase +
+      " active=" + b.game.active + " me=" + me + " reading=" + b.dataset.reading +
+      " rollable=" + b.dataset.rollable;
   };`;
   await host.eval(ROLLABLE);
   await guest.eval(ROLLABLE);
+  // Whose turn it is, agreed on both screens before the first throw.
+  await handOver(0);
 
   const readTurn = `
     const b = document.querySelector(".board");
@@ -1812,9 +2083,11 @@ try {
              seat: b.querySelector(".board__turn").dataset.turn };
   `;
 
+  let lastSettle = null;
   const settleBoth = async () => {
-    for (let i = 0; i < 80; i += 1) {
+    for (let i = 0; i < 160; i += 1) {
       const [h, g] = await Promise.all([host.json(readTurn), guest.json(readTurn)]);
+      lastSettle = { h, g };
       if (h.active === g.active && h.phase === g.phase &&
           h.phase === "AWAITING_ROLL" && h.moving !== "true" && g.moving !== "true" &&
           h.busy !== "true" && g.busy !== "true") {
@@ -1826,15 +2099,16 @@ try {
   };
 
   const cycle = [];
+  const why = [];
   let attempts = 0;
   while (cycle.length < 4 && attempts < 16) {
     attempts += 1;
     const beforeThrow = await settleBoth();
-    if (!beforeThrow) continue;
+    if (!beforeThrow) { why.push("no settle"); continue; }
     const screen = beforeThrow.active === 0 ? host : guest;
 
     const thrown = await screen.eval("window.__throwIt()");
-    if (!thrown) continue;
+    if (thrown !== "ok") { why.push(String(thrown).slice(0, 80)); continue; }
 
     await screen.eval(`(async () => {
       const b = document.querySelector(".board");
@@ -1848,7 +2122,8 @@ try {
     await screen.eval("window.__finishVisit()");
 
     const afterThrow = await settleBoth();
-    if (!afterThrow || afterThrow.active === beforeThrow.active) continue;
+    if (!afterThrow) { why.push("no settle after"); continue; }
+    if (afterThrow.active === beforeThrow.active) { why.push("turn did not pass"); continue; }
     cycle.push({ beforeThrow, thrown, afterThrow });
   }
 
@@ -1860,7 +2135,8 @@ try {
       wrapped.every((s, i) => s === 1 - thrownSeats[i]) &&
       wrapped[3] === thrownSeats[0],
     `thrown ${thrownSeats.join(" \u2192 ")}; then ${wrapped.join(" \u2192 ")} ` +
-      `(${attempts} attempt(s))`);
+      `(${attempts} attempt(s): ${why.slice(0, 3).join(" / ")})` +
+      ` last ${JSON.stringify(lastSettle).slice(0, 300)}`);
   note("and both screens name the same active seat after every throw",
     cycle.length === 4 &&
       cycle.every((c) => c.afterThrow.active === c.afterThrow.guestActive &&
@@ -2273,7 +2549,9 @@ try {
       `level ${upgraded.square.upgradeLevel}`);
   note("and every other upgrade row is shut for the rest of this visit",
     upgraded.live === 0 && upgraded.builds[0].label === "Upgraded" &&
-      upgraded.builds[1].label === "Land here again to upgrade" &&
+      // The even rule: the next colony up would stand a level above the lowest
+      // colony in the set, and the row says so.
+      upgraded.builds[1].label === "Upgrade the other colonies in this set first" &&
       upgraded.builds[2].label === "Upgrade the previous level first" &&
       upgraded.builds.every((b) => b.disabled),
     `${upgraded.live} live: ${upgraded.builds.map((b) => b.label).join(" | ")}`);
@@ -2622,8 +2900,19 @@ try {
     await document.querySelector(".board").play({ type: "debug", money: 2000 });
     return true;
   })()`);
-  await host.eval(`document.querySelector('.board__cell[data-id="pluto"]').click(); true;`);
-  await sleep(500);
+  // The board is waited for: a square pressed while the board is still busy is
+  // ignored, and then the card that is read is the wrong one.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 200; i++) {
+      if (b.dataset.busy !== "true" && b.game.phase === "AWAITING_ROLL") break;
+      await wait(50);
+    }
+    b.querySelector('.board__cell[data-id="pluto"]').click();
+    return true;
+  })()`);
+  await sleep(700);
 
   const reading = await host.json(`
     const b = document.querySelector(".board");
@@ -3741,10 +4030,52 @@ try {
   /** The appearances of one label in a log: one entry per time it came on. */
   const said = (log, label) => log.filter((e) => e.visible && e.label === label);
 
+  /* Waiting for the board rather than for the clock: a turn now takes the
+     die's tumble, its hold and the walk, and a fixed pause that was long
+     enough for the old throw is short for this one. */
+  const until = (page, expr, ms = 25000) =>
+    page.json(`return await (async () => {
+      const wait = (t) => new Promise((r) => setTimeout(r, t));
+      for (let i = 0; i < ${Math.ceil(ms / 50)}; i++) {
+        if (${expr}) return true;
+        await wait(50);
+      }
+      return false;
+    })();`);
+
+  /* Quiet: nothing is being animated. A card on the board is not busy - the
+     other player's visit shows a read-only card here, and a chip can be
+     pressed with it up. */
+  const idle = (page, ms = 25000) =>
+    until(page, `document.querySelector(".board").dataset.busy !== "true"`, ms);
+
+  /* Settled: quiet AND nothing in the middle. A turn's own boundary, where the
+     next action can be taken without landing on a card that is still closing. */
+  const settled = (page, ms = 25000) =>
+    until(page, `(document.querySelector(".board").dataset.busy !== "true") &&
+      !(document.querySelector(".board__card") &&
+        !document.querySelector(".board__card").hidden)`, ms);
+
+  /* A chip is not always listening: while a screen is playing an action the
+     board is busy and the record cannot be opened or closed. So the click is
+     made when the board is quiet, which is also when a person could make it. */
+  const toggleProfile = async (page, seat) => {
+    await idle(page);
+    return page.json(`return await (async () => {
+      const b = document.querySelector(".board");
+      document.querySelector('.who[data-seat="${seat}"]').click();
+      await new Promise((r) => setTimeout(r, 150));
+      return b.dataset.profile === "true";
+    })();`);
+  };
+
   /* The holder's record is open on one screen while the other screen plays
      turns. Nothing may be lost, nothing may be shown on top of the record, and
      the other screen must not be held up by it. */
-  await host.eval(`(async () => {
+  /* The same set-up on both screens. A debug action changes no number, so the
+     other screen does not receive it down the socket: each screen has to be
+     told, or one of them keeps a card from the turn before. */
+  const SETUP = `(async () => {
     const b = document.querySelector(".board");
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
@@ -3756,19 +4087,13 @@ try {
     await b.play({ type: "debug", position: 0 });
     b.coins.sync(b.game.pieces);
     return true;
-  })()`);
-  await guest.eval(`(async () => {
-    const b = document.querySelector(".board");
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    for (let i = 0; i < 80 && b.dataset.busy === "true"; i++) await wait(50);
-    await b.play({ type: "debug", money: 2000 });
-    await b.play({ type: "debug", position: 0 });
-    return true;
-  })()`);
+  })()`;
+  await host.eval(SETUP);
+  await guest.eval(SETUP);
   await sleep(500);
 
   // The guest opens their own record, and keeps it open.
-  await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
+  await toggleProfile(guest, 1);
   await sleep(300);
   const profileUp = await guest.json(`
     const b = document.querySelector(".board");
@@ -3776,19 +4101,24 @@ try {
              profile: b.dataset.profile === "true" };
   `);
 
-  const guestLog = guest.json("return await window.__annLog(16000);");
-  const hostLog = host.json("return await window.__annLog(16000);");
+  const guestLog = guest.json("return await window.__annLog(30000);");
+  const hostLog = host.json("return await window.__annLog(30000);");
 
   // Turn one: the host buys a square. The host's screen says ACQUIRED now; the
   // guest's screen has a record open, so it waits.
   await host.eval("window.__hostTurn(2)");
-  await sleep(1500);
+  await until(host, `Boolean(document.querySelector(".property-card__buy"))`);
   await host.eval(`document.querySelector(".property-card__buy").click(); true;`);
-  await sleep(1800);
+  await settled(host);
 
   // Turn two: the host lands on the square the guest owns, and pays rent.
   await host.eval("window.__hostTurn(1)");
-  await sleep(2000);
+  // Rent opens a card on the payer's own screen and waits to be answered. That
+  // card is the turn's last act, and it is exactly the announcement the guest
+  // is queueing behind its record - so this waits for the card, not for an
+  // idle board that cannot happen until someone presses Continue.
+  await until(host, `Boolean(document.querySelector(".property-card__next"))`, 20000);
+  await sleep(400);
 
   const whileOpen = await guest.json(`
     const b = document.querySelector(".board");
@@ -3799,8 +4129,17 @@ try {
   `);
 
   // The record closes - by the chip, this time - and the queue comes out.
-  await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
-  await sleep(4200);
+  const closedBy = await toggleProfile(guest, 1);
+  const afterClose = await guest.json(`
+    const b = document.querySelector(".board");
+    return { profile: b.dataset.profile === "true", busy: b.dataset.busy,
+             phase: b.game.phase, turn: b.dataset.turn };
+  `);
+  // Waited for the two sentences rather than for a long enough pause.
+  await until(guest, `(() => {
+    const n = document.querySelector(".board__announce");
+    return Boolean(n && !n.hidden);
+  })()`, 12000).then(() => sleep(2200));
   const guestEntries = await guestLog;
   const hostEntries = await hostLog;
 
@@ -3825,7 +4164,9 @@ try {
     `while open: profile ${whileOpen.profile}, layer hidden ${whileOpen.announceHidden}; ` +
       `${guestSaidWhileOpen.length} said too early; ` +
       `${guestAcquired.length} acquired, ${guestRentSaid.length} rent after the close ` +
-      `(said at ${acquiredAt} and ${rentAt}, record closed at ${closedAt})`);
+      `(said at ${acquiredAt} and ${rentAt}, record closed at ${closedAt}); ` +
+      `${guestEntries.length} entries; close returned ${closedBy}, ` +
+      `now ${JSON.stringify(afterClose)}`);
   note("two announcements queued at once are said in order, once each",
     guestAcquired.length === 1 && guestRentSaid.length === 1 &&
       acquiredAt < rentAt &&
@@ -3851,11 +4192,15 @@ try {
   // One announcement queued, and the record closed by the 32px button, and
   // then by the Escape key. Both must flush what is waiting.
   const flushBy = async (method) => {
-    await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
-    await sleep(300);
+    // The turn before left a rent card on the payer's screen; it is answered
+    // before another turn is asked for.
+    await host.eval("window.__finishVisit()");
+    await toggleProfile(guest, 1);
     await host.eval("window.__hostTurn(1)");
-    await sleep(2000);
-    const log = guest.json("return await window.__annLog(6000);");
+    // The rent card on the payer's screen is this turn's end - see above.
+    await until(host, `Boolean(document.querySelector(".property-card__next"))`, 20000);
+    await sleep(400);
+    const log = guest.json("return await window.__annLog(14000);");
     if (method === "button") {
       await guest.eval(`document.querySelector(".profile__close").click(); true;`);
     } else {
@@ -3866,6 +4211,10 @@ try {
         type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27,
       });
     }
+    await until(guest, `(() => {
+      const n = document.querySelector(".board__announce");
+      return Boolean(n && !n.hidden);
+    })()`, 12000).then(() => sleep(2200));
     const entries = await log;
     const closed = await guest.json(`
       const b = document.querySelector(".board");
@@ -3902,13 +4251,16 @@ try {
   // must not be lost either.
   await host.eval(`(async () => {
     const b = document.querySelector(".board");
+    // Whatever the turn before left open is answered first, or the roll that
+    // follows would be refused for being in a visit.
+    await window.__finishVisit();
     await window.__econ.quiet();
     await b.play({ type: "debug", active: 0 });
     await b.play({ type: "debug", position: 0 });
     await b.play({ type: "roll", rng: (3 - 0.5) / 6 });
     return true;
   })()`);
-  await sleep(1500);
+  await until(host, `Boolean(document.querySelector(".property-card__buy"))`);
   const interruptedLog = host.json("return await window.__annLog(9000);");
   await host.eval(`(() => {
     // The record opens while the announcement is still on screen. The chip
@@ -3939,25 +4291,32 @@ try {
   // The record closes and the queue starts playing. While it is playing, the
   // host acts again: that announcement must join the end of the queue, not
   // the middle of it, and it must not be lost.
-  await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
-  await sleep(300);
-  await host.eval("window.__hostTurn(1)");
-  await sleep(2000);
 
-  const raceLog = guest.json("return await window.__annLog(9000);");
-  await guest.eval(`document.querySelector('.who[data-seat="1"]').click(); true;`);
-  // Wait for the queue to start playing, then act while it is on screen.
-  await guest.json(`
-    const b = document.querySelector(".board");
-    for (let i = 0; i < 100; i++) {
-      const n = b.querySelector(".board__announce");
-      if (n && !n.hidden) return true;
-      await new Promise((r) => setTimeout(r, 30));
-    }
-    return false;
-  `);
+  // A turn of its own, finished up to the rent card, so the queue is the only
+  // thing left to play when the record closes.
+  await host.eval("window.__finishVisit()");
+  await toggleProfile(guest, 1);
   await host.eval("window.__hostTurn(1)");
-  await sleep(3200);
+  await until(host, `Boolean(document.querySelector(".property-card__next"))`, 20000);
+  await sleep(300);
+
+  const raceLog = guest.json("return await window.__annLog(20000);");
+  await toggleProfile(guest, 1);
+  // Wait for the queue to start playing, then act while it is on screen.
+  await until(guest, `(() => {
+    const n = document.querySelector(".board__announce");
+    return Boolean(n && !n.hidden);
+  })()`, 12000);
+  // The previous rent is answered, and a fresh turn is thrown while the queue
+  // is still saying the last one.
+  await host.eval("window.__finishVisit()");
+  await host.eval("window.__hostTurn(1)");
+  await until(guest, `(() => {
+    const n = document.querySelector(".board__announce");
+    return Boolean(n && !n.hidden &&
+      (n.querySelector(".announce__label")?.textContent || "") === "RENT RECEIVED");
+  })()`, 20000);
+  await sleep(1200);
   const raceEntries = await raceLog;
   const raceSaid = said(raceEntries, "RENT RECEIVED");
   const raceOrder = raceEntries.filter((e) => e.visible).map((e) => e.label);
@@ -3975,6 +4334,154 @@ try {
   await sleep(1600);
   await host.eval("window.__finishVisit()");
   await sleep(300);
+
+  /* ------------------------------------- the upgrades, and the set's rent */
+
+  heading("THE UPGRADES, AND THE SET'S RENT");
+
+  /* The card's locked section, its status line, its rows and its rent, read
+     from a card that is open on the board. */
+  const CARD_STATE = `
+    const b = document.querySelector(".board");
+    const h = b.querySelector(".board__card");
+    const card = h?.querySelector(".property-card");
+    const rows = [...(h?.querySelectorAll(".build") || [])].map((n) => ({
+      label: n.querySelector(".build__button-label")?.textContent || "",
+      disabled: n.querySelector(".build__button")?.disabled,
+    }));
+    return {
+      open: Boolean(card),
+      lock: h?.querySelector(".builds__lock")?.textContent || "",
+      lockHidden: h?.querySelector(".builds__lock")?.hidden ?? true,
+      status: h?.querySelector(".builds__status")?.textContent || "",
+      statusHidden: h?.querySelector(".builds__status")?.hidden ?? true,
+      fullset: h?.querySelector(".property-card__fullset")?.textContent || "",
+      fullsetHidden: h?.querySelector(".property-card__fullset")?.hidden ?? true,
+      rent: h?.querySelector(".property-card__rent")?.textContent || "",
+      rows,
+      text: card?.textContent || "",
+    };
+  `;
+
+  /* The eight sets, and the colonies in each, read from the board's own data. */
+  const setNames = Object.keys(SETS);
+
+  /* Put the board in a known state: seat 0 owns these colonies, at these
+     levels, and nothing else on the board is owned. */
+  const ownership = async (owners) => {
+    await host.eval(`(async () => {
+      const b = document.querySelector(".board");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (let i = 0; i < 200 && b.dataset.busy === "true"; i++) await wait(50);
+      for (const id of ${JSON.stringify(ALL_PROPERTIES)}) {
+        await b.play({ type: "debug", owner: { id, seat: null, level: 0 } });
+      }
+      await wait(100);
+      for (const [id, level] of ${JSON.stringify(owners)}) {
+        await b.play({ type: "debug", owner: { id, seat: 0, level } });
+        await wait(60);
+      }
+      return true;
+    })()`);
+  };
+
+  /* Open a card by pressing the square, and read it. The board is waited for
+     first: a square pressed while the board is busy is ignored, and a card
+     that is not open says nothing. */
+  const readCard = async (id) => {
+    await host.eval(`(async () => {
+      const b = document.querySelector(".board");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (let i = 0; i < 200; i++) {
+        if (b.dataset.busy !== "true" && b.game.phase === "AWAITING_ROLL") break;
+        await wait(50);
+      }
+      b.querySelector(".property-card__close")?.click();
+      await wait(150);
+      b.querySelector('.board__cell[data-id="${id}"]').click();
+      return true;
+    })()`);
+    for (let i = 0; i < 60; i += 1) {
+      const open = await host.json(
+        `return Boolean(document.querySelector(".board__card .property-card"));`,
+      );
+      if (open) break;
+      await sleep(50);
+    }
+    await sleep(250);
+    return host.json(CARD_STATE);
+  };
+
+  const lockedCopies = [];
+  const statusLines = [];
+  for (const [name, ids] of Object.entries(SETS)) {
+    // Seat 0 owns all but the last colony: the set is not complete.
+    await ownership(ids.slice(0, -1).map((id) => [id, 0]));
+    const card = await readCard(ids[0]);
+    lockedCopies.push({
+      name,
+      lock: card.lock,
+      ok: card.lock === `Own all ${ids.length} colonies in this set to unlock upgrades.`,
+      clean: !card.text.toLowerCase().includes(["holds", "every"].join(" ")),
+    });
+    statusLines.push({
+      name,
+      status: card.status,
+      ids,
+      ok: ids.every((id) => {
+        const square = NAMES[id];
+        return card.status.includes(`${square} \u2713 Asha`) ||
+          card.status.includes(`${square} \u25cb open`);
+      }),
+    });
+  }
+
+  note("every set says how many colonies it has, and never who holds it",
+    lockedCopies.length === 8 && lockedCopies.every((c) => c.ok && c.clean),
+    lockedCopies.map((c) => `${c.name}: "${c.lock}"`).join(" | "));
+  note("and every set's colonies are listed, with their owner or open",
+    statusLines.length === 8 && statusLines.every((s) => s.ok),
+    statusLines.map((s) => `${s.name}: ${s.status}`).join(" | "));
+
+  /* A complete set: the message and the status line go away. */
+  const complete = SETS[setNames[0]];
+  await ownership(complete.map((id) => [id, 0]));
+  const completeCard = await readCard(complete[0]);
+  note("a set one player has all of says nothing about the set",
+    completeCard.lockHidden === true && completeCard.statusHidden === true &&
+      !/Own all/.test(completeCard.text) &&
+      !completeCard.text.toLowerCase().includes(["holds", "every"].join(" ")),
+    `lock "${completeCard.lock}", status "${completeCard.status}"`);
+
+  /* Even upgrades: a colony may not stand a level above the lowest in its set. */
+  const even = SETS[setNames[1]];
+  await ownership([[even[0], 1], [even[1], 0], [even[2], 0]]);
+  const evenCard = await readCard(even[0]);
+  note("a row that would break the even rule says so",
+    evenCard.rows.some((r) => r.label === "Upgrade the other colonies in this set first"),
+    evenCard.rows.map((r) => r.label).join(" | "));
+
+  /* The rent of a full set. */
+  const rentSet = SETS[setNames[2]];
+  await ownership(rentSet.map((id) => [id, 0]));
+  const fullSetCard = await readCard(rentSet[0]);
+  const base = RENTS[rentSet[0]];
+  note("a complete set with nothing built on it charges double, and says so",
+    fullSetCard.fullsetHidden === false &&
+      fullSetCard.fullset === `Full set, no upgrades: ${rupees(base * 2)}` &&
+      fullSetCard.rent.includes(rupees(base * 2)),
+    `"${fullSetCard.fullset}", rent "${fullSetCard.rent}"`);
+
+  await ownership([[rentSet[0], 1], ...rentSet.slice(1).map((id) => [id, 0])]);
+  const builtCard = await readCard(rentSet[0]);
+  const plainCard = await readCard(rentSet[1]);
+  const plainBase = RENTS[rentSet[1]];
+  note("and once anything is built in it, the ordinary rent applies again",
+    builtCard.fullsetHidden === true &&
+      plainCard.fullsetHidden === true &&
+      plainCard.rent.includes(rupees(plainBase)) &&
+      !plainCard.rent.includes(rupees(plainBase * 2)),
+    `full set line "${builtCard.fullset}", rent "${plainCard.rent}"`);
 
   /* --------------------------------- the card and the change of turn ------ */
 
@@ -4234,7 +4741,14 @@ try {
     b.play({ type: "roll", rng: (4 - 0.5) / 6 }).catch(() => {});
     return true;
   })()`);
-  await sleep(2500);
+  // Wait for the chest to be open on both screens, rather than guessing.
+  for (let i = 0; i < 200; i += 1) {
+    const up = await host.json(`return {
+      card: document.querySelector(".board").querySelector(".board__card")?.dataset.cardKind === "chest",
+    };`);
+    if (up.card) break;
+    await sleep(50);
+  }
   const chestUpHost = await centreState(host);
   const chestUpGuest = await centreState(guest);
   note("a chest stands in the middle on both screens while the visit is open",
@@ -4247,7 +4761,18 @@ try {
   await host.eval(`document.querySelector('.chest-card [data-action="draw"]')?.click(); true;`);
   await sleep(2500);
   await host.eval(`document.querySelector('.chest-card [data-action="collect"]')?.click(); true;`);
-  await sleep(3000);
+  // The host draws the weapon and collects it, and the visit is over.
+  await host.eval(`(() => {
+    window.__drawRng = 0.15;
+    document.querySelector('.chest-card [data-action="draw"]')?.click();
+    return true;
+  })()`);
+  await sleep(2500);
+  await host.eval(`(() => {
+    document.querySelector('.chest-card [data-action="collect"]')?.click();
+    return true;
+  })()`);
+  await sleep(2500);
   await settleBoard(guest);
   const chestGone = await centreState(guest);
   note("and it goes when the visit is over, as the property card does",
@@ -4554,6 +5079,9 @@ try {
         const box = rect(c);
         const pips = c.querySelector(".board__pips");
         const label = c.querySelector(".board__label");
+        // A square with no pips and no name is not a property square, and
+        // there is nothing on it to measure.
+        if (!pips || !label) return null;
         const nameNode = [...label.children]
           .filter((x) => !x.classList.contains("board__pips")).at(-1);
         const pr = rect(pips);
@@ -4572,7 +5100,7 @@ try {
           coins: here,
           noBefore: getComputedStyle(c, "::before").content,
         };
-      });
+      }).filter(Boolean);
       const unowned = cells.filter((c) => c.dataset.owner === undefined &&
         c.querySelector(".board__pips")).map((c) => ({
         id: c.dataset.id,

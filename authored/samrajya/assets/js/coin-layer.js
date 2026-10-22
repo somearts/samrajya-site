@@ -235,12 +235,30 @@ export function coins(board, { players = [], pieces = null, onLand = null } = {}
       ],
       { duration: ms, easing: "ease-in-out", fill: "none" },
     );
-    return animation.finished.catch(() => {});
+    // The animation's own end, or the clock's. A hidden tab does not advance
+    // animation frames, and a move that waited for one that can never come
+    // would leave the coin in the air and the board busy for good. The clock
+    // is the backstop: the hop is over when its duration is over.
+    return Promise.race([
+      animation.finished.catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, ms + 80)),
+    ]);
   }
 
   /** Give the browser one frame, which is what "arriving" means here. */
   const frame = () =>
-    new Promise((resolve) => requestAnimationFrame(() => resolve()));
+    new Promise((resolve) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      if (typeof requestAnimationFrame === "function") requestAnimationFrame(finish);
+      // Same reason as the hop: a tab that is not drawing produces no frames,
+      // and the move must not wait for a frame that is never painted.
+      setTimeout(finish, 50);
+    });
 
   /**
    * Move a player `steps` squares.

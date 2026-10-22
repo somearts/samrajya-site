@@ -160,23 +160,34 @@ test("a seat nobody is sitting in cannot buy anything", () => {
 /* ----------------------------------------------------------------- upgrading */
 
 test("the three builds go on in order, and each one raises the rent", () => {
-  const game = solo(5000);
+  const game = solo(9000);
   buy(game, "halleys-comet", 0);
   buy(game, "kuiper-belt", 0);
 
   const seen = [rentAt(game, "halleys-comet")];
   const names = [];
+  let spent = 0;
   for (let n = 0; n < MAX_UPGRADE; n += 1) {
     const verdict = upgrade(game, "halleys-comet", 0);
     assert.equal(verdict.ok, true, `build ${n + 1}`);
     names.push(verdict.upgrade.name);
+    spent += verdict.upgrade.cost;
     seen.push(rentAt(game, "halleys-comet"));
+    // Even building: the set mate is raised to the same level, or the next
+    // build on this square is refused.
+    if (n < MAX_UPGRADE - 1) {
+      const mate = upgrade(game, "kuiper-belt", 0);
+      assert.equal(mate.ok, true, `mate ${n + 1}`);
+      spent += mate.upgrade.cost;
+    }
   }
 
   assert.deepEqual(names, ["Tracking Array", "Comet Observatory", "Intercept Network"]);
-  assert.deepEqual(seen, [50, 220, 700, 1500]);
+  // A complete set with nothing built pays double its bare rent; once anything
+  // in the set is built, each level carries its own rent.
+  assert.deepEqual(seen, [100, 220, 700, 1500]);
   assert.equal(levelOf(game, "halleys-comet"), 3);
-  assert.equal(moneyOf(game, 0), 5000 - 500 - 450 - 250 - 400 - 500);
+  assert.equal(moneyOf(game, 0), 9000 - 500 - 450 - spent);
 });
 
 test("the builds are offered in order, and only the next one is reachable", () => {
@@ -192,10 +203,13 @@ test("the builds are offered in order, and only the next one is reachable", () =
   upgrade(game, "moon", 0);
   assert.equal(nextUpgrade(game, "moon").name, "Lunar Colony");
 
-  upgrade(game, "moon", 0);
+  // Even building: the set mate stands beside it before the next level.
+  assert.equal(upgrade(game, "lagrange-l2", 0).ok, true);
+  assert.equal(upgrade(game, "moon", 0).ok, true);
   assert.equal(nextUpgrade(game, "moon").name, "Lunar Dominion");
 
-  upgrade(game, "moon", 0);
+  assert.equal(upgrade(game, "lagrange-l2", 0).ok, true);
+  assert.equal(upgrade(game, "moon", 0).ok, true);
   assert.equal(nextUpgrade(game, "moon"), null, "a finished square offers nothing");
 });
 
@@ -203,7 +217,11 @@ test("there is no fourth upgrade", () => {
   const game = solo(9000);
   buy(game, "moon", 0);
   buy(game, "lagrange-l2", 0);
-  for (let n = 0; n < MAX_UPGRADE; n += 1) assert.equal(upgrade(game, "moon", 0).ok, true);
+  // Even building: both colonies of the set are built together.
+  for (let n = 0; n < MAX_UPGRADE; n += 1) {
+    assert.equal(upgrade(game, "moon", 0).ok, true);
+    assert.equal(upgrade(game, "lagrange-l2", 0).ok, true);
+  }
 
   const fourth = upgrade(game, "moon", 0);
   assert.equal(fourth.ok, false);
@@ -252,7 +270,7 @@ test("every property in the game can be bought and built to the top", () => {
   // The whole economy, walked once. Any square that cannot be taken, or cannot
   // be built out, fails here rather than in front of a player.
   for (const id of PRICED_IDS) {
-    const game = solo(9000);
+    const game = solo(30000);
     const p = PRICING[id];
 
     for (const mate of setMembers(game, id)) {
@@ -262,13 +280,22 @@ test("every property in the game can be bought and built to the top", () => {
     assert.equal(levelOf(game, id), 0);
 
     let rent = rentAt(game, id);
-    assert.equal(rent, p.baseRent, `${id} bare rent`);
+    // A complete set with nothing built pays double its bare rent.
+    assert.equal(rent, p.baseRent * 2, `${id} bare rent`);
 
     for (const step of p.upgrades) {
       const verdict = upgrade(game, id, 0);
       assert.equal(verdict.ok, true, `${id} ${step.name} refused`);
       assert.equal(verdict.upgrade.name, step.name);
       assert.equal(verdict.rent, step.rentAfter, `${id} ${step.name} rent`);
+      // Even building: the rest of the set is raised to the same level, or the
+      // next build on this square would be refused - which is the rule working,
+      // not a fault in the square.
+      for (const mate of setMembers(game, id)) {
+        if (mate === id || levelOf(game, mate) >= levelOf(game, id)) continue;
+        const sibling = upgrade(game, mate, 0);
+        assert.equal(sibling.ok, true, `${id} ${step.name}: ${mate} refused`);
+      }
       rent = rentAt(game, id);
       assert.ok(rent > 0 && Number.isInteger(rent), `${id} rent is ${rent}`);
     }
@@ -283,9 +310,10 @@ test("every property in the game can be bought and built to the top", () => {
 
 test("landing on somebody else's square pays them the rent it carries", () => {
   const game = twoPlayers();
-  buy(game, "moon", 0);            // bare, 20
+  buy(game, "moon", 0);            // bare, 20 - doubled to 40 for the complete set
   buy(game, "lagrange-l2", 0);     // the set mate, so upgrades unlock
   upgrade(game, "moon", 0);        // Lunar Outpost, 80
+  upgrade(game, "lagrange-l2", 0); // even building: the mate rises with it
   upgrade(game, "moon", 0);        // Lunar Colony, 240
 
   const before = { holder: moneyOf(game, 0), payer: moneyOf(game, 1) };
@@ -434,14 +462,18 @@ test("the rent charged is the rent the square carries right now", () => {
     [{ seat: 0, name: "Landlord", civ: "aztec" }, { seat: 1, name: "Payer", civ: "roma" }],
     { opening: 2000 },
   );
-  game.players[0].money = 5000;
+  game.players[0].money = 60000;
   game.players[1].money = 9000;
   buy(game, "earth-137", 0);
   buy(game, "orions-belt", 0);
 
   const seen = [];
   for (let level = 0; level <= 3; level += 1) {
-    if (level > 0) upgrade(game, "earth-137", 0);
+    if (level > 0) {
+      upgrade(game, "earth-137", 0);
+      // Even building: the set mate rises with it, or the next level is locked.
+      upgrade(game, "orions-belt", 0);
+    }
 
     const before = moneyOf(game, 1);
     const verdict = payRent(game, "earth-137", 1);
@@ -453,5 +485,7 @@ test("the rent charged is the rent the square carries right now", () => {
     seen.push(verdict.rent);
   }
 
-  assert.deepEqual(seen, [75, 380, 1200, 2800]);
+  // The complete set, unbuilt, charges double its bare rent; after that each
+  // level carries its own.
+  assert.deepEqual(seen, [150, 380, 1200, 2800]);
 });

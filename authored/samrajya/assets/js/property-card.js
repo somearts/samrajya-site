@@ -41,6 +41,8 @@ import { upgradesOf, rupees } from "./shared/economy.js";
 import {
   MAX_UPGRADE,
   canBuy,
+  evenUpgradeBlocked,
+  fullSetRent,
   hasMonopoly,
   levelOf,
   moneyOf,
@@ -48,6 +50,7 @@ import {
   ownerOf,
   rentAt,
   saleValue,
+  setHolder,
   setMembers,
 } from "./shared/ledger.js";
 import { upgradeOffer } from "./shared/game.js";
@@ -157,6 +160,9 @@ export function propertyCard(property, ctx) {
     el("div", { class: "property-card__standing" }, [
       el("p", { class: "property-card__status" }),
       el("p", { class: "property-card__rent" }),
+      // The full-set rent, when it applies: the extra line that says why the
+      // number on the line above is what it is.
+      el("p", { class: "property-card__fullset", hidden: true }),
     ]),
 
     el("p", {
@@ -215,6 +221,7 @@ function buildCard(property) {
   return el("section", { class: "builds", "aria-label": `What ${property.name} can be built into` }, [
     el("p", { class: "builds__label", text: "UPGRADES" }),
     el("p", { class: "builds__lock" }),
+    el("p", { class: "builds__status" }),
     ...steps.map((step, n) =>
       el("article", { class: "build", "data-build": String(n + 1) }, [
         el("div", { class: "build__head" }, [
@@ -307,6 +314,21 @@ export function syncCard(board, ctx) {
       : level === 0
         ? `Not built • rent ${rupees(rent)}`
         : `Built ${level} of ${MAX_UPGRADE} • rent ${rupees(rent)}`;
+
+  // The full-set rent: a player with every colony in a set, and nothing built
+  // on any of them, charges double on each. The line above already says the
+  // amount; this one says why it is that amount.
+  const fullSet = card.querySelector(".property-card__fullset");
+  if (fullSet) {
+    const doubled = fullSetRent(ledger, id);
+    if (doubled === null) {
+      fullSet.textContent = "";
+      fullSet.hidden = true;
+    } else {
+      fullSet.textContent = `Full set, no upgrades: ${rupees(doubled)}`;
+      fullSet.hidden = false;
+    }
+  }
 
   const decision = game?.landing?.id === id ? game.landing : null;
   const kind = decision?.kind || "";
@@ -410,32 +432,37 @@ export function syncCard(board, ctx) {
     const spent = Boolean(game?.visit?.bought || (game?.visit?.upgrades || 0) >= 1);
 
     // The locked section: why upgrades are (or are not) available.
+    //
+    // It never says who holds what. A set is complete when one player holds
+    // every colony in it, and the card says the size of the set and who owns
+    // each colony - the fact, and nothing more.
     const lock = holder.querySelector(".builds__lock");
+    const status = holder.querySelector(".builds__status");
     if (lock) {
       const members = setMembers(ledger, id);
-      const hasMono = hasMonopoly(ledger, id, seat);
-      const fullSetHolder = members.length > 0
-        ? members.map((m) => ownerOf(ledger, m)).find((o) => o !== null && o !== seat)
-        : null;
-      if (owner !== seat) {
+      const complete = setHolder(ledger, id) !== null;
+      if (complete) {
         lock.textContent = "";
         lock.hidden = true;
-      } else if (hasMono) {
-        lock.textContent = "";
-        lock.hidden = true;
-      } else if (fullSetHolder !== undefined && fullSetHolder !== null) {
-        const holderName = nameOfSeat(ledger, fullSetHolder);
-        lock.textContent = `${holderName} holds every colony in this set`;
-        lock.hidden = false;
+        if (status) {
+          status.textContent = "";
+          status.hidden = true;
+        }
       } else {
-        const status = members.map((m) => {
-          const o = ownerOf(ledger, m);
-          const mark = o === seat ? "\u2713 you" : "\u25cb";
-          const name = propertyFor(m)?.name || m;
-          return `${name} ${mark}`;
-        }).join(" \u00b7 ");
-        lock.textContent = `Own every colony in this set to unlock upgrades  ${status}`;
+        lock.textContent = `Own all ${members.length} colonies in this set to unlock upgrades.`;
         lock.hidden = false;
+        if (status) {
+          status.textContent = members
+            .map((m) => {
+              const o = ownerOf(ledger, m);
+              const name = propertyFor(m)?.name || m;
+              return o === null
+                ? `${name} \u25cb open`
+                : `${name} \u2713 ${nameOfSeat(ledger, o)}`;
+            })
+            .join(" \u00b7 ");
+          status.hidden = false;
+        }
       }
     }
 
@@ -447,12 +474,16 @@ export function syncCard(board, ctx) {
       const can = nextLevel && offer.ok;
       let label;
 
-      // Monopoly gating: upgrades unlock only when the player holds every square
+      // Monopoly gating: upgrades unlock only when the player has every square
       // in the set. The locked section above the rows explains why.
       const mono = hasMonopoly(ledger, id, seat);
+      // Even building: no colony in a set may stand more than one level above
+      // the lowest colony in it. A row that would break that says so.
+      const evenBlocked = mono && evenUpgradeBlocked(ledger, id) && nextLevel;
       if (level > n) label = "Upgraded";
       else if (owner !== seat) label = "Locked";
       else if (!nextLevel) label = "Upgrade the previous level first";
+      else if (evenBlocked) label = "Upgrade the other colonies in this set first";
       else if (mode !== "decision" || kind !== "own") {
         // Reading a square: the answer is always the same, and it is not a
         // refusal - it is the rule that building happens on a landing.

@@ -905,6 +905,8 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
 
   const announceJs = await readFile(join(OUT, "assets", "js", "announcement.js"), "utf8");
   const profileJs = await readFile(join(OUT, "assets", "js", "profile.js"), "utf8");
+  const diceJs = await readFile(join(OUT, "assets", "js", "dice.js"), "utf8");
+  const ledgerJs = await readFile(join(SHARED, "ledger.js"), "utf8");
 
   check(
     "an announcement that arrives while a profile is open waits, and is not dropped",
@@ -955,6 +957,31 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
       "reader's and stays",
   );
   check(
+    "the die is on the board unless something else wants the middle",
+    /export function dieVisible\(state, ui = \{\}\)/.test(diceJs) &&
+      /if \(ui\.card \|\| ui\.announcement \|\| ui\.profile\) return false;/.test(diceJs) &&
+      /\.board\[data-die="hidden"\] \.board__dice/.test(boardCss),
+    "the die used to follow the phase, so a tap took it off the screen for as " +
+      "long as the server took to answer",
+  );
+  // The phrase is assembled rather than written, so that this check is not
+  // itself an occurrence of the thing it forbids.
+  const falseClaim = ["holds", "every"].join(" ");
+  check(
+    "the set's locked section never claims that a player owns the whole set",
+    !cardJs.includes(falseClaim) && !ledgerJs.includes(falseClaim) &&
+      /Own all \$\{members\.length\} colonies in this set to unlock upgrades\./.test(cardJs),
+    "one colony owned by one player says nothing about the set, and a line " +
+      "that claimed otherwise was a lie",
+  );
+  check(
+    "a set one player has all of charges double, and the card says so",
+    /export function fullSetRent/.test(ledgerJs) &&
+      /Full set, no upgrades: /.test(cardJs) &&
+      /evenUpgradeBlocked/.test(ledgerJs) &&
+      /Upgrade the other colonies in this set first/.test(cardJs),
+  );
+  check(
     "the whole chip is one button, and it is what opens the record",
     /el\("button", \{/.test(viewsCode) &&
       /aria-label": `Open \$\{p\.name\}'s profile`/.test(viewsCode) &&
@@ -967,7 +994,8 @@ const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
   );
   check(
     "the record hides the die, the turn line and the card rather than removing them",
-    /\.board\[data-profile="true"\] \.board__dice/.test(boardCss) &&
+    /profile: profileSeat !== null/.test(boardJs) &&
+      /ui\.card \|\| ui\.announcement \|\| ui\.profile/.test(diceJs) &&
       /\.board\[data-profile="true"\] \.board__turn/.test(boardCss) &&
       /\.board\[data-profile="true"\] \.board__card/.test(boardCss),
     "so closing the record gives back exactly what was underneath it",
