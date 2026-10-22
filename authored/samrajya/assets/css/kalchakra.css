@@ -406,9 +406,11 @@ input {
 
 .field__input--code {
   font-weight: 400;
-  letter-spacing: 0.34em;
-  text-transform: lowercase;
-  text-indent: 0.34em;
+  font-size: 1.35rem;
+  letter-spacing: 0.5em;
+  font-variant-numeric: tabular-nums;
+  text-indent: 0.5em;
+  text-align: center;
 }
 
 .field__error {
@@ -450,9 +452,10 @@ input {
 
 .civ {
   display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  padding: 0.8rem 0.95rem;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.65rem 0.85rem;
+  min-height: 3.25rem;
   border: 1px solid var(--line);
   border-radius: 2px;
   background: transparent;
@@ -462,6 +465,19 @@ input {
   touch-action: manipulation;
   transition: border-color 140ms var(--ease), background-color 140ms var(--ease),
     color 140ms var(--ease);
+}
+
+/* The civilization's own colour, as a disc. It is the same value the coin on
+   the board is drawn in, so the choice here is the thing a player then looks
+   for on every square. A hairline inside the disc keeps a pale colour from
+   disappearing into the paper. */
+.civ__swatch {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  background: var(--coin);
 }
 
 .civ__name {
@@ -476,6 +492,12 @@ input {
    all end in the same six letters at full weight. */
 .civ__word {
   color: var(--ink-soft);
+}
+
+.civ__tick {
+  margin-left: auto;
+  font-size: 0.9rem;
+  color: var(--paper);
 }
 
 .civ[aria-pressed="true"] .civ__word {
@@ -495,29 +517,13 @@ input {
   color: var(--paper);
 }
 
+.civ[aria-pressed="true"] .civ__swatch {
+  border-color: var(--paper);
+}
+
 .civ:disabled {
   opacity: 0.32;
   cursor: not-allowed;
-}
-
-/* ----------------------------------------------------------------- review */
-
-.review__note {
-  font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  margin-left: auto;
-}
-
-.review__meta {
-  margin-left: auto;
-  font-size: 0.78rem;
-  font-weight: 300;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  white-space: nowrap;
 }
 
 /* ------------------------------------------------------- the board screen */
@@ -534,60 +540,165 @@ input {
   align-content: center;
 }
 
-/* ----------------------------------------------------------------- review */
+/* ------------------------------------------------------------------ lobby
 
-.review {
+   One screen, three facts, in the order they matter: the number to share, the
+   two people at the table, and what is being waited for. Everything is built
+   on the same 4px rhythm as the rest of the site, and nothing here is a card
+   inside a card. */
+
+.lobby__share {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  padding-block: 0.9rem;
+  gap: 0.5rem;
 }
 
-.review__row {
+.lobby__code-row {
   display: flex;
-  align-items: baseline;
-  gap: 0.6rem;
+  align-items: center;
+  gap: 1rem;
   flex-wrap: wrap;
 }
 
-.review__seat {
-  font-size: 0.72rem;
-  letter-spacing: 0.18em;
+/* Four digits, four tiles. A single string with tracking is read as a word;
+   separate tiles are read as a number to type, which is what it is. */
+.lobby__code {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.lobby__digit {
+  display: grid;
+  place-items: center;
+  width: clamp(2.75rem, 15vw, 3.5rem);
+  height: clamp(3.25rem, 18vw, 4rem);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--paper);
+  font-size: clamp(1.6rem, 8vw, 2rem);
+  font-weight: 300;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.lobby__digit--empty {
+  color: var(--ink-soft);
+}
+
+.lobby__copy {
+  text-decoration: none;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding-inline: 0.9rem;
+}
+
+.lobby__players {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.seats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* A seat is a row, not a card: a rule above each one and the colour at the
+   left, the way a scoreboard lists two players. */
+.seat {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  transition: background-color 160ms var(--ease), border-color 160ms var(--ease);
+}
+
+.seat--mine {
+  border-color: var(--ink);
+}
+
+.seat--open {
+  border-style: dashed;
+}
+
+.seat__coin {
+  flex: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 1px solid rgb(0 0 0 / 0.12);
+  background: var(--coin, var(--line));
+}
+
+.seat__coin--empty {
+  background: transparent;
+  border: 1px dashed var(--line);
+}
+
+.seat__who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.seat__name {
+  font-size: 1.02rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.seat__you {
+  margin-left: 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 300;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--ink-soft);
 }
 
-.review__name {
-  font-size: 1.1rem;
+.seat__civ {
+  font-size: 0.78rem;
   font-weight: 300;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
 }
 
-/* ------------------------------------------------------------------ lobby */
-
-.code {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-}
-
-.code__value {
-  font-size: clamp(1.1rem, 5.2vw, 1.5rem);
-  font-weight: 400;
-  letter-spacing: 0.3em;
-  text-indent: 0.3em;
-}
-
-.code__actions {
+.seat__state {
   margin-left: auto;
-  display: flex;
-  gap: 0.5rem;
+  flex: none;
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.seat__state--ready {
+  color: var(--ink);
+}
+
+/* The word READY gets a dot of its own, so a glance down the list answers the
+   question without reading either row. */
+.seat__state--ready::before {
+  content: "";
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-right: 0.4rem;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 0.08em;
 }
 
 .linkbox {

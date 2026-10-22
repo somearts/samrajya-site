@@ -95,7 +95,18 @@ function panel({ title, step, lede, children, backTo, onBack, busy, error, focus
 
 /* ------------------------------------------------------------------- fields */
 
-function field({ label, name, value = "", placeholder, error, onInput, type, code, autofocus }) {
+function field({
+  label,
+  name,
+  value = "",
+  placeholder,
+  error,
+  onInput,
+  onEnter,
+  type,
+  code,
+  autofocus,
+}) {
   const id = `f-${name}`;
   const errorId = `${id}-err`;
   let errorNode = error
@@ -110,8 +121,12 @@ function field({ label, name, value = "", placeholder, error, onInput, type, cod
     value,
     placeholder: placeholder || "",
     autocomplete: "off",
-    autocapitalize: "words",
+    autocapitalize: code ? "off" : "words",
     spellcheck: "false",
+    // A four-digit code is typed on a number pad. `inputmode` asks for it
+    // without forcing a numeric input, which would hide a pasted link.
+    inputmode: code ? "numeric" : null,
+    pattern: code ? "[0-9]*" : null,
     maxlength: code ? 40 : String(NAME_MAX),
     "aria-label": label,
     "aria-describedby": errorNode ? errorId : null,
@@ -129,6 +144,12 @@ function field({ label, name, value = "", placeholder, error, onInput, type, cod
       }
       onInput(event.target.value);
     },
+    onkeydown: (event) => {
+      if (!onEnter) return;
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      onEnter();
+    },
   });
 
   return el("div", { class: "field" }, [
@@ -139,61 +160,73 @@ function field({ label, name, value = "", placeholder, error, onInput, type, cod
 }
 
 /**
- * The token picker.
+ * One option in the civilization picker.
  *
- * Tokens are exclusive while both players are choosing, so anything already
- * claimed is disabled rather than hidden - a player can see what is gone and
- * why they cannot have it.
+ * The disc is the colour that civilization's coin is drawn in on the board, so
+ * the choice a player makes here is the colour they will be looking for on
+ * every square afterwards. It is a real element rather than a border or a
+ * background tint: a dot of colour survives being selected (the row turns ink,
+ * and a black border on black would not), and it is the same value the board
+ * reads, so the two cannot drift.
+ */
+function civRow(civ, { chosen, taken, onPick }) {
+  const node = el(
+    "button",
+    {
+      type: "button",
+      class: "civ",
+      role: "radio",
+      "aria-checked": chosen ? "true" : "false",
+      "aria-pressed": chosen ? "true" : "false",
+      "aria-label": taken ? `${civ.name} Civilization, taken` : `${civ.name} Civilization`,
+      disabled: taken,
+      "data-civ": civ.id,
+      style: { "--coin": civ.coin },
+      onclick: () => {
+        if (taken) return;
+        const group = node.closest(".civs");
+        for (const other of group.querySelectorAll(".civ")) {
+          const on = other === node;
+          other.setAttribute("aria-checked", on ? "true" : "false");
+          other.setAttribute("aria-pressed", on ? "true" : "false");
+          other.querySelector(".civ__tick")?.remove();
+        }
+        // The tick follows the choice. Re-rendering the panel would be simpler
+        // and would also throw the caret out of the name field beside it.
+        node.append(el("span", { class: "civ__tick", "aria-hidden": "true", text: "✓" }));
+        onPick(civ.id);
+      },
+    },
+    [
+      el("span", { class: "civ__swatch", "aria-hidden": "true" }),
+      el("span", { class: "civ__name" }, [
+        `${civ.name} `,
+        el("span", { class: "civ__word", text: "Civilization" }),
+      ]),
+      chosen ? el("span", { class: "civ__tick", "aria-hidden": "true", text: "✓" }) : null,
+    ],
+  );
+  return node;
+}
+
+/**
+ * The civilization picker.
  *
- * The group updates its own selection when a token is tapped. That is what a
+ * The group updates its own selection when an option is tapped. That is what a
  * radiogroup is for, and it matters practically: re-rendering the whole panel
  * on every tap would throw away the caret in the name field next to it.
  * The app keeps the truth in `draft`; this keeps the picture honest.
  */
 function civPicker({ label, value, taken = [], onPick, id, lede }) {
   const name = `civ-${id}`;
-  const group = el("div", { class: "civs", role: "radiogroup", "aria-labelledby": `${name}-label` });
-
-  const select = (chosen) => {
-    for (const other of group.querySelectorAll(".civ")) {
-      const on = other.dataset.civ === chosen;
-      other.setAttribute("aria-checked", on ? "true" : "false");
-      other.setAttribute("aria-pressed", on ? "true" : "false");
-    }
-  };
+  const group = el("div", {
+    class: "civs",
+    role: "radiogroup",
+    "aria-labelledby": `${name}-label`,
+  });
 
   for (const civ of choices()) {
-    const isTaken = taken.includes(civ.id);
-    group.append(
-      el(
-        "button",
-        {
-          type: "button",
-          class: "civ",
-          role: "radio",
-          "aria-checked": value === civ.id ? "true" : "false",
-          "aria-pressed": value === civ.id ? "true" : "false",
-          "aria-label": isTaken ? `${civ.name} Civilization, taken` : `${civ.name} Civilization`,
-          disabled: isTaken,
-          "data-civ": civ.id,
-          onclick: () => {
-            if (isTaken) return;
-            select(civ.id);
-            onPick(civ.id);
-          },
-        },
-        [
-          // The full name, on one line, as the rules name it. Only the
-          // trailing word is de-emphasised, so the option still reads as
-          // "Indus Valley Civilization" rather than as a title with a
-          // subtitle under it - and the whole name is one string of text.
-          el("span", { class: "civ__name" }, [
-            `${civ.name} `,
-            el("span", { class: "civ__word", text: "Civilization" }),
-          ]),
-        ],
-      ),
-    );
+    group.append(civRow(civ, { chosen: value === civ.id, taken: taken.includes(civ.id), onPick }));
   }
 
   return el("div", { class: "field", role: "group", "aria-label": label }, [
@@ -203,137 +236,55 @@ function civPicker({ label, value, taken = [], onPick, id, lede }) {
   ]);
 }
 
-/**
- * One line in the review or the lobby: who, what, and where they stand.
- *
- * There is no mark beside the name. The civilisation tokens are a later phase
- * and putting four half-drawn symbols next to four real names would be worse
- * than putting nothing.
- */
-function reviewRow(seat, name, civId, meta) {
-  const civ = civById(civId);
-  return el("div", { class: "review__row" }, [
-    el("span", {}, [
-      el("span", { class: "review__seat", text: seat }),
-      el("span", { class: "review__name", text: ` ${name}` }),
-    ]),
-    el("span", { class: "review__meta", text: civ ? `${civ.name} Civilization` : "—" }),
-    meta ? el("span", { class: "review__note", text: meta }) : null,
-  ]);
-}
-
 /* ------------------------------------------------------------------- create */
 
+/**
+ * Open a game.
+ *
+ * One step, one player. The creator says who they are and what they are
+ * playing, and that is the whole form - the second seat belongs to the person
+ * who takes it, on their own device, with their own name and civilization.
+ */
 export function createView(state, actions) {
-  const { draft, step, errors = {}, busy, error } = state;
+  const { draft, errors = {}, busy, error } = state;
 
-  const body = (() => {
-    if (step === 0) {
-      return panel({
-        title: "Create Game",
-        step: "1 of 3",
-        lede: "This game is for two. Start with your own name.",
-        backTo: "Back",
-        onBack: actions.cancel,
-        busy,
-        error,
-        children: [
-          field({
-            label: "Player 1 - your name",
-            name: "p1name",
-            value: draft.name,
-            placeholder: "Your name",
-            error: errors.name,
-            autofocus: true,
-            onInput: actions.setName,
-          }),
-          civPicker({
-            id: "p1",
-            label: "Choose your civilization",
-            value: draft.civ,
-            onPick: actions.setCiv,
-          }),
-          el("div", { class: "actions" }, [
-            button("Next", {
-              arrow: true,
-              variant: "primary",
-              disabled: busy,
-              onclick: actions.createNext,
-            }),
-          ]),
-        ],
-      });
-    }
-
-    if (step === 1) {
-      return panel({
-        title: "Player 2",
-        step: "2 of 3",
-        lede: "Set your opponent up. They can change this when they join.",
-        backTo: "Back",
-        onBack: actions.createBack,
-        busy,
-        error,
-        children: [
-          field({
-            label: "Player 2 - their name",
-            name: "p2name",
-            value: draft.guestName,
-            placeholder: "Their name",
-            error: errors.guestName,
-            autofocus: true,
-            onInput: actions.setGuestName,
-          }),
-          civPicker({
-            id: "p2",
-            label: "Choose their civilization",
-            value: draft.guestCiv,
-            taken: draft.civ ? [draft.civ] : [],
-            onPick: actions.setGuestCiv,
-          }),
-          el("div", { class: "actions" }, [
-            button("Review", {
-              arrow: true,
-              variant: "primary",
-              disabled: busy,
-              onclick: actions.createNext,
-            }),
-          ]),
-        ],
-      });
-    }
-
-    return panel({
-      title: "Review",
-      step: "3 of 3",
-      lede: "Check the two of you before the game is opened.",
-      backTo: "Back",
-      onBack: actions.createBack,
-      busy,
-      error,
-      focus: "panel",
-      children: [
-        el("div", { class: "review" }, [
-          reviewRow("Player 1", draft.name, draft.civ, "you"),
-          reviewRow("Player 2", draft.guestName, draft.guestCiv, "joins by code"),
-        ]),
-        el("p", {
-          class: "field__hint",
-          text: "You will get a code to send them. They open it, choose, and you are both at the board.",
+  return panel({
+    title: "Create Game",
+    step: "1 of 1",
+    lede: "Your name and your civilization. Then you get a four-digit code to share.",
+    backTo: "Back",
+    onBack: actions.cancel,
+    busy,
+    error,
+    children: [
+      field({
+        label: "Your name",
+        name: "p1name",
+        value: draft.name,
+        placeholder: "Your name",
+        error: errors.name,
+        autofocus: true,
+        onInput: actions.setName,
+        onEnter: actions.createConfirm,
+      }),
+      civPicker({
+        id: "p1",
+        label: "Choose your civilization",
+        lede: "Each civilization plays as a colour. This one is yours on the board.",
+        value: draft.civ,
+        onPick: actions.setCiv,
+      }),
+      errors.civ ? el("p", { class: "field__error", role: "alert", text: errors.civ }) : null,
+      el("div", { class: "actions" }, [
+        button(busy ? "Opening…" : "Create Game", {
+          arrow: !busy,
+          variant: "primary",
+          disabled: busy,
+          onclick: actions.createConfirm,
         }),
-        el("div", { class: "actions" }, [
-          button(busy ? "Opening…" : "Create Game", {
-            arrow: !busy,
-            variant: "primary",
-            disabled: busy,
-            onclick: actions.createConfirm,
-          }),
-        ]),
-      ],
-    });
-  })();
-
-  return body;
+      ]),
+    ],
+  });
 }
 
 /* --------------------------------------------------------------------- join */
@@ -345,7 +296,7 @@ export function joinView(state, actions) {
     return panel({
       title: "Join Game",
       step: "1 of 2",
-      lede: "Paste the code or the whole link you were sent.",
+      lede: "Type the four-digit code, or paste the link you were sent.",
       backTo: "Back",
       onBack: actions.cancel,
       busy,
@@ -355,11 +306,12 @@ export function joinView(state, actions) {
           label: "Game code",
           name: "code",
           value: draft.rawCode,
-          placeholder: "abcd2345",
+          placeholder: "4 digits",
           code: true,
           autofocus: true,
           error: errors.code,
           onInput: actions.setCode,
+          onEnter: actions.joinLookup,
         }),
         el("div", { class: "actions" }, [
           button(busy ? "Looking…" : "Next", {
@@ -375,12 +327,13 @@ export function joinView(state, actions) {
 
   const room = state.room;
   const taken = (room?.players || []).filter((p) => p.joined).map((p) => p.civ);
+  const host = room?.players?.[0];
 
   return panel({
     title: "Join Game",
     step: "2 of 2",
-    lede: room
-      ? `You are joining ${room.players[0]?.name || "a game"}.`
+    lede: host?.name
+      ? `You are joining ${host.name}${host.civ ? ` (${civById(host.civ)?.name ?? ""} Civilization)` : ""}.`
       : "Tell them who you are.",
     backTo: "Back",
     onBack: actions.joinBack,
@@ -395,14 +348,17 @@ export function joinView(state, actions) {
         error: errors.name,
         autofocus: true,
         onInput: actions.setName,
+        onEnter: actions.joinConfirm,
       }),
       civPicker({
         id: "join",
         label: "Choose your civilization",
+        lede: "A colour and a people. Pick one that is still free.",
         value: draft.civ,
         taken,
         onPick: actions.setCiv,
       }),
+      errors.civ ? el("p", { class: "field__error", role: "alert", text: errors.civ }) : null,
       el("div", { class: "actions" }, [
         button(busy ? "Joining…" : "Join Game", {
           arrow: !busy,
@@ -417,25 +373,92 @@ export function joinView(state, actions) {
 
 /* -------------------------------------------------------------------- lobby */
 
+/**
+ * One seat, as the lobby shows it.
+ *
+ * Three facts, in the order a person wants them: the colour they will look for
+ * on the board, who is sitting there, and whether they are in yet. A seat
+ * nobody has taken is not hidden - an empty chair is the thing being waited
+ * for, and pretending it is not there makes the wait look like a fault.
+ */
+function seatRow({ player, index, seat, openLabel }) {
+  const joined = Boolean(player?.joined && player?.name);
+  const civ = civById(player?.civ);
+  const mine = seat === index;
+
+  return el("li", {
+    class: `seat${joined ? " seat--in" : " seat--open"}${mine ? " seat--mine" : ""}`,
+    "data-seat": String(index),
+  }, [
+    el("span", {
+      class: `seat__coin${civ ? "" : " seat__coin--empty"}`,
+      "aria-hidden": "true",
+      style: civ ? { "--coin": coinColor(player.civ) } : null,
+    }),
+    el("span", { class: "seat__who" }, [
+      el("span", { class: "seat__name" }, [
+        joined ? player.name : openLabel,
+        mine ? el("span", { class: "seat__you", text: "you" }) : null,
+      ]),
+      el("span", {
+        class: "seat__civ",
+        text: joined ? (civ ? `${civ.name} Civilization` : "—") : "Not joined yet",
+      }),
+    ]),
+    el("span", {
+      class: `seat__state${joined ? " seat__state--ready" : ""}`,
+      text: joined ? "Ready" : "Waiting",
+    }),
+  ]);
+}
+
+/** The four digits, as four digits. One big number would be a word; this is a code. */
+function codeTiles(code) {
+  return el(
+    "div",
+    {
+      class: "lobby__code",
+      role: "group",
+      "aria-label": code ? `Game code ${code.split("").join(" ")}` : "Game code not ready",
+    },
+    code
+      ? code.split("").map((digit) => el("span", { class: "lobby__digit", text: digit }))
+      : [el("span", { class: "lobby__digit lobby__digit--empty", text: "—" })],
+  );
+}
+
 export function lobbyView(state, actions) {
   const room = state.room;
-  const code = room?.roomId || state.draft.code;
+  const code = room?.roomId || state.draft.code || "";
   const link = state.inviteLink || "";
+  const seat = Number.isInteger(room?.seat) ? room.seat : null;
   const [host, guest] = room?.players || [];
-  const bothIn = host?.joined && guest?.joined;
+  const bothIn = Boolean(host?.joined && guest?.joined);
+  const mineIsHost = seat === 0;
+  const playing = room?.status === "PLAYING";
+  const busy = Boolean(state.busy);
+  const joinerCiv = civById(guest?.civ);
+  const myCiv = civById(seat === 0 ? host?.civ : seat === 1 ? guest?.civ : null);
 
-  const rows = [
-    room && host
-      ? reviewRow("Player 1", host.name, host.civ, host.joined ? "ready" : "waiting")
-      : null,
-    room && guest
-      ? reviewRow("Player 2", guest.name || "—", guest.civ, guest.joined ? "ready" : "to join")
-      : null,
-  ].filter(Boolean);
+  const status = (() => {
+    if (playing) return "The game has started. The board is ready.";
+    if (bothIn) {
+      // The host is told who arrived; the guest is told where they are. Saying
+      // "Vikram has joined" to Vikram would be news about himself.
+      return mineIsHost
+        ? `${guest.name} has joined as ${joinerCiv?.name ?? "an"} Civilization — Ready.`
+        : `You are in as ${myCiv?.name ?? "your"} Civilization — ready when ${host?.name || "the host"} starts.`;
+    }
+    if (mineIsHost) return "Waiting for the second player to join.";
+    return `Waiting for ${host?.name || "the host"} to start the game.`;
+  })();
+
+  const linkLost = state.socket === "retrying";
 
   return panel({
-    title: bothIn ? "Both ready" : "Waiting",
-    backTo: "Start over",
+    title: playing ? "In play" : "Lobby",
+    step: bothIn || playing ? "2 of 2" : "1 of 2",
+    backTo: playing ? "Leave the game" : "Leave lobby",
     onBack: actions.cancel,
     busy: false,
     error: state.error,
@@ -443,56 +466,87 @@ export function lobbyView(state, actions) {
     children: [
       el("p", {
         class: "panel__lede",
-        text: bothIn
-          ? "Both of you are in. The board is ready."
-          : "Send this code to your opponent. You can go to the board now, and they will find you there.",
+        text: playing
+          ? "Both of you are in. Pick up where you left off."
+          : mineIsHost
+            ? "Send them the code or the link. You both stay in this room until you start."
+            : "You are in the same room as your opponent. The board opens when they start it.",
       }),
-      el("div", { class: "code" }, [
-        el("span", { class: "code__value", text: code || "—" }),
-        el("div", { class: "code__actions" }, [
+
+      el("div", { class: "lobby__share" }, [
+        el("p", { class: "field__label", text: "Game code" }),
+        el("div", { class: "lobby__code-row" }, [
+          codeTiles(code),
           el("button", {
             type: "button",
-            class: "btn btn--quiet",
+            class: "btn btn--quiet lobby__copy",
             text: "Copy code",
             onclick: () => actions.copy(code, "Code copied."),
           }),
         ]),
       ]),
-      el("div", { class: "field" }, [
-        el("label", { class: "field__label", for: "invite", text: "Or send the link" }),
-        el("div", { class: "linkbox" }, [
-          el("input", {
-            id: "invite",
-            class: "field__input",
-            type: "text",
-            value: link,
-            readonly: true,
-            "aria-label": "Invite link",
-            onfocus: (e) => e.target.select(),
-          }),
-          el("button", {
-            type: "button",
-            class: "btn btn--quiet",
-            text: "Copy",
-            onclick: () => actions.copy(link, "Link copied."),
-          }),
+
+      // Once the game is playing the number is still worth showing - it is how
+      // you come back - but there is nobody left to invite, so the link field
+      // goes rather than sitting there offering a door that is shut.
+      playing
+        ? null
+        : el("div", { class: "field lobby__link" }, [
+            el("label", { class: "field__label", for: "invite", text: "Or send the link" }),
+            el("div", { class: "linkbox" }, [
+              el("input", {
+                id: "invite",
+                class: "field__input",
+                type: "text",
+                value: link,
+                readonly: true,
+                "aria-label": "Invite link",
+                onfocus: (e) => e.target.select(),
+              }),
+              el("button", {
+                type: "button",
+                class: "btn btn--quiet",
+                text: "Copy",
+                onclick: () => actions.copy(link, "Link copied."),
+              }),
+            ]),
+          ]),
+
+      el("div", { class: "lobby__players" }, [
+        el("p", { class: "field__label", text: "At the table" }),
+        el("ul", { class: "seats" }, [
+          seatRow({ player: host, index: 0, seat, openLabel: "Player 1" }),
+          seatRow({ player: guest, index: 1, seat, openLabel: "Player 2" }),
         ]),
       ]),
-      el("div", { class: "review" }, rows),
-      el("div", { class: "statusline" }, [
-        el("span", { class: `pulse${bothIn ? "" : " pulse--wait"}`, "aria-hidden": "true" }),
-        el("span", {
-          text: bothIn
-            ? "Both players are in the room."
-            : "Waiting for the second player to join.",
-        }),
+
+      el("div", { class: "statusline", role: "status", "aria-live": "polite" }, [
+        el("span", { class: `pulse${bothIn || playing ? "" : " pulse--wait"}`, "aria-hidden": "true" }),
+        el("span", { text: status }),
       ]),
+      linkLost
+        ? el("p", { class: "field__hint", text: "Reconnecting… the table is still here." })
+        : null,
+
       el("div", { class: "actions" }, [
-        button(bothIn ? "Go to the board" : "Enter the board alone", {
-          arrow: true,
-          variant: "primary",
-          onclick: actions.enterBoard,
-        }),
+        playing
+          ? button("Return to the board", {
+              arrow: true,
+              variant: "primary",
+              onclick: actions.enterBoard,
+            })
+          : mineIsHost
+            ? button(busy ? "Starting…" : bothIn ? "Start Game" : "Waiting for player 2", {
+                arrow: bothIn && !busy,
+                variant: "primary",
+                disabled: !bothIn || busy,
+                onclick: actions.startGame,
+              })
+            : button(`Waiting for ${host?.name || "the host"}`, {
+                arrow: false,
+                variant: "primary",
+                disabled: true,
+              }),
       ]),
     ],
   });

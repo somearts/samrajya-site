@@ -37,11 +37,13 @@ const state = {
   session: null,
   // The board registers this so a live snapshot can be handed straight to it.
   applySnapshot: null,
+  // "connecting", "open", "retrying" or "closed" - the live channel's own
+  // weather. The lobby says so when it has lost the line, rather than letting
+  // a silent screen look like a quiet room.
+  socket: "connecting",
   draft: {
     name: "",
     civ: "",
-    guestName: "",
-    guestCiv: "",
     rawCode: "",
     code: "",
   },
@@ -111,6 +113,8 @@ function buildActions() {
       state.step = 0;
       state.error = null;
       state.errors = {};
+      state.draft.name = "";
+      state.draft.civ = "";
       render();
     },
 
@@ -119,6 +123,9 @@ function buildActions() {
       state.step = 0;
       state.error = null;
       state.errors = {};
+      state.draft.name = "";
+      state.draft.civ = "";
+      state.draft.rawCode = "";
       render();
     },
 
@@ -134,81 +141,43 @@ function buildActions() {
       state.draft.civ = id;
       state.errors.civ = null;
     },
-    setGuestName: (value) => {
-      state.draft.guestName = value;
-      state.errors.guestName = null;
-    },
-    setGuestCiv: (id) => {
-      state.draft.guestCiv = id;
-      state.errors.guestCiv = null;
-    },
     setCode: (value) => {
       state.draft.rawCode = value;
       state.errors.code = null;
       state.error = null;
     },
 
-    /* --- create flow --- */
+    /* --- create: one form, one player -------------------------------------- */
 
-    createNext: () => {
-      if (state.step === 0) {
-        const name = cleanName(state.draft.name);
-        if (!name.ok) return fail("name", name.reason);
-        if (!isCiv(state.draft.civ)) return fail("civ", "Choose a civilization.");
-        state.draft.name = name.value;
-        state.step = 1;
-        render();
-        return;
-      }
-      const guest = cleanName(state.draft.guestName);
-      if (!guest.ok) return fail("guestName", guest.reason);
-      if (!isCiv(state.draft.guestCiv)) return fail("guestCiv", "Choose a civilization for them.");
-      if (state.draft.guestCiv === state.draft.civ) {
-        return fail("guestCiv", "That is yours. Pick a different one for them.");
-      }
-      state.draft.guestName = guest.value;
-      state.step = 2;
-      render();
-    },
+    createConfirm: async () => {
+      if (state.busy) return;
+      const name = cleanName(state.draft.name);
+      if (!name.ok) return fail("name", name.reason);
+      if (!isCiv(state.draft.civ)) return fail("civ", "Choose a civilization.");
 
-    createBack: () => {
-      state.step = Math.max(0, state.step - 1);
+      state.draft.name = name.value;
+      state.busy = true;
       state.error = null;
       state.errors = {};
       render();
+
+      const result = await session.create({ name: name.value, civ: state.draft.civ });
+      state.busy = false;
+      if (!result.ok) {
+        state.error = result.error;
+        render();
+        return;
+      }
+      adoptRoom(result.data);
     },
 
-    createConfirm: () => {
-      if (state.busy) return;
-      state.busy = true;
-      state.error = null;
-      render();
-
-      session
-        .create({
-          name: state.draft.name,
-          civ: state.draft.civ,
-          guestName: state.draft.guestName,
-          guestCiv: state.draft.guestCiv,
-        })
-        .then((result) => {
-          state.busy = false;
-          if (!result.ok) {
-            state.error = result.error;
-            render();
-            return;
-          }
-          adoptRoom(result.data);
-        });
-    },
-
-    /* --- join flow --- */
+    /* --- join --------------------------------------------------------------- */
 
     joinLookup: async () => {
       if (state.busy) return;
       const code = parseRoomCode(state.draft.rawCode);
       if (!code) {
-        state.errors.code = "That does not look like a game code.";
+        state.errors.code = "Enter the four-digit code you were sent.";
         render();
         return;
       }
@@ -216,36 +185,14 @@ function buildActions() {
       state.error = null;
       render();
 
-      const result = await session.room(code);
+      const found = await findRoom(code);
       state.busy = false;
-      if (!result.ok) {
-        state.errors.code = result.error;
+      if (!found.ok) {
+        state.errors.code = found.error;
         render();
         return;
       }
-      if (result.data.seat !== null && result.data.seat !== undefined) {
-        // Already in this game: the browser is simply being put back.
-        state.draft.code = code;
-        adoptRoom(result.data);
-        return;
-      }
-      if (result.data.status !== "LOBBY") {
-        state.errors.code = "That game has already started.";
-        render();
-        return;
-      }
-      state.draft.code = code;
-      // Keep the room. The join screen reads it to say who is being joined and
-      // to grey out the civilizations that are already gone - both of which are the
-      // difference between a join that works first time and one that fails at
-      // the last step with "Tiger is already taken".
-      state.room = result.data;
-      // Offer the seat the host reserved, if there is one.
-      const reserved = (result.data.players || [])[1];
-      if (reserved && !reserved.joined) {
-        state.draft.name = state.draft.name || reserved.name;
-        state.draft.civ = state.draft.civ || reserved.civ;
-      }
+      if (state.screen === "lobby" || state.screen === "board") return;
       state.step = 1;
       state.error = null;
       render();
@@ -266,6 +213,7 @@ function buildActions() {
 
       state.busy = true;
       state.error = null;
+      state.errors = {};
       render();
 
       const result = await session.join({
@@ -283,37 +231,44 @@ function buildActions() {
       adoptRoom(result.data);
     },
 
-    /* --- lobby --- */
+    /* --- the lobby ---------------------------------------------------------- */
+
+    /* The host's one decisive action. The server starts the game and pushes the
+       new room to both sockets; this screen does not guess that it worked. */
+    startGame: async () => {
+      const room = state.room;
+      if (!room || room.seat !== 0 || state.busy) return;
+      if (room.status === "PLAYING") return toBoard(room);
+
+      state.busy = true;
+      state.error = null;
+      render();
+
+      const result = await session.start(room.roomId);
+      state.busy = false;
+      if (!result.ok) {
+        state.error = result.error;
+        render();
+        return;
+      }
+      toBoard(result.data.room);
+    },
 
     /* --- the board --- */
 
+    /* A game already in progress: back to it, as it stands. */
     enterBoard: async () => {
       const room = state.room;
       if (!room) return;
+      if (room.board) return toBoard(room);
+
       state.busy = true;
-      state.error = null;
-      try {
-        if (room.seat === 0 && room.status === "LOBBY") {
-          // The host starts the game. If the second seat is not taken the server
-          // says so, and the lobby stays where it is.
-          const result = await session.start(room.roomId);
-          if (!result.ok) {
-            state.error = result.error;
-            render();
-            return;
-          }
-          state.room = result.data.room;
-        } else {
-          // The guest, or anyone rejoining a game that has already begun, reads
-          // the room as it is.
-          const result = await session.room(room.roomId);
-          if (result.ok) state.room = result.data;
-        }
-        state.game = state.room.board ? restoreGame(state.room.board) : null;
-        state.screen = "board";
+      const result = await session.room(room.roomId);
+      state.busy = false;
+      if (result.ok) toBoard(result.data);
+      else {
+        state.error = result.error;
         render();
-      } finally {
-        state.busy = false;
       }
     },
 
@@ -321,12 +276,14 @@ function buildActions() {
      * Leave the board, keeping the room.
      *
      * Going back to the lobby rather than to the welcome screen, because the
-     * room is still there and the other player may still arrive. "Start over"
-     * is on the lobby for anyone who really does want to end it.
+     * room is still there and the other player may still be in it.
      */
     leaveBoard: () => {
       state.screen = "lobby";
       state.error = null;
+      // The board node is about to be thrown away; nothing should keep painting
+      // into it when a snapshot arrives.
+      state.applySnapshot = null;
       render();
     },
 
@@ -343,35 +300,103 @@ function fail(field, reason) {
 
 /* --------------------------------------------------------------------- flow */
 
+/**
+ * The room was found, joined or created: sit in it.
+ *
+ * The address bar is cleaned here, and that is not cosmetic. A player who
+ * arrived on a shared link has `?room=7889` in the address bar, and if that
+ * stayed there a refresh would send them back to the table they came from -
+ * which is the "old code" bug: the host starts over, sends a second link, and a
+ * reload quietly reopens the first game. The code is read once and taken out
+ * of the address; from then on this tab knows its room from its own storage.
+ */
 function adoptRoom(data) {
   state.room = data;
-  state.screen = "lobby";
+  state.screen = data.status === "PLAYING" && data.board ? "board" : "lobby";
+  state.game = state.screen === "board" && data.board ? restoreGame(data.board) : null;
   state.error = null;
   state.errors = {};
   state.draft.code = data.roomId;
   state.inviteLink = inviteLink(data.roomId);
   rememberRoom(data.roomId);
+  dropUrlCode();
   render();
   startWatching();
+}
+
+/**
+ * Look a room up by its code.
+ *
+ * Three answers, and they are all the join screen needs: a room this browser
+ * is already seated in (walk back in), a lobby with a free second seat (ask for
+ * a name), or a refusal to show under the code.
+ */
+async function findRoom(code) {
+  const result = await session.room(code);
+  if (!result.ok) {
+    // Four digits are typed by hand. A number nobody is sitting at is a typo,
+    // not a fault, and the message should sound like one.
+    if (result.code === "NO_ROOM") {
+      return { ok: false, error: "No game has that code. Check the four digits." };
+    }
+    return result;
+  }
+
+  const room = result.data;
+  state.draft.code = code;
+
+  if (room.seat !== null && room.seat !== undefined) {
+    // This browser already holds a seat: a refresh, or a link to a game it is
+    // in. Walk back in rather than being asked who it is again.
+    adoptRoom(room);
+    return { ok: true, data: room };
+  }
+
+  if (room.status !== "LOBBY") return { ok: false, error: "That game has already started." };
+  if (room.players?.[1]?.joined) return { ok: false, error: "That game already has two players." };
+
+  // Kept so the second step can say who is being joined and grey out the
+  // civilizations that are already gone.
+  state.room = room;
+  return { ok: true, data: room };
+}
+
+function toBoard(room) {
+  if (!room) return;
+  state.room = { ...room, seat: room.seat ?? state.room?.seat ?? null };
+  state.busy = false;
+  state.error = null;
+  state.errors = {};
+
+  if (state.screen === "board") {
+    // Already there: hand the snapshot to the board it is painting from rather
+    // than replacing the board underneath a running animation.
+    if (room.board) state.applySnapshot?.({ state: room.board, events: [] });
+    return;
+  }
+
+  state.game = room.board ? restoreGame(room.board) : null;
+  state.screen = "board";
+  rememberRoom(room.roomId);
+  render();
 }
 
 function toWelcome() {
   state.screen = "welcome";
   state.step = 0;
   state.room = null;
+  state.game = null;
   state.error = null;
   state.errors = {};
-  state.draft = {
-    name: "",
-    civ: "",
-    guestName: "",
-    guestCiv: "",
-    rawCode: "",
-    code: "",
-  };
+  state.draft = { name: "", civ: "", rawCode: "", code: "" };
   state.inviteLink = "";
   forgetRoom();
+  // The session remembers the last room it opened so a call with no code can
+  // mean "the one we are in". Leaving means there is no such room, and a stale
+  // one here is exactly how a player ends up back in the game they left.
+  session.forget();
   stopWatching();
+  dropUrlCode();
   render();
 }
 
@@ -384,13 +409,34 @@ function inviteLink(code) {
   return url.toString();
 }
 
+/** Take a room code out of the address bar once it has been acted on. */
+function dropUrlCode() {
+  try {
+    const url = new URL(location.href);
+    // Two shapes of link, one rule: a code in the address is a way in, not
+    // somewhere this browser lives. The query form is `?room=7889`; the path
+    // form is `/samrajya/7889`.
+    const cleaned = url.pathname.replace(/\/[1-9][0-9]{3}\/?$/, "/");
+    const hadCode = url.searchParams.has("room") || cleaned !== url.pathname;
+    if (!hadCode) return;
+    url.searchParams.delete("room");
+    history.replaceState(null, "", `${cleaned || "/"}${url.search}${url.hash}`);
+  } catch {
+    /* The page still works; this is only the address bar. */
+  }
+}
+
 /* ------------------------------------------------------------------ watching
 
    The lobby is told when the room changes, rather than asking every few
-   seconds. The socket carries the change the moment it happens, so arriving
-   is arriving and not the next tick of a timer. `refreshRoom` still exists for
-   the two moments a socket cannot cover: the first paint, and a tab that has
-   been asleep. */
+   seconds. The socket carries the change the moment it happens, so arriving is
+   arriving and not the next tick of a timer.
+
+   Two things come down it. `state` is the room - who has joined, and whether
+   the game has started. `snapshot` is the game itself, after every accepted
+   action. A start arrives as the first of those, and it is the one that moves
+   BOTH screens to the board: neither player presses anything twice, and nobody
+   refreshes. */
 
 let unsubscribe = null;
 
@@ -405,19 +451,42 @@ function startWatching() {
       // than letting a push quietly unseat us.
       const mine = state.room?.seat ?? null;
       const before = fingerprint(state.room);
+      // Whether this screen already knew the game was on. A game that was
+      // already in play is not a game that just started: somebody who pressed
+      // "Leave the board" stays in the lobby.
+      const wasPlaying = state.room?.status === "PLAYING";
       state.room = { ...room, seat: room.seat ?? mine };
-      if (room.board) state.game = restoreGame(room.board);
-      if (before !== fingerprint(state.room) && state.screen === "lobby") render();
-      // A game that started while this screen was the board: the snapshot is
-      // handed to the board, which animates it.
-      if (state.screen === "board" && room.board) {
-        state.applySnapshot?.({ state: room.board, events: [] });
+
+      // The host has started. This is the whole of "both players arrive at the
+      // board": the board is in the room the server just pushed, and a player
+      // holding a seat walks onto it here, without a second request.
+      if (room.status === "PLAYING" && room.board && state.room.seat !== null) {
+        state.game = restoreGame(room.board);
+        if (state.screen === "board") {
+          state.applySnapshot?.({ state: room.board, events: [] });
+          return;
+        }
+        if (!wasPlaying) {
+          toBoard(state.room);
+          return;
+        }
       }
+
+      if (room.board) state.game = restoreGame(room.board);
+      if (state.screen === "lobby" && before !== fingerprint(state.room)) render();
     },
     onSnapshot: (snapshot) => {
       if (!snapshot?.state) return;
       state.game = restoreGame(snapshot.state);
       state.applySnapshot?.(snapshot);
+    },
+    onStatus: (status) => {
+      const was = state.socket;
+      state.socket = status;
+      // A channel that has just come back has missed whatever happened while it
+      // was down. One read of the room catches the screen up.
+      if (status === "open" && was !== "open") catchUp();
+      if (status !== was && state.screen === "lobby") render();
     },
   });
 }
@@ -425,21 +494,51 @@ function startWatching() {
 function stopWatching() {
   unsubscribe?.();
   unsubscribe = null;
+  state.socket = "closed";
 }
 
 /** What the lobby actually draws, so an unchanged room does not repaint. */
 function fingerprint(room) {
   if (!room) return "";
-  return JSON.stringify([room.status, room.players, room.board]);
+  return JSON.stringify([room.status, room.roomId, room.players, room.seq ?? 0]);
 }
 
-async function refreshRoom() {
-  if (state.screen !== "lobby" || !state.draft.code) return;
-  const result = await session.room(state.draft.code);
+/**
+ * Read the room again, and take it as it stands.
+ *
+ * The socket carries every change, so this is not the normal path - it is for
+ * the two moments a socket cannot cover: a tab that was asleep, and a channel
+ * that has just come back after dropping. Either way the screen has missed
+ * something, and asking once is cheaper than a client that is quietly a move
+ * behind. A lobby redraws if the room changed; a board takes the snapshot it
+ * has, without animating a move it did not watch.
+ */
+async function catchUp() {
+  const code = state.draft.code;
+  if (!code) return;
+  const result = await session.room(code);
   if (!result.ok) return;
+
+  const seat = result.data.seat ?? state.room?.seat ?? null;
+  const room = { ...result.data, seat };
+
+  if (state.screen === "board") {
+    if (room.status !== "PLAYING" || !room.board) return;
+    state.room = room;
+    state.game = restoreGame(room.board);
+    state.applySnapshot?.({ state: room.board, events: [] });
+    return;
+  }
+
+  if (state.screen !== "lobby") return;
   const before = fingerprint(state.room);
-  state.room = result.data;
-  if (before !== fingerprint(state.room)) render();
+  state.room = room;
+  if (before === fingerprint(state.room)) return;
+  if (room.status === "PLAYING" && room.board && room.seat !== null) {
+    toBoard(room);
+    return;
+  }
+  render();
 }
 
 /* ------------------------------------------------------------------ helpers */
@@ -493,31 +592,39 @@ async function copyText(text, message) {
 /* -------------------------------------------------------------------- boot
 
    A link may arrive with a room on it, and a refresh may find this browser
-   already in a room. Both are the same situation: there is a game, show it. */
+   already in a room. Both are the same situation: there is a game, show it.
+   A shared link is not a code to retype - it is already the answer - so it is
+   looked up at once and the join form opens on the name. */
 
 async function boot() {
   const fromQuery = parseRoomCode(new URLSearchParams(location.search).get("room"));
-  // The whole pathname, not its last segment. On /samrajya/ that segment is
-  // "samrajya", which is eight letters from the code alphabet and would send
-  // every single page load looking for a room that cannot exist. parseRoomCode
-  // reads a code out of a path only where a path actually puts one.
+  // The whole pathname, not its last segment, and only where a path actually
+  // puts a code: `/samrajya/7889` is a room, `/samrajya/` is not.
   const fromPath = parseRoomCode(location.pathname);
   const wanted = fromQuery || fromPath;
 
-  if (fromQuery) {
-    // Coming in on a shared link: the join form is already half answered.
-    state.draft.rawCode = fromQuery;
+  if (wanted) {
+    state.draft.rawCode = wanted;
     state.screen = "join";
+    const found = await findRoom(wanted);
+    // A browser that already holds a seat has been walked straight in.
+    if (state.screen === "lobby" || state.screen === "board") return;
+    if (found.ok) state.step = 1;
+    else state.errors.code = found.error;
+    render();
+    return;
   }
 
-  const remembered = wanted || rememberedRoom();
+  const remembered = rememberedRoom();
   if (remembered) {
     const result = await session.room(remembered);
     if (result.ok && result.data.seat !== null && result.data.seat !== undefined) {
-      state.draft.code = remembered;
       adoptRoom(result.data);
       return;
     }
+    // The room is gone, or this browser never had a seat in it. Either way the
+    // note is stale, and leaving it would send the next refresh after it again.
+    forgetRoom();
   }
 
   render();
@@ -525,7 +632,9 @@ async function boot() {
 
 boot();
 
-/* Keep the tab honest when it comes back to the front. */
+/* Keep the tab honest when it comes back to the front: a phone that was put
+   down has missed whatever the other player did while it was away. */
 document.addEventListener("visibilitychange", () => {
-  if (!document.hidden && state.screen === "lobby") refreshRoom();
+  if (document.hidden) return;
+  if (state.screen === "lobby" || state.screen === "board") catchUp();
 });

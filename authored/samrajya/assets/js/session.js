@@ -8,9 +8,11 @@
    either.
 
      identity   this browser's secret, kept locally, granting nothing on its own
-     create     open a room, take seat 1, optionally reserve seat 2
-     join       take seat 2 of an existing room
+     create     open a room and take seat 1
+     join       take seat 2 of an existing room, as yourself
      room       read the current room state
+     start      the host begins the game
+     forget     there is no room here any more
 
    A refusal comes back as a plain object with a message meant for a person.
    The screens show it; they never guess at it.
@@ -47,9 +49,9 @@ export class Session {
    * the same address, and lands on the room that is already there rather than
    * opening a second one.
    */
-  async create({ name, civ, guestName, guestCiv }) {
+  async create({ name, civ }) {
     const createKey = takeCreateKey();
-    const body = await this.#post("/rooms", { createKey, name, civ, guestName, guestCiv });
+    const body = await this.#post("/rooms", { createKey, name, civ });
     if (!body.ok) return body;
     this.roomId = body.data.roomId;
     dropCreateKey();
@@ -61,6 +63,17 @@ export class Session {
     if (!body.ok) return body;
     this.roomId = body.data.roomId;
     return body;
+  }
+
+  /**
+   * Forget the room this browser was last in.
+   *
+   * Called when someone leaves. Without it, a call with no code still means
+   * "the room we were in", and the next thing that asks is handed a table
+   * nobody is sitting at.
+   */
+  forget() {
+    this.roomId = null;
   }
 
   async room(code = this.roomId) {
@@ -136,6 +149,10 @@ export class Session {
       });
 
       socket.addEventListener("close", () => {
+        // An unsubscribe closes this socket on purpose. Reporting that as the
+        // line dropping would paint "reconnecting" over a screen that is
+        // deliberately leaving the room.
+        if (stopped) return;
         onStatus?.("closed");
         schedule();
       });
