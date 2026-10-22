@@ -21,7 +21,12 @@
    ========================================================================== */
 
 import { GameRoom } from "./room.js";
-import { deriveCode, isCreateKey, isIdentity } from "../shared/identity.js";
+import {
+  ROOM_CODE_TRIES,
+  deriveCode,
+  isCreateKey,
+  isIdentity,
+} from "../shared/identity.js";
 
 export { GameRoom };
 
@@ -82,15 +87,40 @@ async function route(request, url, env) {
       return json({ error: "This attempt to create a game has no key.", code: "NO_CREATE_KEY" }, 400);
     }
 
-    // Derived, not drawn. See shared/identity.js - the point is that asking
-    // twice with the same key asks for the same room, so a double-tap cannot
-    // open two games.
-    const code = await deriveCode(identity, createKey);
-    return toRoom(env, code, "create", request.method, request.headers, body);
+    /* The address is derived, not drawn - see shared/identity.js. It is four
+       digits, so two tables can want the same number at the same moment. The
+       next attempt is the next address; a code already in use is the only thing
+       that moves on, because any other refusal is about the game itself and
+       asking again under a different number would only hide it. */
+    for (let attempt = 0; attempt < ROOM_CODE_TRIES; attempt += 1) {
+      const code = await deriveCode(identity, createKey, attempt);
+      const response = await toRoom(env, code, "create", request.method, request.headers, body);
+
+      if (response.status !== 409) return response;
+
+      const text = await response.text();
+      let refusal = null;
+      try {
+        refusal = JSON.parse(text)?.code ?? null;
+      } catch {
+        refusal = null;
+      }
+      if (refusal !== "ROOM_TAKEN") {
+        return new Response(text, { status: response.status, headers: response.headers });
+      }
+    }
+
+    return json(
+      {
+        error: "Every game code is in use right now. Try again in a moment.",
+        code: "NO_CODE_FREE",
+      },
+      503,
+    );
   }
 
   /* --- /samrajya/api/rooms/:code/(join|state|live|action) ----------------- */
-  const match = rest.match(/^rooms\/([a-z2-9]{4,32})(?:\/(join|state|live|action))?$/);
+  const match = rest.match(/^rooms\/([1-9][0-9]{3})(?:\/(join|state|live|action))?$/);
   if (!match) return json({ error: "No such game." }, 404);
 
   const [, code, action = "state"] = match;
@@ -129,8 +159,19 @@ async function toRoom(env, code, action, method, headers, body) {
  * site under a link that looks like ours.
  */
 async function serveAsset(request, env) {
+  // A four-digit path is the other shape of a share link - golake.app/samrajya/7889
+  // - and it should serve the game, not a 404. The address is left alone: the
+  // page reads the number out of it, and then takes it out again, so a refresh
+  // goes to the room this tab remembers rather than to an old link.
+  const url = new URL(request.url);
+  const sharedPath = /^\/samrajya\/[1-9][0-9]{3}\/?$/.test(url.pathname);
+  const target =
+    sharedPath && (request.method === "GET" || request.method === "HEAD")
+      ? new Request(new URL("/samrajya/", url), request)
+      : request;
+
   try {
-    return await env.ASSETS.fetch(request);
+    return await env.ASSETS.fetch(target);
   } catch {
     return new Response("Not found", {
       status: 404,

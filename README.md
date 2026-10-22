@@ -272,13 +272,25 @@ needs to carry.
 
 ## Getting onto the board
 
-1. **Create Game** → name → choose a civilisation → the room opens with a code
-2. **Join Game** → the code or the link → name → choose a different civilisation
-3. Both players walk onto the same board, and see each other there
+1. **Create Game** → your name → your civilisation → the room opens with a
+   four-digit code
+2. **Join Game** → that code or the link → *your* name → *your* civilisation
+3. The host presses **Start Game** and both screens open the board, in the same
+   room and on the same turn, without either asking or refreshing
 
-The lobby offers **Enter the board alone**, so one person can test the layout
-without a second browser. When the second player arrives, the live socket puts
-them in front of each other without either asking.
+Each player fills in **only their own** name and civilisation, on their own
+device. The creator used to reserve a second seat and describe an opponent they
+had not met yet; that is gone, and the seat is now filled by the person sitting
+in it.
+
+The lobby is the room: the code in four tiles, the link to send, both seats with
+their colours and **Ready**, and one line saying what is being waited for. The
+link comes in two shapes - `?room=7889` and `/samrajya/7889` - and both serve the
+game; the page reads the number and then takes it back out of the address, so a
+refresh lands in the room this tab is in rather than in an old link. The host's
+Start Game is shut until the other seat is taken; the guest's button says who it
+is waiting for. When the host starts, the socket moves both players to the board
+at once - there is no "enter the board" step, and no way to be half in.
 
 Each player's name and civilisation sit in a strip **above** the board, not on
 it: the board in the reference is a finished drawing and two player identities
@@ -296,7 +308,7 @@ npm run dev          # build, then serve on http://127.0.0.1:8787
 Everything else:
 
 ```bash
-npm test             # the shared rules, 20 unit tests
+npm test             # the shared rules, in unit tests
 npm run check        # build, then verify every path that ships resolves
 npm run test:e2e     # drive both flows in a real browser, at a phone size
 npm run deploy       # build and deploy
@@ -418,33 +430,43 @@ The server decides everything. The browser is a renderer with an opinion about
 nothing.
 
 - **Two seats.** That is the game. There is no third.
-- **A room code** is eight characters from an alphabet with `0`, `1`, `i`, `l`
-  and `o` removed, because those are the pairs people get wrong reading a code
-  aloud.
-- **The second seat may be reserved.** Naming Player 2 at creation reserves
-  their name and token. It is a *default*, not a lock: the seat stays open
-  until somebody actually joins with the code, and they may take a different
-  token.
+- **A room code is four digits**, `1000` to `9999` — a table number, not a
+  password. It is short enough to read across a room and type with a thumb, and
+  four tiles on the lobby make it a number rather than a word.
+- **Only the host reserves anything, and that is their own seat.** Each player
+  names themselves and picks their own civilisation on their own device, so
+  there is no "describe your opponent" step and no default to overwrite.
+- **A number is only reused when its room is genuinely gone.** A lobby nobody
+  started is reclaimable after two hours, and any room after a week; anything
+  fresher refuses and the create walks to the next number. Four digits is a
+  small shopfront, so the numbers are recycled deliberately rather than
+  abandoned.
 - **A token is held by one player.** The joiner is shown the tokens that are
   gone rather than being offered them and refused.
 - **A room's state is readable by anyone holding the code.** There is nothing
   secret in who has taken which seat, and the join screen has to be able to show
   it. Seats are *claimed* by an identity, never by knowing a code.
 - **A refresh is not a new seat.** Joining again with the same identity returns
-  the seat it already has.
+  the seat it already has, and the room it belongs to.
+- **The code is taken out of the address bar once it has been read.** A shared
+  link is a way in, not a place this browser lives: with the code still in the
+  URL, a refresh could reopen the previous game after the host had started a
+  new one. From then on this tab knows its room from its own storage.
 
 ### API
 
 ```
 POST   /samrajya/api/rooms                    open a room, take seat 1
 GET    /samrajya/api/rooms/:code              read the room
-POST   /samrajya/api/rooms/:code/join         take seat 2
+POST   /samrajya/api/rooms/:code/join         take seat 2, as yourself
+POST   /samrajya/api/rooms/:code/action       one game action; `start` begins it
 GET    /samrajya/api/rooms/:code/live         a socket, told when it changes
 ```
 
 Every request except `/live` carries `x-samrajya-player`. Refusals are
 `{ error, code }` with a message meant for a person, and the screens show it
-rather than guessing at it.
+rather than guessing at it — including "No such game." for a four-digit number
+nobody is sitting at, which is a typo and not a fault.
 
 `/live` is the one that cannot carry the header, because a browser cannot set
 one on a WebSocket. It sends room contents and no seat — see

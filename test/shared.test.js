@@ -36,7 +36,9 @@ import {
   NAME_MAX,
   PLAYER_HEADER,
   ROOM_CODE_LENGTH,
-  roomAlphabet,
+  ROOM_CODE_MIN,
+  ROOM_CODE_MAX,
+  ROOM_CODE_SPAN,
   isRoomCode,
   parseRoomCode,
   cleanName,
@@ -252,57 +254,45 @@ test("a name of exactly twenty-four is allowed and twenty-five is not", () => {
 
 /* --------------------------------------------------------------- room codes */
 
-test("a room code is eight characters with no look-alikes in it", () => {
-  assert.equal(ROOM_CODE_LENGTH, 8);
-  const alphabet = roomAlphabet();
-  // 23 letters and 8 digits: the whole alphabet is thirty-one, which is why
-  // deriveCode rejects the top 8 of every 256-byte block rather than taking a
-  // plain modulus - 31 does not divide 256, and a modulus would quietly favour
-  // the first few characters.
-  assert.equal(alphabet.length, 31);
-  assert.equal(alphabet.slice(0, 23).replace(/[^a-z]/g, ""), alphabet.slice(0, 23));
-  assert.equal(alphabet.slice(23), "23456789");
-  assert.equal(256 % alphabet.length, 8);
-  // A code read aloud or copied off a screen has to be typeable without a
-  // second look, so these are absent on purpose.
-  for (const gone of ["0", "1", "i", "l", "o", "I", "L", "O"]) {
-    assert.equal(alphabet.includes(gone), false, `${gone} must not be in the alphabet`);
-  }
+test("a room code is four digits, and never starts with a zero", () => {
+  assert.equal(ROOM_CODE_LENGTH, 4);
+  assert.equal(ROOM_CODE_MIN, 1000);
+  assert.equal(ROOM_CODE_MAX, 9999);
+  assert.equal(ROOM_CODE_SPAN, 9000);
+  // Leading zeroes are the one shape a person types by accident when they mean
+  // a three-digit number, so every code is exactly the four digits shown.
+  assert.equal(isRoomCode("0789"), false);
+  assert.equal(isRoomCode("1000"), true);
+  assert.equal(isRoomCode("9999"), true);
 });
 
 test("isRoomCode checks the shape and nothing else", () => {
-  assert.equal(isRoomCode("abcd2345"), true);
-  assert.equal(isRoomCode("ABCD2345"), true, "case is not a second code");
-  assert.equal(isRoomCode("  abcd2345 "), true);
+  assert.equal(isRoomCode("7889"), true);
+  assert.equal(isRoomCode(" 7889 "), true);
 
-  assert.equal(isRoomCode("abcd234"), false, "seven is not eight");
-  assert.equal(isRoomCode("abcd23456"), false, "nine is not eight");
-  assert.equal(isRoomCode("abcd234i"), false, "i is not in the alphabet");
-  assert.equal(isRoomCode("abcd2340"), false, "0 is not in the alphabet");
+  assert.equal(isRoomCode("789"), false, "three is not four");
+  assert.equal(isRoomCode("78890"), false, "five is not four");
+  assert.equal(isRoomCode("788a"), false, "letters are not digits");
   assert.equal(isRoomCode(""), false);
   assert.equal(isRoomCode(null), false);
   assert.equal(isRoomCode(undefined), false);
 });
 
 test("a pasted invite link is the same code however it was pasted", () => {
-  assert.equal(parseRoomCode("abcd2345"), "abcd2345");
-  assert.equal(parseRoomCode("  ABCD2345. "), "abcd2345", "capitals and a full stop");
-  assert.equal(parseRoomCode("https://golake.app/samrajya/?room=abcd2345"), "abcd2345");
-  assert.equal(parseRoomCode("https://golake.app/samrajya/abcd2345"), "abcd2345");
-  assert.equal(parseRoomCode("https://golake.app/samrajya/?x=1&room=abcd2345&y=2"), "abcd2345");
+  assert.equal(parseRoomCode("7889"), "7889");
+  assert.equal(parseRoomCode(" 7889. "), "7889", "spaces and a full stop");
+  assert.equal(parseRoomCode("7 8 8 9"), "7889", "typed with gaps between the digits");
+  assert.equal(parseRoomCode("https://golake.app/samrajya/?room=7889"), "7889");
+  assert.equal(parseRoomCode("https://golake.app/samrajya/7889"), "7889");
+  assert.equal(parseRoomCode("https://golake.app/samrajya/?x=1&room=7889&y=2"), "7889");
 });
 
-test("and a bare link is not a room code, even though samrajya is eight valid letters", () => {
-  // This is the trap the code's own comment names. "samrajya" is eight
-  // characters from the code alphabet, so a parser that took the last segment
-  // of any URL would hand back the name of the app as a room code.
-  assert.equal(roomAlphabet().includes("s"), true);
-  assert.equal(isRoomCode("samrajya"), true, "as a bare code, yes");
-  assert.equal(
-    parseRoomCode("https://golake.app/samrajya"),
-    null,
-    "but not out of a link that merely ends there",
-  );
+test("and a link with no code in it is not a room code", () => {
+  // The whole pathname is read, and only where a code actually goes: the name
+  // of the app is not a table, and neither is the year in a date.
+  assert.equal(parseRoomCode("https://golake.app/samrajya"), null);
+  assert.equal(parseRoomCode("https://golake.app/samrajya/"), null);
+  assert.equal(parseRoomCode("https://golake.app/samrajya/?room=78890"), null, "five digits");
   assert.equal(parseRoomCode("https://golake.app/"), null);
   assert.equal(parseRoomCode(""), null);
   assert.equal(parseRoomCode(null), null);
@@ -345,27 +335,36 @@ test("deriveCode is the same room for the same two attempts", async () => {
   // The whole point of deriving rather than drawing: a double-tap on Create
   // sends the same request twice and lands on the room that is already there.
   assert.equal(await deriveCode(who, key), await deriveCode(who, key));
+  assert.equal(await deriveCode(who, key, 0), await deriveCode(who, key));
 });
 
 test("and a different room for a different attempt, or a different browser", async () => {
   const who = newIdentity();
-  const code = await deriveCode(who, newCreateKey());
-  const otherAttempt = await deriveCode(who, newCreateKey());
-  const otherBrowser = await deriveCode(newIdentity(), newCreateKey());
-  assert.notEqual(code, otherAttempt);
+  const key = newCreateKey();
+  const code = await deriveCode(who, key);
+  const otherBrowser = await deriveCode(newIdentity(), key);
   assert.notEqual(code, otherBrowser);
+
+  // Four digits collide, and the next attempt is how a clash is resolved: it
+  // must be a different number, or a busy code would loop forever.
+  const next = await deriveCode(who, key, 1);
+  assert.notEqual(code, next, "attempt 1 is not attempt 0");
+  assert.equal(next, await deriveCode(who, key, 1), "and it is still a derivation");
 });
 
-test("every derived code is a real code, and the letters are not being favoured", async () => {
-  const alphabet = roomAlphabet();
-  for (let i = 0; i < 100; i++) {
-    const code = await deriveCode(newIdentity(), newCreateKey());
+test("every derived code is a real code", async () => {
+  const who = newIdentity();
+  const key = newCreateKey();
+  const seen = new Set();
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const code = await deriveCode(who, key, attempt);
     assert.equal(code.length, ROOM_CODE_LENGTH);
     assert.equal(isRoomCode(code), true);
-    for (const character of code) {
-      assert.ok(alphabet.includes(character), `${character} is in the alphabet`);
-    }
+    seen.add(code);
   }
+  // Not a proof of uniformity, but 200 draws of 9000 landing on fewer than 150
+  // different numbers would mean the hash is not doing its job.
+  assert.ok(seen.size > 150, `${seen.size} different codes in 200 attempts`);
 });
 
 test("deriveCode refuses to guess when it is handed something that is not an identity", async () => {

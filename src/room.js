@@ -57,6 +57,17 @@ const refuse = (message, code, status) => {
  */
 const SOCKET = "";
 
+/**
+ * When a code may be given to a different table.
+ *
+ * A lobby nobody started is abandoned after two hours; a game that was actually
+ * played keeps its number for a week, so a phone that was put down mid-match
+ * finds its table again. Until then the number belongs to that room, and a
+ * create that wants it is sent to the next one.
+ */
+const ROOM_TTL_MS = 2 * 60 * 60 * 1000;
+const ROOM_TTL_LIVE_MS = 7 * 24 * 60 * 60 * 1000;
+
 export class GameRoom {
   constructor(state, env) {
     // `state` here is the Durable Object's own state object. Do not reassign it.
@@ -123,9 +134,10 @@ export class GameRoom {
   /**
    * Open the room and take the first seat.
    *
-   * A second player may be named and given a civilization at this moment. That is
-   * a reservation, not a claim: the seat stays open until somebody actually
-   * joins with the code, and the person who does may change the name.
+   * Only the first seat. Each player fills in their own name and civilization
+   * on their own device, so there is nothing for the creator to reserve here:
+   * the second seat is empty until somebody arrives with the code and says who
+   * they are.
    *
    * Asking twice is not asking twice. The Worker derives this room's address
    * from the caller's identity and the create key in the body, so a duplicate
@@ -142,6 +154,8 @@ export class GameRoom {
     const createKey = String(body?.createKey ?? "").trim().toLowerCase();
     await this.#load();
 
+    const now = Date.now();
+
     if (this.room) {
       const sameAttempt = createKey !== "" && this.room.createKey === createKey;
       if (sameAttempt && this.#seatOf(identity) !== -1) {
@@ -149,31 +163,33 @@ export class GameRoom {
         this.#broadcast();
         return json(this.#view(identity));
       }
-      refuse(
-        "A game already exists at this address. Start a new one instead.",
-        "ROOM_TAKEN",
-        409,
-      );
+
+      /* A code is reused only when its room is genuinely gone. Four digits is
+         a small shopfront: a lobby nobody started is abandoned after two hours,
+         and even a game that was played gives its number up after a week.
+         Anything fresher is a real room, and the caller is sent to try the next
+         number instead. */
+      const idleFor = now - Number(this.room.updatedAt || this.room.createdAt || 0);
+      const abandoned =
+        idleFor > ROOM_TTL_MS && this.room.status === "LOBBY" ? true : idleFor > ROOM_TTL_LIVE_MS;
+      if (!abandoned) {
+        refuse(
+          "That code is in use. Try again in a moment.",
+          "ROOM_TAKEN",
+          409,
+        );
+      }
     }
 
     const host = validateSeat(body?.name, body?.civ, "player 1");
-    const reserved = hasReservedPair(body) ? validateSeat(body?.guestName, body?.guestCiv, "player 2") : null;
 
-    if (reserved && host.civ === reserved.civ) {
-      refuse("The two players cannot share a civilization.", "CIV_TAKEN");
-    }
-
-    const now = Date.now();
     this.room = {
       roomId: this.code,
       createKey,
       createdAt: now,
       updatedAt: now,
       status: "LOBBY",
-      players: [
-        seatFor(identity, host, "HOST", true),
-        reserved ? seatFor("", reserved, "GUEST", false) : emptySeat(),
-      ],
+      players: [seatFor(identity, host, "HOST", true), emptySeat()],
     };
     await this.#persist();
     this.#broadcast();
@@ -188,6 +204,11 @@ export class GameRoom {
     if (method !== "POST") return json({ error: "Use POST." }, 405);
     await this.#load();
 
+    // A four-digit code is typed by hand, so a code that names no room is an
+    // ordinary mistake rather than an error. Say so in the same voice as the
+    // rest of the refusals.
+    if (!this.room) return json({ error: "No such game.", code: "NO_ROOM" }, 404);
+
     // A browser that already holds a seat is simply being put back in it. This
     // is checked before the room is full, so a refresh is never an error.
     const identity = requireIdentity(request);
@@ -201,9 +222,9 @@ export class GameRoom {
       refuse("That game already has two players.", "ROOM_FULL", 409);
     }
 
-    // A civilization the host reserved but nobody claimed is still free, so
-    // taking a different one is allowed - the reservation is a default, not a
-    // lock.
+    // A civilization the host holds is taken. The second seat is otherwise
+    // free: the joiner chooses their own name and civilization here, on their
+    // own device.
     const wanted = validateSeat(body?.name, body?.civ, "you");
     if (this.room.players[0].civ === wanted.civ) {
       refuse(
@@ -553,15 +574,6 @@ function seatFor(id, { name, civ }, role, joined) {
 
 function emptySeat() {
   return { id: "", name: null, civ: null, role: "GUEST", joined: false, lastSeen: null };
-}
-
-function hasReservedPair(body) {
-  return (
-    typeof body?.guestName === "string" &&
-    body.guestName.trim() !== "" &&
-    typeof body?.guestCiv === "string" &&
-    body.guestCiv.trim() !== ""
-  );
 }
 
 function validateSeat(name, civ, who) {
