@@ -579,6 +579,12 @@ export function board({
     pieces.sync(game.pieces);
     paint({ animate: true });
 
+    // The landing may have opened a card, and a card takes the middle: the die
+    // goes with it. The phase was painted before the walk, when the middle was
+    // still empty, so the die's visibility has to be read again now that the
+    // card is there - otherwise the die sits behind it.
+    paintPhase();
+
     // A property decision that has just been answered takes its card away. A
     // chest card closes itself, because it has a reveal to finish first.
     if (
