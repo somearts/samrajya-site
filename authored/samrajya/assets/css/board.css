@@ -1286,7 +1286,7 @@
   flex-direction: column;
   gap: calc(var(--cell) * 0.11);
   height: auto;
-  max-height: calc((var(--cell) * 8 + var(--hair) * 9) * 0.8);
+  max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
   overflow-y: auto;
   overscroll-behavior: contain;
   /* The scrollbar is never part of what this card looks like. */
@@ -1365,6 +1365,19 @@
   background: var(--card-inset);
   border: 1px solid rgb(18 17 16 / 0.08);
   backface-visibility: hidden;
+  cursor: pointer;
+  font: inherit;
+  text-align: inherit;
+  transition: transform 160ms ease-out, border-color 160ms ease-out;
+}
+
+.chest-card__slot:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--weapon, var(--ink)) 40%, rgb(18 17 16 / 0.08));
+}
+
+.chest-card__slot:disabled {
+  cursor: default;
 }
 
 .chest-card__back {
@@ -1546,6 +1559,176 @@
      rather than moving down a line - so a long name is told not to shrink and
      wraps whole, which is what a reader expects of a list of names. */
   flex-shrink: 0;
+}
+
+/* ============================================================== the nexus
+
+   THE UNNAMED KEEPER
+
+   The Nexus card is wider and calmer than Ragnarok. A robed figure floats
+   above the mythology, the text is set as short lines rather than one long
+   paragraph, and the two actions are stacked like quiet vows rather than
+   buttons. It uses the full middle, because the experience is meant to feel
+   like entering a small shrine. */
+
+.nexus-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--cell) * 0.1);
+  height: auto;
+  max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+  padding: calc(var(--cell) * 0.18) calc(var(--cell) * 0.22);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  text-align: center;
+}
+
+.nexus-card::-webkit-scrollbar {
+  display: none;
+}
+
+.nexus-card__figure-wrap {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: end center;
+  width: 100%;
+  height: calc(var(--cell) * 2.2);
+}
+
+.nexus-card__god {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+}
+
+.nexus-card__title {
+  margin: 0;
+  font-size: max(13px, calc(var(--cell) * 0.195));
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.nexus-card__mythology {
+  display: grid;
+  gap: 0.55em;
+  max-width: 34ch;
+  margin: 0;
+  font-size: max(10.5px, calc(var(--cell) * 0.14));
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.nexus-card__mythology span {
+  display: block;
+}
+
+.nexus-card__actions {
+  display: grid;
+  gap: calc(var(--cell) * 0.07);
+  width: 100%;
+  max-width: 28ch;
+  margin-top: auto;
+  padding-top: calc(var(--cell) * 0.12);
+}
+
+.nexus-card__pray,
+.nexus-card__draw {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: calc(var(--cell) * 0.08) calc(var(--cell) * 0.12);
+  border: 1px solid rgb(18 17 16 / 0.18);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.35);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition: background 160ms ease-out, border-color 160ms ease-out, transform 160ms ease-out;
+}
+
+.nexus-card__pray:hover:not(:disabled),
+.nexus-card__draw:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.55);
+  border-color: rgb(18 17 16 / 0.28);
+  transform: translateY(-1px);
+}
+
+.nexus-card__pray:disabled,
+.nexus-card__draw:disabled {
+  cursor: default;
+  opacity: 0.42;
+  border-style: dashed;
+}
+
+.nexus-card__action-name {
+  font-size: max(11px, calc(var(--cell) * 0.15));
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.nexus-card__action-note {
+  font-size: max(9px, calc(var(--cell) * 0.12));
+  color: var(--ink-soft);
+}
+
+.nexus-card__result {
+  display: grid;
+  gap: calc(var(--cell) * 0.05);
+  width: 100%;
+  max-width: 30ch;
+  margin-top: auto;
+  padding-top: calc(var(--cell) * 0.14);
+}
+
+.nexus-card__result-name {
+  margin: 0;
+  font-size: max(12px, calc(var(--cell) * 0.17));
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.nexus-card__result-text {
+  margin: 0;
+  font-size: max(10.5px, calc(var(--cell) * 0.14));
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.nexus-card__result-amount {
+  margin: 2px 0 0;
+  font-size: max(18px, calc(var(--cell) * 0.26));
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.nexus-card__result-amount--spend {
+  color: var(--sell);
+}
+
+.nexus-card__result-amount--earn {
+  color: color-mix(in srgb, var(--ink) 55%, var(--accent, var(--ink)));
+}
+
+/* The offering coin in flight from the player's chip to the Nexus. */
+.nexus-card__offering {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--cell-ground);
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink);
+  box-shadow: 0 1px 3px rgb(18 17 16 / 0.2);
+  pointer-events: none;
 }
 
 /* The dot in flight, on its way to the name at the top. */

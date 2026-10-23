@@ -17,6 +17,7 @@
 
 import { rupees } from "./economy.js";
 import { nameOfSeat } from "./ledger.js";
+import { NEXUS_PRAY_COST } from "./nexus-cards.js";
 import { propertyFor } from "./properties.js";
 
 const MINUS = "\u2212";
@@ -91,6 +92,27 @@ export function announcementFor(event, { viewer = null, ledger = null } = {}) {
         tone: "earn",
       };
 
+    case "prayed":
+      return {
+        label: "OFFERING",
+        big: signed(-(event.amount || NEXUS_PRAY_COST)),
+        sub: "At the Nexus",
+        seat: event.seat,
+        tone: "spend",
+      };
+
+    case "nexusDrawn": {
+      const card = event.card || {};
+      const amount = Number(card.amount) || 0;
+      return {
+        label: card.name || "Nexus",
+        big: signed(amount),
+        sub: "The Unnamed Keeper turns a card",
+        seat: event.seat,
+        tone: amount >= 0 ? "earn" : "spend",
+      };
+    }
+
     case "rentPaid":
     case "rentShort": {
       const received = mine !== null && Number(event.to) === mine;
@@ -148,8 +170,8 @@ export function statusFor(game, { viewer = null } = {}) {
   if (mine) {
     if (game.phase !== "AWAITING_ROLL") return null;
     return {
-      label: "YOUR MOVE",
-      big: "Your Turn",
+      label: "YOUR TURN",
+      big: "The move is yours",
       sub: "Tap the die to roll",
       seat: game.active,
       tone: "turn",
@@ -161,9 +183,9 @@ export function statusFor(game, { viewer = null } = {}) {
   if (game.phase === "DECISION") return null;
 
   return {
-    label: "IN PLAY",
-    big: "Opponent\u2019s Turn",
-    sub: `${name} is playing`,
+    label: "THEIR TURN",
+    big: "Opponent is playing",
+    sub: `${name} commands the turn`,
     seat: game.active,
     tone: "wait",
   };

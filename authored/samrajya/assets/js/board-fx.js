@@ -105,19 +105,20 @@ export async function flyCoins(board, { from, to, amount = 0 } = {}) {
   if (!start || !end) return;
 
   if (prefersStill()) {
-    await wait(200);
+    await wait(240);
     return;
   }
 
   const dx = end.left - start.left;
   const dy = end.top - start.top;
-  // A soft lift at the midpoint, never a loop: the coin travels, it does not
-  // perform. The bend grows with the distance but stays inside a tile.
-  const bend = Math.max(14, Math.min(38, Math.hypot(dx, dy) * 0.16));
+  const dist = Math.hypot(dx, dy);
+  // A shallow arc: enough to read as travel, not enough to loop or spray.
+  const bend = Math.max(10, Math.min(26, dist * 0.1));
+  const leadDuration = 680;
 
-  const tokens = [1, 0.72, 0.5].map((scale, n) => {
+  const makeToken = (scale, echo) => {
     const token = el("span", {
-      class: `board__rupee${n ? " board__rupee--echo" : ""}`,
+      class: `board__rupee${echo ? " board__rupee--echo" : ""}`,
       "aria-hidden": "true",
       text: "\u20b9",
     });
@@ -126,37 +127,54 @@ export async function flyCoins(board, { from, to, amount = 0 } = {}) {
     token.style.setProperty("--echo", String(scale));
     board.append(token);
     return token;
-  });
+  };
 
-  const travel = tokens.map((token, n) =>
-    token
-      .animate(
-        [
-          { transform: "translate(-50%, -50%) scale(.72)", opacity: 0, offset: 0 },
-          { transform: "translate(-50%, -50%) scale(1)", opacity: n ? 0.35 : 1, offset: 0.12 },
-          {
-            transform:
-              `translate(calc(-50% + ${dx * 0.5}px), ` +
-              `calc(-50% + ${dy * 0.5 - bend}px)) scale(${n ? 0.86 : 1})`,
-            opacity: n ? 0.3 : 1,
-            offset: 0.55,
-          },
-          {
-            transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.78)`,
-            opacity: 0,
-          },
-        ],
+  const lead = makeToken(1, false);
+  const echo = makeToken(0.62, true);
+
+  const leadFlight = lead
+    .animate(
+      [
+        { transform: "translate(-50%, -50%) scale(.78) rotate(-8deg)", opacity: 0, offset: 0 },
+        { transform: "translate(-50%, -50%) scale(1) rotate(0deg)", opacity: 1, offset: 0.1 },
         {
-          duration: 560,
-          delay: n * 55,
-          easing: "cubic-bezier(.3,.7,.4,1)",
-          fill: "forwards",
+          transform:
+            `translate(calc(-50% + ${dx * 0.5}px), ` +
+            `calc(-50% + ${dy * 0.5 - bend}px)) scale(1) rotate(4deg)`,
+          opacity: 1,
+          offset: 0.5,
         },
-      )
-      .finished.catch(() => {}),
-  );
+        {
+          transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.85) rotate(0deg)`,
+          opacity: 0,
+        },
+      ],
+      { duration: leadDuration, easing: "cubic-bezier(.3,.7,.4,1)", fill: "forwards" },
+    )
+    .finished.catch(() => {});
 
-  // The landing: one thin ring, opening once. It says "here" without adding a
+  const echoFlight = echo
+    .animate(
+      [
+        { transform: "translate(-50%, -50%) scale(.72)", opacity: 0, offset: 0 },
+        { transform: "translate(-50%, -50%) scale(.92)", opacity: 0.35, offset: 0.18 },
+        {
+          transform:
+            `translate(calc(-50% + ${dx * 0.5}px), ` +
+            `calc(-50% + ${dy * 0.5 - bend * 0.7}px)) scale(.86)`,
+          opacity: 0.25,
+          offset: 0.55,
+        },
+        {
+          transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.78)`,
+          opacity: 0,
+        },
+      ],
+      { duration: leadDuration, delay: 80, easing: "cubic-bezier(.35,.72,.42,1)", fill: "forwards" },
+    )
+    .finished.catch(() => {});
+
+  // The landing: one soft ring, opening once. It says "here" without adding a
   // number or another object to read.
   const ring = el("span", { class: "board__coin-land", "aria-hidden": "true" });
   ring.style.left = `${end.left}px`;
@@ -165,15 +183,16 @@ export async function flyCoins(board, { from, to, amount = 0 } = {}) {
   const pulse = ring
     .animate(
       [
-        { transform: "translate(-50%, -50%) scale(.55)", opacity: 0.55 },
-        { transform: "translate(-50%, -50%) scale(1.5)", opacity: 0 },
+        { transform: "translate(-50%, -50%) scale(.5)", opacity: 0.5 },
+        { transform: "translate(-50%, -50%) scale(1.45)", opacity: 0 },
       ],
-      { duration: 420, delay: 210, easing: "cubic-bezier(.2,.7,.3,1)", fill: "forwards" },
+      { duration: 480, delay: 260, easing: "cubic-bezier(.2,.7,.3,1)", fill: "forwards" },
     )
     .finished.catch(() => {});
 
-  await Promise.all([...travel, pulse]);
-  for (const token of tokens) token.remove();
+  await Promise.all([leadFlight, echoFlight, pulse]);
+  lead.remove();
+  echo.remove();
   ring.remove();
 }
 

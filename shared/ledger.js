@@ -115,6 +115,28 @@ export function sheetFor(ledger, id) {
   return ledger.properties.get(key);
 }
 
+/**
+ * Move money between a player and the bank.
+ *
+ * Positive `amount` pays the player; negative takes from them. A record is
+ * written to the ledger history when one is supplied.
+ */
+export function adjustMoney(ledger, seat, amount, record = null) {
+  const player = ledger?.players?.find((p) => p.seat === Number(seat));
+  if (!player) return { ok: false, why: "That seat is not playing." };
+
+  player.money += Number(amount) || 0;
+  if (record) {
+    recordEntry(ledger, {
+      ...record,
+      seat: player.seat,
+      amount: Number(amount) || 0,
+      balance: player.money,
+    });
+  }
+  return { ok: true, money: player.money };
+}
+
 /** The same sheet without making one. */
 export function sheetIfOwned(ledger, id) {
   return ledger?.properties.get(String(id ?? "")) || null;

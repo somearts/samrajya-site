@@ -57,6 +57,7 @@
 
 import { MAX_UPGRADE, REDEMPTION, STARTING_MONEY, isPriced, priceOf } from "./economy.js";
 import {
+  adjustMoney,
   buy as ledgerBuy,
   canBuy,
   canUpgrade,
@@ -72,6 +73,7 @@ import {
   sell as ledgerSell,
   upgrade as ledgerUpgrade,
 } from "./ledger.js";
+import { NEXUS, NEXUS_PRAY_COST, drawNexusCard } from "./nexus-cards.js";
 import { CELLS } from "./spaces.js";
 import { BAD_LUCK, RAGNAROK, drawWeapon, weaponById } from "./weapons.js";
 
@@ -388,6 +390,10 @@ export function applyAction(state, action, rng = Math.random) {
         short: 0,
         /* What completing a lap is owed, paid when the turn is resolved. */
         redemption: crossedStart ? REDEMPTION : 0,
+        /* Nexus only. */
+        prayed: false,
+        nexusDrawn: false,
+        nexusCard: null,
       };
       next.phase = PHASE.MOVING;
 
@@ -472,7 +478,7 @@ export function applyAction(state, action, rng = Math.random) {
             });
           }
         }
-      } else if (cell?.id === RAGNAROK.id) {
+      } else if (cell?.id === RAGNAROK.id || cell?.id === NEXUS.id) {
         next.landing.kind = "chest";
       } else {
         next.landing.kind = "none";
@@ -595,7 +601,11 @@ export function applyAction(state, action, rng = Math.random) {
 
     /* ------------------------------------------------------------- Ragnarok */
     case "drawWeapon": {
-      if (state.phase !== PHASE.DECISION || state.landing?.kind !== "chest") {
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "chest" ||
+        state.landing?.id !== RAGNAROK.id
+      ) {
         return refused(state, action, "There is no chest to draw from.");
       }
       if (actor !== active) return refused(state, action, "It is not your turn.");
@@ -615,7 +625,11 @@ export function applyAction(state, action, rng = Math.random) {
     }
 
     case "collectWeapon": {
-      if (state.phase !== PHASE.DECISION || state.landing?.kind !== "chest") {
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "chest" ||
+        state.landing?.id !== RAGNAROK.id
+      ) {
         return refused(state, action, "There is no chest to collect from.");
       }
       if (actor !== active) return refused(state, action, "It is not your turn.");
@@ -646,6 +660,61 @@ export function applyAction(state, action, rng = Math.random) {
       return { state: next, events };
     }
 
+    /* --------------------------------------------------------------- Nexus */
+    case "pray": {
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.landing?.id !== NEXUS.id || state.landing?.kind !== "chest") {
+        return refused(state, action, "There is nothing to pray for here.");
+      }
+      if (state.visit?.prayed || state.visit?.nexusDrawn) {
+        return refused(state, action, "You have already made your offering.");
+      }
+      if (state.phase !== PHASE.DECISION) {
+        return refused(state, action, "There is nothing to pray for here.");
+      }
+
+      const verdict = adjustMoney(next.ledger, active, -NEXUS_PRAY_COST, {
+        turn: state.turn,
+        seat: active,
+        kind: "nexus",
+        text: "Offered at the Nexus",
+      });
+      if (!verdict.ok) return refused(state, action, verdict.why);
+
+      next.visit.prayed = true;
+      next.phase = PHASE.RESOLVING;
+      ok("prayed", { seat: active, amount: NEXUS_PRAY_COST, money: verdict.money });
+      return { state: next, events };
+    }
+
+    case "drawNexus": {
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.landing?.id !== NEXUS.id || state.landing?.kind !== "chest") {
+        return refused(state, action, "There is no card to draw here.");
+      }
+      if (state.visit?.prayed || state.visit?.nexusDrawn) {
+        return refused(state, action, "You have already drawn from the Nexus.");
+      }
+      if (state.phase !== PHASE.DECISION) {
+        return refused(state, action, "There is no card to draw here.");
+      }
+
+      const card = drawNexusCard(rng);
+      const verdict = adjustMoney(next.ledger, active, card.amount, {
+        turn: state.turn,
+        seat: active,
+        kind: "nexus",
+        text: card.name,
+      });
+      if (!verdict.ok) return refused(state, action, verdict.why);
+
+      next.visit.nexusDrawn = true;
+      next.visit.nexusCard = card;
+      next.phase = PHASE.RESOLVING;
+      ok("nexusDrawn", { seat: active, card, money: verdict.money });
+      return { state: next, events };
+    }
+
     /* -------------------------------------------------------------- continue */
     case "continue": {
       if (actor !== active) return refused(state, action, "It is not your turn.");
@@ -656,11 +725,17 @@ export function applyAction(state, action, rng = Math.random) {
           return refused(state, action, "Choose, then the turn can end.");
         }
         if (kind === "chest") {
-          if (state.visit?.drawn === null) {
-            return refused(state, action, "Draw from the chest first.");
-          }
-          if (state.visit?.drawn !== BAD_LUCK && !state.visit?.collected) {
-            return refused(state, action, "Collect the weapon first.");
+          if (state.landing?.id === RAGNAROK.id) {
+            if (state.visit?.drawn === null) {
+              return refused(state, action, "Draw from the chest first.");
+            }
+            if (state.visit?.drawn !== BAD_LUCK && !state.visit?.collected) {
+              return refused(state, action, "Collect the weapon first.");
+            }
+          } else if (state.landing?.id === NEXUS.id) {
+            if (!state.visit?.prayed && !state.visit?.nexusDrawn) {
+              return refused(state, action, "Choose how to approach the Nexus.");
+            }
           }
         }
         next.phase = PHASE.TURN_END;

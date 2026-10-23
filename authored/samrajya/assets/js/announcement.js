@@ -161,10 +161,10 @@ export function announcementLayer(centre) {
     }
     node.animate(
       [
-        { opacity: 0, transform: "translateY(5px)" },
+        { opacity: 0, transform: "translateY(4px)" },
         { opacity: 1, transform: "translateY(0)" },
       ],
-      { duration: 220, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
+      { duration: 160, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
     );
   }
 

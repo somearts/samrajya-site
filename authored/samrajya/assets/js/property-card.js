@@ -300,24 +300,17 @@ export function syncCard(board, ctx) {
   const status = card.querySelector(".property-card__status");
   status.textContent =
     owner === null
-      ? `Unowned • ${rupees(propertyFor(id).price)}`
+      ? `Cost ${rupees(propertyFor(id).price)}`
       : owner === seat
         ? "You own this"
-        : `Owned by ${nameOfSeat(ledger, owner)} • Rent ${rupees(rent)}`;
+        : `Owned by ${nameOfSeat(ledger, owner)}`;
 
-  // The rent line does not repeat the status line. The status says whose square
-  // this is; this says what the square is actually worth right now, which is the
-  // only number that changes when somebody builds.
-  card.querySelector(".property-card__rent").textContent =
-    owner === null
-      ? `Charges ${rupees(rent)} to whoever takes it`
-      : level === 0
-        ? `Not built • rent ${rupees(rent)}`
-        : `Built ${level} of ${MAX_UPGRADE} • rent ${rupees(rent)}`;
+  // One clean figure: the rent this square charges right now. No sentences, no
+  // repetition of who holds it - that is the status line's job.
+  card.querySelector(".property-card__rent").textContent = `Rent ${rupees(rent)}`;
 
-  // The full-set rent: a player with every colony in a set, and nothing built
-  // on any of them, charges double on each. The line above already says the
-  // amount; this one says why it is that amount.
+  // The full-set rent, when it applies: a quiet second line saying the doubled
+  // amount. The main rent already shows what is charged; this says why.
   const fullSet = card.querySelector(".property-card__fullset");
   if (fullSet) {
     const doubled = fullSetRent(ledger, id);
@@ -325,7 +318,7 @@ export function syncCard(board, ctx) {
       fullSet.textContent = "";
       fullSet.hidden = true;
     } else {
-      fullSet.textContent = `Full set, no upgrades: ${rupees(doubled)}`;
+      fullSet.textContent = `Full set ${rupees(doubled)}`;
       fullSet.hidden = false;
     }
   }
@@ -441,29 +434,16 @@ export function syncCard(board, ctx) {
     if (lock) {
       const members = setMembers(ledger, id);
       const complete = setHolder(ledger, id) !== null;
-      if (complete) {
-        lock.textContent = "";
-        lock.hidden = true;
-        if (status) {
-          status.textContent = "";
-          status.hidden = true;
-        }
-      } else {
-        lock.textContent = `Own all ${members.length} colonies in this set to unlock upgrades.`;
-        lock.hidden = false;
-        if (status) {
-          status.textContent = members
-            .map((m) => {
-              const o = ownerOf(ledger, m);
-              const name = propertyFor(m)?.name || m;
-              return o === null
-                ? `${name} \u25cb open`
-                : `${name} \u2713 ${nameOfSeat(ledger, o)}`;
-            })
-            .join(" \u00b7 ");
-          status.hidden = false;
-        }
-      }
+      // One simple line, no tick marks, no ownership list. The board already
+      // shows who holds what; this line only says how many complete the set.
+      lock.textContent = complete
+        ? `Own all ${members.length} properties`
+        : `Own all ${members.length} properties to unlock upgrades`;
+      lock.hidden = false;
+    }
+    if (status) {
+      status.textContent = "";
+      status.hidden = true;
     }
 
     const steps = upgradesOf(id);

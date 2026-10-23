@@ -150,8 +150,8 @@ test("the middle says the turn to the player who owns it", () => {
   const game = createGame(PLAYERS);
   const spec = statusFor(game, { viewer: game.active });
   assert.deepEqual(spec, {
-    label: "YOUR MOVE",
-    big: "Your Turn",
+    label: "YOUR TURN",
+    big: "The move is yours",
     sub: "Tap the die to roll",
     seat: game.active,
     tone: "turn",
@@ -161,9 +161,9 @@ test("the middle says the turn to the player who owns it", () => {
 test("and says plainly that the other player has the turn", () => {
   const game = createGame(PLAYERS);
   const spec = statusFor(game, { viewer: (game.active + 1) % 2 });
-  assert.equal(spec.label, "IN PLAY");
-  assert.equal(spec.big, "Opponent\u2019s Turn");
-  assert.equal(spec.sub, "Sam is playing");
+  assert.equal(spec.label, "THEIR TURN");
+  assert.equal(spec.big, "Opponent is playing");
+  assert.equal(spec.sub, "Sam commands the turn");
   assert.equal(spec.tone, "wait");
 });
 

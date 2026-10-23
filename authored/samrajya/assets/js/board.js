@@ -47,7 +47,9 @@ import { DICE_DELAY_MS, DICE_HOLD_MS, DICE_ROLL_MS, pause } from "./timing.js";
 // goes by - are in coins.js, which imports nothing and is tested on its own.
 import { coins } from "./coin-layer.js";
 import { renderWeapons, showChest } from "./chest-card.js";
+import { showNexus } from "./nexus-card.js";
 import { RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
+import { NEXUS } from "./shared/nexus-cards.js";
 import { hideCard, showCard, syncCard } from "./property-card.js";
 import {
   markBoard,
@@ -810,6 +812,14 @@ export function board({
           // repainted from the game's pieces at the end of the step.
           break;
 
+        case "prayed":
+        case "nexusDrawn": {
+          // The Nexus card shows its own result; the board just keeps the purse
+          // in step so the other player sees the new balance at the same time.
+          paint({ animate: true });
+          break;
+        }
+
         case "turnChanged": {
           // The ring and the chip's emphasis move with the state, not after it.
           // The middle changes from one status to the other only once the last
@@ -885,6 +895,34 @@ export function board({
       cardMode = mine ? "decision" : "read";
       reading = false;
       paintPhase();
+
+      if (landing.id === NEXUS.id) {
+        if (mine) {
+          await showNexus(frame, {
+            drawable: true,
+            chip: chip(game.active),
+            pray: async () => {
+              const result = await step({ type: "pray" });
+              return result?.events.find((event) => event.type === "prayed");
+            },
+            draw: async () => {
+              const result = await step({ type: "drawNexus" });
+              return result?.events.find((event) => event.type === "nexusDrawn");
+            },
+            onClose: () => closeRead(),
+          });
+        } else {
+          showNexus(frame, { drawable: false, onClose: () => closeRead() });
+        }
+        paintPhase();
+        cardMode = "read";
+        frame.dataset.reading = "false";
+        if (mine && game.phase === PHASE.DECISION && game.landing?.kind === "chest") {
+          await step({ type: "continue" });
+        }
+        return;
+      }
+
       if (mine) {
         await showChest(frame, {
           drawable: true,
@@ -966,13 +1004,29 @@ export function board({
     if (game.phase !== PHASE.AWAITING_ROLL) return;
     if (busy) return;
     if (isDecision()) return;
+
+    const wantedKey = `${game.turn}:${id}:read`;
+    // Already reading the requested tile: swallow the tap so the card stays
+    // put and does not flash closed and open again.
+    if (reading && cardKey === wantedKey) return;
+
+    // A different tile is already open: close it cleanly first, then open the
+    // new one in the same call so the middle is never empty between them.
+    if (reading && cardKey !== wantedKey) closeRead();
+
     reading = true;
     cardMode = "read";
-    cardKey = `${game.turn}:${id}:read`;
+    cardKey = wantedKey;
     paintPhase();
 
     if (id === RAGNAROK.id) {
       showChest(frame, { drawable: false, onClose: () => closeRead() });
+      // The card is in the middle now, so the die gives way to it.
+      paintPhase();
+      return;
+    }
+    if (id === NEXUS.id) {
+      showNexus(frame, { drawable: false, onClose: () => closeRead() });
       // The card is in the middle now, so the die gives way to it.
       paintPhase();
       return;
@@ -1022,16 +1076,21 @@ export function board({
     cell.addEventListener("click", () => {
       if (busy || isDecision()) return;
       if (game.phase !== PHASE.AWAITING_ROLL) return;
-      openRead(cell.dataset.id);
+      const id = cell.dataset.id;
+      // The same tile is already open: ignore the click entirely. The card
+      // must not close and reopen under the player's finger.
+      if (reading && cardKey === `${game.turn}:${id}:read`) return;
+      openRead(id);
     });
   }
 
-  // A tap outside the card closes a read-only one. A tap on a cell both closes
-  // and opens, because the cell's own click runs after this; a decision card
-  // has no outside to close it, and ignores this entirely.
+  // A tap outside the card closes a read-only one. A tap on a cell button is
+  // left to the cell's own click handler, which ignores repeated taps on the
+  // already-open tile and swaps cleanly to a different one.
   frame.addEventListener("pointerdown", (event) => {
     if (profileSeat !== null) return;
     if (!reading) return;
+    if (event.target.closest?.("button[data-id]")) return;
     if (event.target.closest?.(".board__card")) return;
     closeRead();
   });

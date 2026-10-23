@@ -63,11 +63,11 @@ import { SETS } from "./shared/spaces.js";
 import { propertyFor } from "./shared/properties.js";
 
 /** How long the three cards shuffle before the answer. */
-const SHUFFLE_MS = 900;
+const SHUFFLE_MS = 1500;
 /** How long bad luck is shown before the card lets the player go. */
-const BAD_LUCK_MS = 1800;
+const BAD_LUCK_MS = 2200;
 /** How long the dot takes to reach the name at the top. */
-const FLY_MS = 620;
+const FLY_MS = 720;
 /** How many dots a name chip shows before it counts the rest instead. */
 export const DOT_CAP = 6;
 
@@ -119,11 +119,13 @@ export function emblem(weapon) {
 
 /** One of the three face-down cards. */
 function slot(weapon, index) {
-  return el("div", {
+  return el("button", {
+    type: "button",
     class: "chest-card__slot",
     "data-weapon": weapon.id,
     "data-slot": String(index),
     style: { "--weapon": weaponColor(weapon.id) },
+    "aria-label": "Draw a weapon",
   }, [
     el("span", { class: "chest-card__back", "aria-hidden": "true" }, [
       el("span", { class: "chest-card__mark", text: "?" }),
@@ -132,6 +134,20 @@ function slot(weapon, index) {
     el("span", { class: "chest-card__pill", "aria-hidden": "true" }),
     el("span", { class: "chest-card__slot-name", text: weapon.name }),
   ]);
+}
+
+/** Rewrite a slot so the face it turns over matches the drawn weapon. */
+function fillSlot(slot, id) {
+  const weapon = weaponById(id);
+  if (!weapon) return;
+  slot.dataset.weapon = weapon.id;
+  slot.style.setProperty("--weapon", weaponColor(weapon.id));
+  const face = slot.querySelector(".chest-card__face");
+  if (face) face.innerHTML = emblem(weapon);
+  const pill = slot.querySelector(".chest-card__pill");
+  if (pill) pill.style.background = weaponColor(weapon.id);
+  const name = slot.querySelector(".chest-card__slot-name");
+  if (name) name.textContent = weapon.name;
 }
 
 /** The property's own label, which is what a player knows the place by. */
@@ -339,6 +355,41 @@ export async function showChest(
   const drawButton = card.querySelector('[data-action="draw"]');
   const result = card.querySelector(".chest-card__result");
   const slots = [...card.querySelectorAll(".chest-card__slot")];
+  let drawing = false;
+
+  async function doDraw(chosenSlot = slots[1]) {
+    if (drawing) return null;
+    drawing = true;
+    drawButton.disabled = true;
+    for (const s of slots) s.disabled = true;
+    card.dataset.phase = "drawing";
+
+    /* The shuffle. Three cards shift and settle, slower than before, so the
+       draw feels like a deliberate moment rather than a quick transaction. */
+    if (still()) {
+      await wait(SHUFFLE_MS);
+    } else {
+      for (const slot of slots) {
+        slot.animate(
+          [
+            { transform: "translateX(0) rotate(0deg)" },
+            { transform: "translateX(-4px) rotate(-2deg)" },
+            { transform: "translateX(4px) rotate(2deg)" },
+            { transform: "translateX(-2px) rotate(-1deg)" },
+            { transform: "translateX(0) rotate(0deg)" },
+          ],
+          { duration: SHUFFLE_MS / 3, iterations: 3, easing: "ease-in-out" },
+        );
+      }
+      await wait(SHUFFLE_MS);
+    }
+
+    const outcome =
+      typeof draw === "function" ? await draw() : drawWeapon();
+    card.dataset.phase = outcome === "bad-luck" ? "bad-luck" : "revealed";
+    await reveal(card, slots, outcome, result, { still: still(), chosenSlot });
+    return outcome;
+  }
 
   /* THE BUTTON IS LIVE AT ONCE.
 
@@ -348,34 +399,14 @@ export async function showChest(
      happened at all. The turn is decoration: it must not delay the card being
      playable. */
   const drawnPromise = new Promise((resolve) => {
-    drawButton.addEventListener("click", async () => {
-      drawButton.disabled = true;
-      card.dataset.phase = "drawing";
-
-      /* The shuffle. */
-      if (still()) {
-        await wait(SHUFFLE_MS);
-      } else {
-        for (const slot of slots) {
-          slot.animate(
-            [
-              { transform: "translateX(0) rotate(0deg)" },
-              { transform: "translateX(-3px) rotate(-1.6deg)" },
-              { transform: "translateX(3px) rotate(1.6deg)" },
-              { transform: "translateX(0) rotate(0deg)" },
-            ],
-            { duration: SHUFFLE_MS / 3, iterations: 3, easing: "ease-in-out" },
-          );
-        }
-        await wait(SHUFFLE_MS);
-      }
-
-      const outcome =
-        typeof draw === "function" ? await draw() : drawWeapon();
-      card.dataset.phase = outcome === "bad-luck" ? "bad-luck" : "revealed";
-      await reveal(card, slots, outcome, result, { still: still() });
-      resolve(outcome);
+    drawButton.addEventListener("click", () => {
+      doDraw(slots[1]).then(resolve);
     }, { once: true });
+    slots.forEach((slot) => {
+      slot.addEventListener("click", () => {
+        doDraw(slot).then(resolve);
+      }, { once: true });
+    });
   });
 
   /* The card's turn-in, now that the button is listening. */
@@ -427,12 +458,19 @@ export async function showChest(
 }
 
 /** Show the answer: a weapon turning over, or bad luck going away. */
-async function reveal(card, slots, outcome, result, { still: quiet }) {
+async function reveal(card, slots, outcome, result, { still: quiet, chosenSlot }) {
   const bad = outcome === "bad-luck";
+  const chosen = chosenSlot && slots.includes(chosenSlot) ? chosenSlot : slots.find((s) => s.dataset.weapon === outcome);
+
+  if (!bad && chosen) {
+    // The card the player touched turns over to show the weapon they drew,
+    // regardless of which weapon was originally assigned to that position.
+    fillSlot(chosen, outcome);
+  }
 
   if (quiet) {
-    for (const slot of slots) slot.hidden = bad || slot.dataset.weapon !== outcome;
-    if (!bad) slot.classList.add("is-drawn");
+    for (const slot of slots) slot.hidden = bad || slot !== chosen;
+    if (!bad && chosen) chosen.classList.add("is-drawn");
   } else if (bad) {
     // A light shake and away. Not a punishment - the draw was unlucky, not
     // wrong, and the animation says so by being small.
@@ -452,11 +490,10 @@ async function reveal(card, slots, outcome, result, { still: quiet }) {
     await wait(BAD_LUCK_MS * 0.7);
     for (const slot of slots) slot.hidden = true;
   } else {
-    const chosen = slots.find((s) => s.dataset.weapon === outcome);
     for (const slot of slots) {
       if (slot === chosen) continue;
       slot.animate([{ opacity: 1 }, { opacity: 0 }],
-        { duration: 260, easing: "ease-in", fill: "forwards" });
+        { duration: 360, easing: "ease-in", fill: "forwards" });
     }
     // Turn it over, then bring it forward.
     chosen.classList.add("is-drawn");
@@ -466,20 +503,20 @@ async function reveal(card, slots, outcome, result, { still: quiet }) {
           [
             { transform: "rotateY(0deg) scale(1)" },
             { transform: "rotateY(180deg) scale(1)" },
-            { transform: "rotateY(360deg) scale(1.06)" },
+            { transform: "rotateY(360deg) scale(1.08)" },
           ],
-          { duration: 420, easing: "cubic-bezier(.3,.7,.3,1)", fill: "both" },
+          { duration: 560, easing: "cubic-bezier(.3,.7,.3,1)", fill: "both" },
         )
         .finished.catch(() => {});
     }
     for (const slot of slots) if (slot !== chosen) slot.hidden = true;
-    await wait(120);
+    await wait(160);
   }
 
   result.hidden = false;
   result.replaceChildren(...(bad ? badLuckLines() : weaponLines(outcome)));
   result.animate([{ opacity: 0 }, { opacity: 1 }],
-    { duration: quiet ? 1 : 240, easing: "ease-out", fill: "both" });
+    { duration: quiet ? 1 : 280, easing: "ease-out", fill: "both" });
 
   if (bad) await wait(BAD_LUCK_MS);
 }

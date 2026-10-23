@@ -532,7 +532,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
       /\.board__announce--wait \.announce__label::before/.test(boardCss) &&
       /@keyframes wait-pulse/.test(boardCss) &&
       boardJs.includes("statusFor(game") &&
-      announcementsCode.includes('"Opponent\\u2019s Turn"'),
+      announcementsCode.includes('"Opponent is playing"'),
     "the turn you own is inked and still; the turn you are waiting on is softer and pulses",
   );
   check(
@@ -1077,14 +1077,14 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
   check(
     "the set's locked section never claims that a player owns the whole set",
     !cardJs.includes(falseClaim) && !ledgerJs.includes(falseClaim) &&
-      /Own all \$\{members\.length\} colonies in this set to unlock upgrades\./.test(cardJs),
+      /Own all \$\{members\.length\} properties/.test(cardJs),
     "one colony owned by one player says nothing about the set, and a line " +
       "that claimed otherwise was a lie",
   );
   check(
     "a set one player has all of charges double, and the card says so",
     /export function fullSetRent/.test(ledgerJs) &&
-      /Full set, no upgrades: /.test(cardJs) &&
+      /Full set \$\{rupees\(doubled\)\}/.test(cardJs) &&
       /evenUpgradeBlocked/.test(ledgerJs) &&
       /Upgrade the other colonies in this set first/.test(cardJs),
   );

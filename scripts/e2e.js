@@ -705,11 +705,15 @@ try {
           if (g?.phase === "DECISION") {
             const holder = b.querySelector(".board__card");
             const chest = holder?.querySelector(".chest-card");
+            const nexus = holder?.querySelector(".nexus-card");
             if (chest) {
               const draw = chest.querySelector('[data-action="draw"]');
               if (draw && !draw.disabled) { draw.click(); await wait(60); continue; }
               const collect = chest.querySelector('[data-action="collect"]');
               if (collect && !collect.disabled) { collect.click(); await wait(60); continue; }
+            } else if (nexus) {
+              const pray = nexus.querySelector('[data-action="pray"]');
+              if (pray && !pray.disabled) { pray.click(); await wait(80); continue; }
             } else {
               const next = holder?.querySelector(".property-card__next");
               if (next && !next.hidden && getComputedStyle(next).display !== "none") {
@@ -1851,7 +1855,7 @@ try {
     // --- the turn status ---
     note(`${label}: the middle names the turn in one status line`,
       !trio.status.hidden && trio.status.mode === "status" &&
-        trio.status.big === "Your Turn" &&
+        trio.status.big === "The move is yours" &&
         trio.status.seat === String(trio.active) &&
         trio.status.seat === String(trio.meSeat),
       `"${trio.status.big}" seat ${trio.status.seat} (active ${trio.active}, me ${trio.meSeat})`);
@@ -2444,7 +2448,7 @@ try {
   `);
   note("the economy begins on the first seat's turn",
     setup.phase === "AWAITING_ROLL" && setup.active === 0 &&
-      setup.turn === "Your Turn" && setup.turnSeat === "0" &&
+      setup.turn === "The move is yours" && setup.turnSeat === "0" &&
       setup.rollable === "true",
     `phase ${setup.phase}, seat ${setup.active}, "${setup.turn}" (${setup.turnSeat}), rollable ${setup.rollable}`);
   note("both purses hold two thousand", setup.money.join(" ") === "2000 2000", setup.money.join(" "));
@@ -2843,7 +2847,7 @@ try {
 
   const flight = await flightPromise;
   note("rent is paid in rupee tokens flying between the two chips",
-    Boolean(flight) && flight.count >= 3,
+    Boolean(flight) && flight.count >= 2,
     flight ? `${flight.count} tokens in the air` : "no tokens seen");
   // Hold the tokens at the middle of their flight for the shot. They are only
   // in the air for about half a second, and a screenshot taken after the poll
@@ -2951,7 +2955,7 @@ try {
   }
   note("the turn hand-over is said once, in the middle's status",
     handover.mode === "status" &&
-      handover.big === (handover.active === handover.me ? "Your Turn" : "Opponent\u2019s Turn") &&
+      handover.big === (handover.active === handover.me ? "The move is yours" : "Opponent is playing") &&
       handover.seat === String(handover.active),
     handover ? `"${handover.big}" seat ${handover.seat} (active ${handover.active}, me ${handover.me})` : "no status seen");
   note("and there is no second bar, banner or toast to read",
@@ -3550,7 +3554,7 @@ try {
         const n = b.querySelector(".board__announce");
         const h = b.querySelector(".board__card");
         // The resting status is not an announcement. The same node carries
-        // both, so only `data-mode="announce"` counts as something being said.
+        // both, so only data-mode="announce" counts as something being said.
         const announcing = Boolean(n && !n.hidden && n.dataset.mode === "announce");
         const pick = (sel) => (announcing ? n.querySelector(sel)?.textContent || "" : "");
         const sample = {
@@ -3646,8 +3650,8 @@ try {
     redemptionSamples.at(-1)?.money[0] === 2200,
     `purse ${redemptionSamples.at(-1)?.money?.join(" ")}`);
   const maxRedemptionCoins = Math.max(...redemptionSamples.map((s) => s.rupees), 0);
-  note("and it is paid in one lead coin and two echoes, not a spray",
-    maxRedemptionCoins >= 1 && maxRedemptionCoins <= 3,
+  note("and it is paid in one lead coin and one echo, not a spray",
+    maxRedemptionCoins >= 1 && maxRedemptionCoins <= 2,
     `${maxRedemptionCoins} coin token(s) at the busiest sample`);
 
   /* --- the profile ------------------------------------------------------ */
@@ -4611,35 +4615,30 @@ try {
     lockedCopies.push({
       name,
       lock: card.lock,
-      ok: card.lock === `Own all ${ids.length} colonies in this set to unlock upgrades.`,
+      ok: card.lock === `Own all ${ids.length} properties to unlock upgrades`,
       clean: !card.text.toLowerCase().includes(["holds", "every"].join(" ")),
     });
     statusLines.push({
       name,
       status: card.status,
+      statusHidden: card.statusHidden,
       ids,
-      ok: ids.every((id) => {
-        const square = NAMES[id];
-        return card.status.includes(`${square} \u2713 Asha`) ||
-          card.status.includes(`${square} \u25cb open`);
-      }),
     });
   }
 
   note("every set says how many colonies it has, and never who holds it",
     lockedCopies.length === 8 && lockedCopies.every((c) => c.ok && c.clean),
     lockedCopies.map((c) => `${c.name}: "${c.lock}"`).join(" | "));
-  note("and every set's colonies are listed, with their owner or open",
-    statusLines.length === 8 && statusLines.every((s) => s.ok),
+  note("and the ownership list is hidden, because the board already shows it",
+    statusLines.length === 8 && statusLines.every((s) => s.statusHidden === true && s.status === ""),
     statusLines.map((s) => `${s.name}: ${s.status}`).join(" | "));
 
-  /* A complete set: the message and the status line go away. */
+  /* A complete set: the lock becomes the simple completion line. */
   const complete = SETS[setNames[0]];
   await ownership(complete.map((id) => [id, 0]));
   const completeCard = await readCard(complete[0]);
-  note("a set one player has all of says nothing about the set",
-    completeCard.lockHidden === true && completeCard.statusHidden === true &&
-      !/Own all/.test(completeCard.text) &&
+  note("a set one player has all of says how many complete the set",
+    completeCard.lock === `Own all ${complete.length} properties` && completeCard.statusHidden === true &&
       !completeCard.text.toLowerCase().includes(["holds", "every"].join(" ")),
     `lock "${completeCard.lock}", status "${completeCard.status}"`);
 
@@ -4658,7 +4657,7 @@ try {
   const base = RENTS[rentSet[0]];
   note("a complete set with nothing built on it charges double, and says so",
     fullSetCard.fullsetHidden === false &&
-      fullSetCard.fullset === `Full set, no upgrades: ${rupees(base * 2)}` &&
+      fullSetCard.fullset === `Full set ${rupees(base * 2)}` &&
       fullSetCard.rent.includes(rupees(base * 2)),
     `"${fullSetCard.fullset}", rent "${fullSetCard.rent}"`);
 
