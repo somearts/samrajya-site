@@ -55,7 +55,7 @@
    spent. One economy, one ledger, one turn.
    ========================================================================== */
 
-import { MAX_UPGRADE, STARTING_MONEY, isPriced, priceOf } from "./economy.js";
+import { MAX_UPGRADE, REDEMPTION, STARTING_MONEY, isPriced, priceOf } from "./economy.js";
 import {
   buy as ledgerBuy,
   canBuy,
@@ -66,8 +66,8 @@ import {
   ownerOf,
   payRent,
   recordEntry,
+  redemption as ledgerRedemption,
   rentAt,
-  salary as ledgerSalary,
   saleValue,
   sell as ledgerSell,
   upgrade as ledgerUpgrade,
@@ -361,15 +361,16 @@ export function applyAction(state, action, rng = Math.random) {
       const to = advance(from, face);
       const cell = CELLS.find((entry) => entry.index === to) || CELLS[to];
 
+      /* Crossing Start EARNS the Redemption, but does not pay it yet. The
+         payment belongs to the end of the turn: a player who crosses Start and
+         then lands on a square still has a visit to finish, and a purse that
+         rose during the walk would be paying them in the middle of their own
+         move. The flag rides on the visit and `continue` pays it at TURN_END. */
+      const crossedStart = from > 0 && from + face >= BOARD_SIZE;
+
       piece.position = to;
       next.lastRoll = { seat: active, face, from, to, id: cell?.id || "" };
 
-      // Salary: crossing or landing on Start pays 200. The first move out of
-      // Start never pays, because 0 + steps is never 28 with one die.
-      if (from > 0 && from + face >= BOARD_SIZE) {
-        ledgerSalary(next.ledger, active, state.turn);
-        ok("salary", { seat: active, amount: 200 });
-      }
       next.landing = {
         seat: active,
         index: to,
@@ -385,6 +386,8 @@ export function applyAction(state, action, rng = Math.random) {
         rent: 0,
         paid: false,
         short: 0,
+        /* What completing a lap is owed, paid when the turn is resolved. */
+        redemption: crossedStart ? REDEMPTION : 0,
       };
       next.phase = PHASE.MOVING;
 
@@ -686,6 +689,16 @@ export function applyAction(state, action, rng = Math.random) {
       /* THE ONLY PLACE THE ACTIVE PLAYER MOVES. */
       const from = state.active;
       const to = seatAfter(state, from);
+
+      /* The lap is settled here, after every part of the visit has resolved.
+         The event is emitted before `turnChanged` so both screens say what the
+         finishing player earned, and only then hand the turn on. */
+      const due = Number(state.visit?.redemption) || 0;
+      if (due > 0) {
+        ledgerRedemption(next.ledger, from, state.turn);
+        ok("redemption", { seat: from, amount: due });
+      }
+
       next.active = to;
       next.phase = PHASE.AWAITING_ROLL;
       next.turn = (state.turn || 0) + 1;

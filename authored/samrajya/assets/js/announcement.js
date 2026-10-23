@@ -1,20 +1,29 @@
 /* ==========================================================================
-   SAMRAJYA - THE BIG ANNOUNCEMENT
+   SAMRAJYA - THE MIDDLE OF THE BOARD
 
-   One thing at a time, across the whole middle of the board: a small label, the
-   amount or the name, and a line beneath it. It is driven by an event that has
-   already happened - the state moved before this started - and it never holds
-   the game up for longer than its own 1.8 seconds.
+   One surface, one voice. Everything the board has to say is said here: whose
+   turn it is while the board is waiting, and one sentence at a time when
+   something has actually happened. There is no second bar, no toast and no
+   banner; a player never has to decide which of two messages to read.
 
-   A tap skips it. A reader who has asked for less motion gets the same words in
-   a plain fade, and nothing travels.
+   TWO MODES, ONE LAYER
+
+   `status(spec)` is the resting state: a compact line in the upper middle that
+   says whose turn it is and stays there until the game changes. It leaves the
+   die alone below it, and it takes no taps.
+
+   `show(spec)` is a fact that has just happened: a full-middle announcement
+   that enters, holds long enough to be read, and leaves. While it is up the
+   status steps aside; when it goes, the status comes back.
+
+   A tap skips the announcement on screen. A reader who has asked for less
+   motion gets the same words in a plain fade, and nothing travels.
 
    THE QUEUE
 
-   Two things want the middle of the board: this announcement and a player's
-   record. They cannot both have it, so the announcement waits - it is queued,
-   never dropped - and it is said the moment the record closes, in the order
-   things happened.
+   Two things want the middle at once: an announcement and a player's record.
+   The record wins for as long as it is open; announcements wait - queued, never
+   dropped - and are said in the order things happened the moment it closes.
 
    The queue is an explicit list rather than a chain of promises, because three
    things have to be true at once and a chain makes them hard to see: an
@@ -29,9 +38,9 @@
 import { el } from "./dom.js";
 import { prefersStill } from "./dice.js";
 
-const ENTER_MS = 250;
-const HOLD_MS = 1300;
-const EXIT_MS = 250;
+const ENTER_MS = 220;
+const HOLD_MS = 2100;
+const EXIT_MS = 240;
 
 const wait = (ms) =>
   new Promise((resolve) => {
@@ -60,11 +69,12 @@ function held(ms) {
 }
 
 /**
- * Mount the announcement layer in the middle and hand back `show`.
+ * Mount the one middle layer and hand back its two ways of speaking.
  *
- * `show(spec)` takes `{ label, big, sub, color, tone }` and resolves when the
- * announcement has left the screen. A null spec resolves at once, which is how
- * an event with nothing to announce stays quiet.
+ * `show(spec)` takes `{ label, big, sub, color, tone, hold }` and resolves when
+ * the announcement has left the screen. `status(spec)` takes the same shape and
+ * holds it until it is replaced. A null spec resolves at once, which is how an
+ * event with nothing to announce stays quiet.
  */
 export function announcementLayer(centre) {
   const node = el("div", {
@@ -82,22 +92,37 @@ export function announcementLayer(centre) {
   let pumping = false;
   /* The announcement on screen right now, and the handle that can stop it. */
   let current = null;
+  /* What the middle says when nothing is being announced. */
+  let resting = null;
+  let restingKey = null;
 
   /** Is a profile holding the middle right now? */
   const profileOpen = () =>
     centre.closest(".board")?.dataset.profile === "true";
 
   node.addEventListener("pointerdown", (event) => {
+    // The status is not a control; only an announcement can be skipped.
+    if (node.dataset.mode !== "announce") return;
     event.preventDefault();
     // The handle is the one on screen: the skip belongs to the announcement
     // being read, not to the queue.
     current?.token?.skip?.();
   });
 
-  /** Put one announcement on the screen and take it off again. */
-  async function playNow(spec, token) {
-    node.className = `board__announce board__announce--${spec.tone || "plain"}`;
+  /** Write one spec into the layer, in whichever mode it is. */
+  function paint(spec, mode) {
+    node.className =
+      `board__announce board__announce--${mode} ` +
+      `board__announce--${spec.tone || "plain"}`;
+    node.dataset.mode = mode;
+    node.dataset.label = spec.label || "";
+    node.dataset.big = spec.big || "";
     node.style.setProperty("--motif", spec.color || "var(--ink)");
+    if (spec.seat !== undefined && spec.seat !== null) {
+      node.dataset.turn = String(spec.seat);
+    } else {
+      delete node.dataset.turn;
+    }
     node.replaceChildren(
       el("span", { class: "announce__motif", "aria-hidden": "true" }),
       el("p", { class: "announce__label", text: spec.label || "" }),
@@ -105,6 +130,47 @@ export function announcementLayer(centre) {
       el("p", { class: "announce__sub", text: spec.sub || "" }),
     );
     node.hidden = false;
+  }
+
+  /** Take the middle down, leaving no text behind. */
+  function clear() {
+    node.hidden = true;
+    node.replaceChildren();
+    delete node.dataset.mode;
+    delete node.dataset.label;
+    delete node.dataset.big;
+    delete node.dataset.turn;
+  }
+
+  /** Put the resting status back, if there is one and the middle is free. */
+  function paintStatus() {
+    if (current || pumping || profileOpen()) return;
+    if (!resting) {
+      restingKey = null;
+      clear();
+      return;
+    }
+    const key = [resting.label, resting.big, resting.sub, resting.seat, resting.tone].join("|");
+    if (!node.hidden && node.dataset.mode === "status" && key === restingKey) return;
+    restingKey = key;
+    paint(resting, "status");
+    node.dataset.state = "rest";
+    if (prefersStill()) {
+      node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, fill: "both" });
+      return;
+    }
+    node.animate(
+      [
+        { opacity: 0, transform: "translateY(5px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: 220, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
+    );
+  }
+
+  /** Put one announcement on the screen and take it off again. */
+  async function playNow(spec, token) {
+    paint(spec, "announce");
     node.dataset.state = "in";
 
     const quiet = prefersStill();
@@ -121,7 +187,7 @@ export function announcementLayer(centre) {
     if (token.stopped) return;
 
     node.dataset.state = "hold";
-    const pause = held(HOLD_MS);
+    const pause = held(Math.max(1200, Number(spec.hold) || HOLD_MS));
     token.skip = pause.skip;
     await pause.promise;
     token.skip = null;
@@ -136,8 +202,7 @@ export function announcementLayer(centre) {
         ];
     node.animate(exit, { duration: EXIT_MS, easing: "ease-in", fill: "both" });
     await wait(EXIT_MS);
-    node.hidden = true;
-    node.replaceChildren();
+    clear();
   }
 
   /** Say everything queued, one after another, until there is nothing left. */
@@ -159,6 +224,10 @@ export function announcementLayer(centre) {
       }
     } finally {
       pumping = false;
+      // The last fact has been said: the middle goes back to saying whose turn
+      // it is. This is the only hand-back, so the queue and the status cannot
+      // both claim the middle.
+      paintStatus();
     }
   }
 
@@ -185,6 +254,17 @@ export function announcementLayer(centre) {
       return promise;
     },
     /**
+     * Say this until it is replaced.
+     *
+     * A status arriving while an announcement is on screen is remembered, not
+     * painted: the fact being read has the middle until it is finished, and
+     * the status takes over afterwards.
+     */
+    status(spec) {
+      resting = spec || null;
+      if (!pumping && !current) paintStatus();
+    },
+    /**
      * Take the announcement on screen off, and say it again afterwards.
      *
      * A record opened while an announcement was being read: the record is the
@@ -193,19 +273,25 @@ export function announcementLayer(centre) {
      * nothing is read over the record and nothing is lost.
      */
     defer() {
-      if (!current) return;
-      const { item, token } = current;
-      token.stopped = true;
-      token.skip?.();
-      node.hidden = true;
-      node.replaceChildren();
-      current = null;
-      queue.unshift(item);
+      if (current) {
+        const { item, token } = current;
+        token.stopped = true;
+        token.skip?.();
+        current = null;
+        queue.unshift(item);
+      }
+      clear();
     },
     /** Say everything that was waiting for the middle to be free. */
     flush() {
       if (profileOpen()) return Promise.resolve();
-      return pump();
+      if (queue.length) return pump();
+      paintStatus();
+      return Promise.resolve();
+    },
+    /** Is a transient announcement covering the middle right now? */
+    covering() {
+      return !node.hidden && node.dataset.mode === "announce";
     },
     /** Take the layer away with the board, without leaving a timer behind. */
     hide() {
@@ -215,8 +301,9 @@ export function announcementLayer(centre) {
         current = null;
       }
       queue.length = 0;
-      node.hidden = true;
-      node.replaceChildren();
+      resting = null;
+      restingKey = null;
+      clear();
     },
   };
 }

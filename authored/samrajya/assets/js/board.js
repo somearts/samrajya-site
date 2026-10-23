@@ -26,9 +26,9 @@
    server will call in Phase 2.
 
    The one place the board writes a turn fact is `paintPhase`, and it writes it
-   DOWN - the die's visibility, the turn line, the chip's ring - from the state
-   it was handed. Nothing here sets the active player except by asking the game
-   to continue a finished turn.
+   DOWN - the die's visibility, the middle's status, the chip's ring - from the
+   state it was handed. Nothing here sets the active player except by asking the
+   game to continue a finished turn.
 
    WHAT A TAP MEANS
    ----------------
@@ -46,27 +46,22 @@ import { DICE_DELAY_MS, DICE_HOLD_MS, DICE_ROLL_MS, pause } from "./timing.js";
 // The layer draws the coins; the rules they obey - including the name a seat
 // goes by - are in coins.js, which imports nothing and is tested on its own.
 import { coins } from "./coin-layer.js";
-import { seatId } from "./coins.js";
 import { renderWeapons, showChest } from "./chest-card.js";
 import { RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
 import { hideCard, showCard, syncCard } from "./property-card.js";
 import {
   markBoard,
-  rentShortMessage,
   syncActive,
   syncPurses,
-  toast,
 } from "./economy-ui.js";
-import { turnPill } from "./turn.js";
 import { profilePanel } from "./profile.js";
 import { announcementLayer } from "./announcement.js";
-import { announcementFor } from "./shared/announcements.js";
+import { announcementFor, statusFor } from "./shared/announcements.js";
 import { isPurchasable } from "./shared/properties.js";
 import { ENABLE_SELL, PHASE, restoreGame } from "./shared/game.js";
 import { coinColor } from "./shared/civilizations.js";
 import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
 import {
-  banner,
   cardAway,
   flyCoins,
   flyRent,
@@ -284,13 +279,10 @@ export function board({
   // to mean something a player asked for.
   const die = centreArea.querySelector(".board__dice");
 
-  // The turn line, under the die. It names the seat the game says is active;
-  // the stylesheet takes it away in every phase where a throw cannot happen.
-  const turn = turnPill(players);
-  centreArea.append(turn.node);
-
-  // The big announcement lives inside the middle, in the same cell as the die
-  // and the card, and above both. It is created once and reused.
+  // The big middle layer. It says whose turn it is while the board is waiting,
+  // and takes the whole middle for one sentence when something has happened.
+  // Both players read the same layer; the waiting player is never left with an
+  // empty centre.
   const announce = announcementLayer(centreArea);
 
   /* ------------------------------------------------------------- the game */
@@ -310,7 +302,7 @@ export function board({
 
   frame.game = game;
   frame.ledger = game?.ledger ?? null;
-  frame.turn = turn;
+  frame.announce = announce;
 
   /* A way to take one action from outside the board, with the die's generator
      injectable. The checks use it to play a real turn to a square they chose;
@@ -405,9 +397,10 @@ export function board({
   };
 
   /**
-   * The die, the turn line, and the tab stops, all from pointer-events and from
-   * the phase. A decision has no die; neither does a read-only card, because a
-   * card that can be dismissed by a tap is not a card you can throw past.
+   * The die, the middle's status and the tab stops, all from pointer-events and
+   * from the phase. A decision has no die; neither does a read-only card,
+   * because a card that can be dismissed by a tap is not a card you can throw
+   * past.
    *
    * Whether the die is on the board at all is one question with one answer:
    * `dieVisible`. The die used to follow the phase, and a tap changed the
@@ -429,18 +422,31 @@ export function board({
     frame.dataset.reading = reading ? "true" : "false";
     frame.dataset.cardMode = cardMode;
     frame.dataset.busy = busy ? "true" : "false";
-    turn.set(game.active);
-    // The die belongs to the player whose turn it is, and only on their screen.
+    // The die belongs to the board, not to one player: both phones watch the
+    // same throw. Only the right to press it is the active seat's.
     const rollable =
       game.phase === PHASE.AWAITING_ROLL && !reading && !busy && isMyTurn();
     die?.setAttribute("tabindex", rollable ? "0" : "-1");
     die?.setAttribute("aria-hidden", String(!rollable));
     frame.dataset.rollable = rollable ? "true" : "false";
+
+    /* What the middle says when nothing is being announced. A card or a record
+       owns the middle when it is up, so the status stands down; while an action
+       is being played the status is left exactly as it was, and the `run`/snapshot
+       teardown repaints it once the animation is over. */
+    const cardUp = Boolean(holder() && !holder().hidden);
+    if (cardUp || profileSeat !== null) {
+      announce.status(null);
+    } else if (!busy) {
+      const status = statusFor(game, { viewer: mySeat });
+      announce.status(status ? { ...status, color: seatColour(status.seat) } : null);
+    }
+
     frame.dataset.die = dieVisible(game, {
       seat: mySeat,
       throwing: frame.dataset.throwing === "true",
-      card: Boolean(holder() && !holder().hidden),
-      announcement: Boolean(announce?.node && !announce.node.hidden),
+      card: cardUp,
+      announcement: announce.covering(),
       profile: profileSeat !== null,
     })
       ? "shown"
@@ -526,7 +532,12 @@ export function board({
           : {}),
       });
     } catch {
-      toast(frame, "No connection to the server. Check your network and try again.", { tone: "refused" });
+      await announce.show({
+        label: "OFFLINE",
+        big: "No connection",
+        sub: "Check your network and try again.",
+        tone: "refused",
+      });
       return null;
     }
 
@@ -537,7 +548,14 @@ export function board({
         seat: game?.active ?? null,
         why: response.error,
       };
-      toast(frame, no.why, { tone: "refused" });
+      // The one middle voice says what was refused, in words, for long enough
+      // to be read. There is no second black bar for errors.
+      await announce.show({
+        label: "NOT NOW",
+        big: "That cannot happen",
+        sub: no.why,
+        tone: "refused",
+      });
       const target =
         action.type === "buy"
           ? holder()?.querySelector(".property-card__buy")
@@ -758,7 +776,9 @@ export function board({
           break;
         }
 
-        case "salary": {
+        case "redemption": {
+          // The lap is paid at the end of the turn, after every other part of
+          // the visit has resolved. Both phones see the same Redemption land.
           paint({ animate: true });
           await Promise.all([
             say(event),
@@ -772,16 +792,15 @@ export function board({
         }
 
         case "rentShort": {
-          // What the payer could actually hand over still flies; the rest is the
-          // short, and the notice is the only thing that says the visit was not
-          // an ordinary rent. Nothing else happens because of it.
+          // What the payer could actually hand over still flies; the shortfall
+          // is written into the rent sentence itself, so there is no second
+          // notice flashing under the board.
           if (event.amount > 0) {
             paint({ animate: true });
             await Promise.all([say(event), flyRent(root(), frame, event)]);
           } else {
             await say(event);
           }
-          toast(frame, rentShortMessage(event), { tone: "refused" });
           break;
         }
 
@@ -792,13 +811,11 @@ export function board({
           break;
 
         case "turnChanged": {
-          // The ring and the TURN tag move with the banner, not after it. The
-          // banner is naming the player whose chip is already emphasised; a
-          // banner over a chip that still says the old player is a lie for as
-          // long as it is on screen.
+          // The ring and the chip's emphasis move with the state, not after it.
+          // The middle changes from one status to the other only once the last
+          // fact of the finished turn has been read; `run` repaints it when the
+          // action is done. Nothing sweeps across the board on top of it.
           paint({ animate: true });
-          const mine = mySeat !== null && event.to === Number(mySeat);
-          await banner(frame, mine ? "Your turn" : `${event.name}\u2019s turn`, { mine });
           break;
         }
 
@@ -1084,22 +1101,6 @@ export function theCoins(root) {
 /** Whether a cell is one of the four corners. */
 export function isCornerCell(cell) {
   return CORNER_IDS.includes(cell.id);
-}
-
-/**
- * Which player's coin a seat names.
- *
- * The room deliberately does not send the client each player's `id` - that is
- * the identity token - so the roster arriving here carries `name`, `civ`,
- * `joined` and `role` and nothing else. The seat is the only name a coin can
- * have, and it is the same seat the turn line counts on.
- */
-export function playerIdAtSeat(pill, players = []) {
-  const seat = Number(pill?.node?.dataset?.turn);
-  if (!Number.isInteger(seat)) return null;
-  const named = (players || []).filter((p) => p && p.name);
-  if (!named[seat]) return null;
-  return seatId(seat);
 }
 
 /** How many of each kind of cell a board has. Used by the geometry check. */

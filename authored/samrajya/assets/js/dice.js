@@ -157,10 +157,14 @@ export function prefersStill() {
  * phase took the die away, and the die came back a second later - a flicker
  * nobody had asked for, and the reason the die seemed to vanish.
  *
- * The die is out of the way only when something else wants the middle: a
- * card, an announcement, or a player's record. Otherwise it is there, and it
- * belongs to the player whose turn it is - except while a throw is being
- * played, when both players are watching the same die and both must see it.
+ * It is also not the active player's private object. Both phones are watching
+ * the same turn, so the waiting player sees the die settle on the number that
+ * moved the other coin. Only the right to PRESS it belongs to the active seat,
+ * and that is `rollable` in board.js, not visibility here.
+ *
+ * The die is out of the way only when something else wants the middle: a card,
+ * a transient announcement, or a player's record. The resting turn status is
+ * not one of those - it sits above the die and leaves it in view.
  *
  * @param {object} state  the game: whose turn it is, and what phase
  * @param {object} ui    what is in the middle: card, announcement, profile,
@@ -169,7 +173,13 @@ export function prefersStill() {
 export function dieVisible(state, ui = {}) {
   if (ui.card || ui.announcement || ui.profile) return false;
   if (ui.throwing) return true;
-  return Number(state?.active) === Number(ui.seat);
+  return Boolean(
+    state &&
+      state.active !== null &&
+      state.active !== undefined &&
+      ui.seat !== null &&
+      ui.seat !== undefined,
+  );
 }
 
 /**

@@ -273,17 +273,20 @@ test("e. one level a visit, in order, never past the third", () => {
 
 /* ------------------------------------------------------- the audit, item f */
 
-test("f. salary is paid for crossing or landing on Start, never for the first move", () => {
+test("f. redemption is earned for crossing or landing on Start, never for the first move", () => {
   const state = game();
   state.pieces[0].position = 26;
   const crossed = applyAction(state, { type: "roll", seat: 0 }, face(4));
-  const salary = crossed.events.find((e) => e.type === "salary");
-  assert.ok(salary, "crossing Start pays");
-  assert.equal(salary.amount, 200);
+  assert.equal(
+    crossed.events.find((e) => e.type === "redemption"),
+    undefined,
+    "the lap is not paid in the middle of the walk",
+  );
+  assert.equal(crossed.state.visit.redemption, 200, "it is earned by crossing");
 
   const fresh = game();
   const first = applyAction(fresh, { type: "roll", seat: 0 }, face(1));
-  assert.equal(first.events.find((e) => e.type === "salary"), undefined);
+  assert.equal(first.state.visit.redemption, 0);
 });
 
 /* ------------------------------------------------------- the audit, item g */

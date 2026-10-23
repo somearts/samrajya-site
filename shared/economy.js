@@ -59,6 +59,15 @@
 /** What every player is given to start with. */
 export const STARTING_MONEY = 2000;
 
+/**
+ * What a player is paid for coming back round to Start.
+ *
+ * One number, one place. The rules pay it at the END of the turn that crossed
+ * Start, never in the middle of the walk - so the purse and the board only
+ * change once the visit is fully resolved.
+ */
+export const REDEMPTION = 200;
+
 /** How many times a property can be built up. Three, for all twenty. */
 export const MAX_UPGRADE = 3;
 

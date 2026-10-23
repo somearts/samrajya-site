@@ -239,7 +239,7 @@ test("a move wraps at the end of the board, and the path is every square it touc
   before.pieces[0].position = 26;
   const { state, events } = take(before, { type: "roll" }, face(4));
   assert.equal(pieceAt(state, 0).position, 2);
-  // Crossing Start now emits a salary event first, so find the move itself.
+  // Crossing Start earns a redemption, but it is paid at the end of the turn.
   assert.deepEqual(events.find((e) => e.type === "moved").path, [26, 27, 0, 1, 2]);
 });
 
@@ -685,28 +685,48 @@ test("a fresh game's ledger is a real ledger with a sheet for every property", (
 
 /* ------------------------------------------------------- the ledger's history */
 
-test("crossing Start pays a salary and writes it in the ledger first", () => {
+test("crossing Start earns a redemption, paid only when the turn ends", () => {
   const before = game();
   before.pieces[0].position = 26;
-  const { state, events } = take(before, { type: "roll" }, face(4));
+  const rolled = take(before, { type: "roll" }, face(4));
 
-  assert.equal(events[0].type, "salary");
-  assert.equal(events[0].amount, 200);
-  assert.equal(events[0].seat, 0);
-  assert.equal(moneyOf(state.ledger, 0), 2200, "the salary arrives before the landing");
+  assert.equal(
+    rolled.events.some((e) => e.type === "redemption"),
+    false,
+    "nothing is paid during the walk",
+  );
+  assert.equal(moneyOf(rolled.state.ledger, 0), 2000, "the purse has not moved yet");
+  assert.equal(visitOf(rolled.state).redemption, 200, "the lap is earned by crossing");
 
-  const first = state.ledger.history[0];
+  let state = take(rolled.state, { type: "continue" }).state;
+  assert.equal(state.phase, PHASE.DECISION, "the landing still has to be answered");
+  state = take(state, { type: "pass" }).state;
+  assert.equal(state.phase, PHASE.RESOLVING, "the visit is resolved but the turn is not over");
+  state = take(state, { type: "continue" }).state;
+  assert.equal(state.phase, PHASE.TURN_END);
+  const ended = take(state, { type: "continue" });
+
+  const paidAt = ended.events.findIndex((e) => e.type === "redemption");
+  const handedOn = ended.events.findIndex((e) => e.type === "turnChanged");
+  assert.notEqual(paidAt, -1, "the lap is paid at the end");
+  assert.ok(paidAt < handedOn, "and before the turn changes hands");
+  assert.equal(ended.events[paidAt].amount, 200);
+  assert.equal(ended.events[paidAt].seat, 0);
+  assert.equal(moneyOf(ended.state.ledger, 0), 2200);
+
+  const first = ended.state.ledger.history[0];
   assert.equal(first.seat, 0);
-  assert.equal(first.kind, "salary");
-  assert.equal(first.text, "Salary · lap complete");
+  assert.equal(first.kind, "redemption");
+  assert.equal(first.text, "Redemption · lap complete");
   assert.equal(first.amount, 200);
   assert.equal(first.balance, 2200);
   assert.equal(first.turn, before.turn);
 });
 
-test("the first move out of Start does not pay a salary", () => {
+test("the first move out of Start does not earn a redemption", () => {
   const { state, events } = take(game(), { type: "roll" }, face(1));
-  assert.equal(events.some((e) => e.type === "salary"), false);
+  assert.equal(events.some((e) => e.type === "redemption"), false);
+  assert.equal(visitOf(state).redemption, 0);
   assert.equal(moneyOf(state.ledger, 0), 2000);
   assert.equal(state.ledger.history.length, 0);
 });

@@ -89,11 +89,13 @@ export async function lift(root, board, seat, text, { tone = "spend" } = {}) {
 }
 
 /**
- * Rupee tokens flying from one node to another, along a gentle arc.
+ * Rupee tokens moving from one node to another, on one quiet arc.
  *
- * Six to eight discs, staggered, over a little under a second. `amount` only
- * chooses how many - the number itself is said by the announcement, not by a
- * label on a coin.
+ * One coin leads, two fainter echoes follow it, and a thin ring opens where it
+ * lands. The old version sent seven or eight identical discs along the same
+ * line and read as a spray rather than a payment; a payment is one amount, so
+ * the animation is one gesture. `amount` only tints the weight of the lead -
+ * the number itself is said by the announcement, never by a label on a coin.
  */
 export async function flyCoins(board, { from, to, amount = 0 } = {}) {
   if (!board || !from || !to) return;
@@ -102,58 +104,77 @@ export async function flyCoins(board, { from, to, amount = 0 } = {}) {
   const end = localTo(board, to);
   if (!start || !end) return;
 
-  const count = Math.max(6, Math.min(8, Math.round((Number(amount) || 0) / 80)));
-
   if (prefersStill()) {
-    await wait(220);
+    await wait(200);
     return;
-  }
-
-  const tokens = [];
-  for (let n = 0; n < count; n += 1) {
-    const token = el("span", { class: "board__rupee", "aria-hidden": "true", text: "\u20b9" });
-    token.style.left = `${start.left}px`;
-    token.style.top = `${start.top}px`;
-    board.append(token);
-    tokens.push(token);
   }
 
   const dx = end.left - start.left;
   const dy = end.top - start.top;
-  // The arc lifts sideways as well as up, alternating a little, so seven coins
-  // do not run along one line like a queue.
-  const bend = Math.max(18, Math.min(52, Math.abs(dx) * 0.18 + Math.abs(dy) * 0.12));
+  // A soft lift at the midpoint, never a loop: the coin travels, it does not
+  // perform. The bend grows with the distance but stays inside a tile.
+  const bend = Math.max(14, Math.min(38, Math.hypot(dx, dy) * 0.16));
 
-  await Promise.all(
-    tokens.map((token, n) =>
-      token
-        .animate(
-          [
-            { transform: "translate(-50%, -50%) scale(.7)", opacity: 0, offset: 0 },
-            { transform: "translate(-50%, -50%) scale(1)", opacity: 1, offset: 0.1 },
-            {
-              transform:
-                `translate(calc(-50% + ${dx * 0.55}px), ` +
-                `calc(-50% + ${dy * 0.55 - bend}px)) scale(1)`,
-              opacity: 1,
-              offset: 0.55,
-            },
-            {
-              transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.7)`,
-              opacity: 0,
-            },
-          ],
+  const tokens = [1, 0.72, 0.5].map((scale, n) => {
+    const token = el("span", {
+      class: `board__rupee${n ? " board__rupee--echo" : ""}`,
+      "aria-hidden": "true",
+      text: "\u20b9",
+    });
+    token.style.left = `${start.left}px`;
+    token.style.top = `${start.top}px`;
+    token.style.setProperty("--echo", String(scale));
+    board.append(token);
+    return token;
+  });
+
+  const travel = tokens.map((token, n) =>
+    token
+      .animate(
+        [
+          { transform: "translate(-50%, -50%) scale(.72)", opacity: 0, offset: 0 },
+          { transform: "translate(-50%, -50%) scale(1)", opacity: n ? 0.35 : 1, offset: 0.12 },
           {
-            duration: 660,
-            delay: n * 34,
-            easing: "cubic-bezier(.3,.7,.4,1)",
-            fill: "forwards",
+            transform:
+              `translate(calc(-50% + ${dx * 0.5}px), ` +
+              `calc(-50% + ${dy * 0.5 - bend}px)) scale(${n ? 0.86 : 1})`,
+            opacity: n ? 0.3 : 1,
+            offset: 0.55,
           },
-        )
-        .finished.catch(() => {}),
-    ),
+          {
+            transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.78)`,
+            opacity: 0,
+          },
+        ],
+        {
+          duration: 560,
+          delay: n * 55,
+          easing: "cubic-bezier(.3,.7,.4,1)",
+          fill: "forwards",
+        },
+      )
+      .finished.catch(() => {}),
   );
+
+  // The landing: one thin ring, opening once. It says "here" without adding a
+  // number or another object to read.
+  const ring = el("span", { class: "board__coin-land", "aria-hidden": "true" });
+  ring.style.left = `${end.left}px`;
+  ring.style.top = `${end.top}px`;
+  board.append(ring);
+  const pulse = ring
+    .animate(
+      [
+        { transform: "translate(-50%, -50%) scale(.55)", opacity: 0.55 },
+        { transform: "translate(-50%, -50%) scale(1.5)", opacity: 0 },
+      ],
+      { duration: 420, delay: 210, easing: "cubic-bezier(.2,.7,.3,1)", fill: "forwards" },
+    )
+    .finished.catch(() => {});
+
+  await Promise.all([...travel, pulse]);
   for (const token of tokens) token.remove();
+  ring.remove();
 }
 
 /**
@@ -205,37 +226,6 @@ export async function passedLabel(root, board, seat) {
         { transform: "translate(-50%, -110%)", opacity: 0 },
       ],
       { duration: prefersStill() ? 240 : 620, easing: "ease-out", fill: "forwards" },
-    )
-    .finished.catch(() => {});
-  node.remove();
-}
-
-/** The turn banner: a quiet sweep across the middle of the board. */
-export async function banner(board, text, { mine = false } = {}) {
-  const node = el("p", {
-    class: `board__banner${mine ? " board__banner--mine" : ""}`,
-    text,
-    role: "status",
-  });
-  board.append(node);
-  if (prefersStill()) {
-    node.animate([{ opacity: 0 }, { opacity: 1 }, { opacity: 0 }], {
-      duration: 640,
-      fill: "forwards",
-    });
-    await wait(660);
-    node.remove();
-    return;
-  }
-  await node
-    .animate(
-      [
-        { transform: "translate(-50%, 8px)", opacity: 0, clipPath: "inset(0 100% 0 0)" },
-        { transform: "translate(-50%, 0)", opacity: 1, clipPath: "inset(0 0 0 0)", offset: 0.35 },
-        { transform: "translate(-50%, 0)", opacity: 1, offset: 0.72 },
-        { transform: "translate(-50%, -6px)", opacity: 0 },
-      ],
-      { duration: 700, easing: "cubic-bezier(.22,.7,.3,1)", fill: "forwards" },
     )
     .finished.catch(() => {});
   node.remove();

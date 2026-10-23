@@ -75,20 +75,19 @@ test("and the two waits together are exactly the delay, not a moment more", asyn
   assert.equal(movedAt, DICE_DELAY_MS);
 });
 
-test("the die is on the board while the player waits for the roll", () => {
+test("the die is on the board for both players while they wait for the roll", () => {
   const state = { active: 0, phase: "AWAITING_ROLL" };
-  assert.equal(dieVisible(state, { seat: 0 }), true);
-  assert.equal(dieVisible(state, { seat: 1 }), false, "it belongs to the player whose turn it is");
+  assert.equal(dieVisible(state, { seat: 0 }), true, "the player to move sees it");
+  assert.equal(dieVisible(state, { seat: 1 }), true, "and the waiting player watches the same die");
 });
 
 test("the die stays on the board through the throw, the hold and the walk", () => {
   const state = { active: 0, phase: "MOVING" };
-  // The player who threw sees it whether or not the throw is marked as running.
   assert.equal(dieVisible(state, { seat: 0 }), true);
   assert.equal(dieVisible(state, { seat: 0, throwing: true }), true);
-  // The player watching sees it while the throw is being played, because both
-  // are watching the same die.
-  assert.equal(dieVisible(state, { seat: 1 }), false);
+  // Both phones are watching the same throw, so neither loses the die when the
+  // state leaves AWAITING_ROLL.
+  assert.equal(dieVisible(state, { seat: 1 }), true);
   assert.equal(dieVisible(state, { seat: 1, throwing: true }), true);
 });
 

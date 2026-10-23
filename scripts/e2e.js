@@ -1112,8 +1112,7 @@ try {
         const wait = (ms) => new Promise((r) => setTimeout(r, ms));
         const b = document.querySelector(".board");
         const die = b.querySelector(".board__dice");
-        const pill = b.querySelector(".board__turn");
-        const seatNow = () => pill.dataset.turn;
+        const seatNow = () => b.dataset.active;
 
         const moving = b.coins.movePlayer("seat-0", 6);
         await wait(120);
@@ -1667,12 +1666,12 @@ try {
     note(`${label}: and the results are not stuck on one number`,
       new Set(repeats).size >= 2, `${new Set(repeats).size} distinct in six`);
 
-    // The turn pill, the die's outline, and the matchup. Asked together because
+    // The turn status, the die's outline, and the matchup. Asked together because
     // they are the three refinements, and because each one is a claim about the
     // same middle of the same board.
 
-    // The die is only on this seat's screen on this seat's turn, so put the turn
-    // back here before asking where the die and its pill sit.
+    // The die and the status are on both seats' screens now, so put the turn
+    // back here before asking where the die and its status sit.
     await page.eval(`(async () => {
       const b = document.querySelector(".board");
       const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1690,11 +1689,10 @@ try {
       const board = document.querySelector(".board");
       const centre = document.querySelector("#board-center");
       const die = board.querySelector(".board__dice");
-      const pill = board.querySelector(".board__turn");
       const box = (el) => { const r = el.getBoundingClientRect();
         return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, w: r.width, h: r.height }; };
 
-      /* The pill, thrown four times, so the alternation is seen rather than
+      /* The status, thrown four times, so the alternation is seen rather than
          assumed. Each press is given time to land - the turn moves on landing,
          not on the tap, which is the whole difference between this and a
          counter that counts touches.
@@ -1739,18 +1737,26 @@ try {
         return false;
       };
       await makeRollable();
+      for (let i = 0; i < 80; i++) {
+        if (board.querySelector('.board__announce[data-mode="status"]')) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
 
-      const snap = () => ({
-        text: pill.textContent,
-        seat: pill.dataset.turn,
-        name: pill.dataset.name,
-        face: die.dataset.face,
-        rolling: die.dataset.rolling,
-        phase: board.game.phase,
-        active: board.game.active,
-        busy: board.dataset.busy,
-        moving: board.dataset.moving,
-      });
+      const statusNow = () => board.querySelector('.board__announce[data-mode="status"]');
+      const snap = () => {
+        const s = statusNow();
+        return {
+          text: s?.dataset.big || "",
+          seat: board.game.active,
+          shownSeat: s?.dataset.turn || "",
+          face: die.dataset.face,
+          rolling: die.dataset.rolling,
+          phase: board.game.phase,
+          active: board.game.active,
+          busy: board.dataset.busy,
+          moving: board.dataset.moving,
+        };
+      };
 
       for (let i = 0; i < 4; i++) {
         turns.push(snap());
@@ -1799,17 +1805,10 @@ try {
       const vsEl = roster.querySelector(".who__vs");
       const vs = vsEl ? box(vsEl) : null;
 
-      const pillBox = box(pill);
+      const statusEl = statusNow();
+      const statusBox = statusEl ? box(statusEl) : { left: 0, right: 0, top: 0, bottom: 0, w: 0, h: 0 };
       const dieBox = box(die);
-      // The floor of the die's own two rows: the bottom of the LAGRANGE POINT
-      // L2 / MILKY WAY row and the MOON / RAMA row, which is the same four cells
-      // the die is placed against. Not the board's bottom edge - there is one
-      // more row of tiles below the die, and the pill belongs above it.
-      const bandBottom = Math.max(
-        ...["moon", "lagrange-l2", "milky-way", "rama"]
-          .map((id) => board.querySelector('.board__cell[data-id="' + id + '"]')
-            .getBoundingClientRect().bottom),
-      );
+      const big = statusEl?.querySelector(".announce__big");
 
       return {
         turns,
@@ -1820,13 +1819,17 @@ try {
         reading: board.dataset.reading,
         busy: board.dataset.busy,
         dieDisplay: getComputedStyle(die).display,
-        pill: { ...pillBox, hidden: pill.hidden, text: pill.textContent,
-                pointer: getComputedStyle(pill).pointerEvents,
-                font: getComputedStyle(pill).fontSize,
-                background: getComputedStyle(pill).backgroundColor,
-                radius: getComputedStyle(pill).borderTopLeftRadius },
+        status: {
+          ...statusBox,
+          hidden: statusEl ? statusEl.hidden : true,
+          big: statusEl?.dataset.big || "",
+          seat: statusEl?.dataset.turn || "",
+          mode: statusEl?.dataset.mode || "",
+          pointer: statusEl ? getComputedStyle(statusEl).pointerEvents : "",
+          font: big ? getComputedStyle(big).fontSize : "0px",
+          radius: statusEl ? getComputedStyle(statusEl).borderTopLeftRadius : "0px",
+        },
         die: dieBox,
-        bandBottom,
         outline, held,
         pressable,
         roster: { height: roster.getBoundingClientRect().height, blocks, vs,
@@ -1845,24 +1848,22 @@ try {
       trio.pressable.length === 1 && String(trio.pressable[0]).includes("board__dice"),
       trio.pressable.join(", ") || "nothing pressable");
 
-    // --- the turn pill ---
-    note(`${label}: a turn pill is shown under the die`,
-      !trio.pill.hidden && /\u2019s turn$/.test(trio.pill.text), trio.pill.text);
-    note(`${label}: it is transparent, pill-shaped and readably sized`,
-      /rgba\(0, 0, 0, 0\)|transparent/.test(trio.pill.background) &&
-      parseFloat(trio.pill.radius) >= parseFloat(trio.pill.h) / 2 &&
-      parseFloat(trio.pill.font) >= 11,
-      `${trio.pill.font}, radius ${trio.pill.radius}, height ${trio.pill.h.toFixed(1)}px`);
-    note(`${label}: it sits between the die and the bottom of its two rows`,
-      trio.pill.top >= trio.die.bottom - 0.5 && trio.pill.bottom <= trio.bandBottom + 0.5,
-      `die ends ${trio.die.bottom.toFixed(0)}, pill ${trio.pill.top.toFixed(0)}..${trio.pill.bottom.toFixed(0)}, floor ${trio.bandBottom.toFixed(0)}`);
-    const gapAbove = trio.pill.top - trio.die.bottom;
-    const gapBelow = trio.bandBottom - trio.pill.bottom;
-    note(`${label}: balanced in that space`,
-      gapAbove >= 2 && Math.abs(gapAbove - gapBelow) <= 3,
-      `${gapAbove.toFixed(1)}px above, ${gapBelow.toFixed(1)}px below`);
+    // --- the turn status ---
+    note(`${label}: the middle names the turn in one status line`,
+      !trio.status.hidden && trio.status.mode === "status" &&
+        trio.status.big === "Your Turn" &&
+        trio.status.seat === String(trio.active) &&
+        trio.status.seat === String(trio.meSeat),
+      `"${trio.status.big}" seat ${trio.status.seat} (active ${trio.active}, me ${trio.meSeat})`);
+    note(`${label}: it is a capsule above the die, not a second card`,
+      trio.status.bottom <= trio.die.top - 1 &&
+        parseFloat(trio.status.radius) <= parseFloat(trio.status.h) / 2 &&
+        parseFloat(trio.status.radius) > 0 &&
+        parseFloat(trio.status.font) >= 13,
+      `status ends ${trio.status.bottom.toFixed(0)}, die starts ${trio.die.top.toFixed(0)}, ` +
+        `${trio.status.font}, radius ${trio.status.radius}`);
     note(`${label}: and it is not a control`,
-      trio.pill.pointer === "none", trio.pill.pointer);
+      trio.status.pointer === "none", trio.status.pointer);
     // Asserted as a transition, not as four presses on this screen: after the
     // first throw the turn belongs to the other player, and their die is the
     // only one that can be pressed. The full alternating cycle is played later
@@ -1871,7 +1872,7 @@ try {
     note(`${label}: a throw hands the turn to the other seat`,
       seats.length >= 2 && seats[0] !== seats[1] &&
         [0, 1].includes(seats[0]) && [0, 1].includes(seats[1]),
-      JSON.stringify(trio.turns.map((t) => ({ s: t.seat, f: t.face, r: t.rolling, p: t.phase, a: t.active }))));
+      JSON.stringify(trio.turns.map((t) => ({ s: t.seat, shown: t.shownSeat, f: t.face, r: t.rolling, p: t.phase, a: t.active }))));
 
     // --- the matchup ---
     note(`${label}: the header says VS between the two players`,
@@ -2260,12 +2261,13 @@ try {
 
   const readTurn = `
     const b = document.querySelector(".board");
+    const s = b.querySelector('.board__announce[data-mode="status"]');
     return { active: b.game.active,
              phase: b.game.phase,
              moving: b.dataset.moving,
              busy: b.dataset.busy,
-             turn: b.querySelector(".board__turn").textContent,
-             seat: b.querySelector(".board__turn").dataset.turn };
+             turn: s ? s.dataset.big : "",
+             seat: s ? s.dataset.turn : "" };
   `;
 
   let lastSettle = null;
@@ -2325,10 +2327,10 @@ try {
   note("and both screens name the same active seat after every throw",
     cycle.length === 4 &&
       cycle.every((c) => c.afterThrow.active === c.afterThrow.guestActive &&
-        c.afterThrow.seat === c.afterThrow.guestSeat) &&
-      cycle.every((c) => new RegExp(c.afterThrow.active === 0 ? HOST_NAME : GUEST_NAME)
-        .test(c.afterThrow.turn)),
-    cycle.map((c) => `${c.afterThrow.active}:${c.afterThrow.turn}`).join(" | "));
+        c.afterThrow.seat === String(c.afterThrow.active) &&
+        c.afterThrow.guestSeat === String(c.afterThrow.guestActive)),
+    cycle.map((c) => `${c.afterThrow.active}:${c.afterThrow.turn}/${c.afterThrow.seat} ` +
+      `guest ${c.afterThrow.guestSeat}`).join(" | "));
 
   /* ------------------------------------------------------------ the economy
 
@@ -2429,19 +2431,22 @@ try {
   const setup = await host.json(`
     const b = document.querySelector(".board");
     const g = b.game;
+    const s = b.querySelector('.board__announce[data-mode="status"]');
     return {
       phase: g.phase,
       active: g.active,
       money: g.ledger.players.map((p) => p.money),
       owned: [...g.ledger.properties.values()].filter((s) => s.owner !== null).length,
-      turn: b.querySelector(".board__turn").textContent,
+      turn: s ? s.dataset.big : "",
+      turnSeat: s ? s.dataset.turn : "",
       rollable: b.dataset.rollable,
     };
   `);
   note("the economy begins on the first seat's turn",
     setup.phase === "AWAITING_ROLL" && setup.active === 0 &&
-      setup.turn === TURN_OF(BUYER) && setup.rollable === "true",
-    `phase ${setup.phase}, seat ${setup.active}, "${setup.turn}", rollable ${setup.rollable}`);
+      setup.turn === "Your Turn" && setup.turnSeat === "0" &&
+      setup.rollable === "true",
+    `phase ${setup.phase}, seat ${setup.active}, "${setup.turn}" (${setup.turnSeat}), rollable ${setup.rollable}`);
   note("both purses hold two thousand", setup.money.join(" ") === "2000 2000", setup.money.join(" "));
   note("and nobody holds a square yet", setup.owned === 0, `${setup.owned} owned`);
 
@@ -2467,7 +2472,7 @@ try {
       reading: b.dataset.reading,
       readingState: window.__readingState || null,
       rollable: b.dataset.rollable,
-      turn: b.querySelector(".board__turn").textContent,
+      turnMode: b.querySelector(".board__announce").dataset.mode || "",
       dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display,
       dieOpacity: getComputedStyle(b.querySelector(".board__dice")).opacity,
       holder: rect(h),
@@ -2507,9 +2512,9 @@ try {
     `phase ${unowned.phase}, kind ${unowned.kind}, mode ${unowned.mode}, ${unowned.property}`);
   note("the die is taken out of the middle, not just faded",
     unowned.dieDisplay === "none" && unowned.rollable === "false" &&
-      unowned.turn === TURN_OF(BUYER),
+      unowned.active === 0 && unowned.turnMode !== "status",
     `die display ${unowned.dieDisplay} (opacity ${unowned.dieOpacity}), ` +
-      `rollable ${unowned.rollable}, "${unowned.turn}"`);
+      `rollable ${unowned.rollable}, status mode "${unowned.turnMode}"`);
   note("there is no close button on a decision",
     unowned.closeHidden === true, `hidden ${unowned.closeHidden}`);
   note("Buy is live at the square's price, with Pass directly under it",
@@ -2565,8 +2570,7 @@ try {
     return {
       phase: g.phase,
       active: g.active,
-      turn: b.querySelector(".board__turn").textContent,
-      turnHidden: b.querySelector(".board__turn").hidden,
+      announceMode: b.querySelector(".board__announce").dataset.mode || "",
       cardHidden: h.hidden,
       money: g.ledger.players.map((p) => p.money),
       square: g.ledger.properties.get("pluto"),
@@ -2598,9 +2602,10 @@ try {
       afterBuy.builds.every((b) => b.disabled && b.state === "locked"),
     `${afterBuy.cardHidden ? "card gone" : "card up"}: ` +
       afterBuy.builds.map((b) => b.label).join(" | "));
-  note("and the turn line does not move before TURN_END",
-    afterBuy.active === 0 && afterBuy.turn === TURN_OF(BUYER) && !afterBuy.turnHidden,
-    `active ${afterBuy.active}, "${afterBuy.turn}"`);
+  note("and the turn does not move before TURN_END",
+    afterBuy.active === 0 && afterBuy.phase === "RESOLVING" &&
+      afterBuy.announceMode === "announce",
+    `active ${afterBuy.active}, phase ${afterBuy.phase}, middle "${afterBuy.announceMode}"`);
   await shot(host, "phase1-after-buy-390");
 
   await host.eval("window.__finishVisit()");
@@ -2610,11 +2615,12 @@ try {
     const b = document.querySelector(".board");
     const g = b.game;
     const h = b.querySelector(".board__card");
+    const s = b.querySelector('.board__announce[data-mode="status"]');
     return {
       phase: g.phase,
       active: g.active,
-      turn: b.querySelector(".board__turn").textContent,
-      turnHidden: b.querySelector(".board__turn").hidden,
+      turn: s ? s.dataset.big : "",
+      turnSeat: s ? s.dataset.turn : "",
       cardHidden: h.hidden,
       rollable: b.dataset.rollable,
       dieOpacity: getComputedStyle(b.querySelector(".board__dice")).opacity,
@@ -2627,8 +2633,8 @@ try {
 
   note("answering the visit ends the turn and hands it on",
     handed.phase === "AWAITING_ROLL" && handed.active === 1 &&
-      handed.turn === TURN_OF(OTHER) && !handed.turnHidden,
-    `phase ${handed.phase}, active ${handed.active}, "${handed.turn}"`);
+      handed.turn === "Opponent\u2019s Turn" && handed.turnSeat === "1",
+    `phase ${handed.phase}, active ${handed.active}, "${handed.turn}" (${handed.turnSeat})`);
   note("the card is gone and the turn has handed on",
     handed.cardHidden === true && handed.phase === "AWAITING_ROLL" && handed.active === 1,
     `card hidden ${handed.cardHidden}, phase ${handed.phase}, active ${handed.active}`);
@@ -2884,7 +2890,7 @@ try {
       active: g.active,
       kind: g.landing?.kind,
       landingId: g.landing?.id,
-      turn: b.querySelector(".board__turn").textContent,
+      turnMode: b.querySelector(".board__announce").dataset.mode || "",
       money: g.ledger.players.map((p) => p.money),
       status: statusEl ? statusEl.textContent : null,
       buildsHidden: builds ? builds.hidden : null,
@@ -2916,46 +2922,42 @@ try {
     rent.nextText === "Continue" && !rent.nextHidden &&
       rent.buildsHidden === true && rent.closeHidden === true,
     `${rent.nextText}, builds hidden ${rent.buildsHidden}`);
-  note("the turn line stays on the payer while the rent card is up",
-    rent.active === 1 && rent.turn === TURN_OF(OTHER),
-    `active ${rent.active}, "${rent.turn}"`);
+  note("the payer is still the active seat while the rent card is up",
+    rent.active === 1 && rent.turnMode !== "status",
+    `active ${rent.active}, middle "${rent.turnMode}"`);
   await shot(host, "phase1-rent-card-390");
 
-  // Continue, and catch the banner that sweeps across the hand-over. The
-  // Continue button belongs to the payer's screen, because the host's copy of
-  // the card is read-only.
+  // Continue, and watch the one middle surface hand the turn over. There is no
+  // banner and no toast any more: the status line under the die is the whole
+  // announcement of a turn change.
   await guest.eval(`document.querySelector(".property-card__next").click(); true;`);
-  let banner = null;
+  let handover = null;
   for (let i = 0; i < 60; i++) {
-    banner = await host.json(`
-      const n = document.querySelector(".board__banner");
-      return n ? { text: n.textContent, cls: n.className } : null;
+    handover = await host.json(`
+      const b = document.querySelector(".board");
+      const n = b.querySelector(".board__announce");
+      const s = b.querySelector('.board__announce[data-mode="status"]');
+      return {
+        mode: n?.dataset.mode || "",
+        big: s?.dataset.big || "",
+        seat: s?.dataset.turn || "",
+        active: b.game.active,
+        me: Number(document.querySelector(".who--me")?.dataset.seat ?? 0),
+        banners: b.querySelectorAll(".board__banner, .board__toast, .board__toasts").length,
+      };
     `);
-    if (banner) break;
+    if (handover.mode === "status" && handover.big && handover.active === 0) break;
     await sleep(40);
   }
-  note("the turn hand-over sweeps in a banner that says whose turn it is",
-    Boolean(banner) && banner.text === "Your turn" && /board__banner/.test(banner.cls),
-    banner ? `"${banner.text}" (${banner.cls})` : "no banner seen");
-  // The banner sweeps in and then fades. Hold it at the middle of its own
-  // animation for the shot: a screenshot taken on a wall clock can catch the
-  // first half of the sweep or the last of the fade, and neither is the thing
-  // the banner is for.
+  note("the turn hand-over is said once, in the middle's status",
+    handover.mode === "status" &&
+      handover.big === (handover.active === handover.me ? "Your Turn" : "Opponent\u2019s Turn") &&
+      handover.seat === String(handover.active),
+    handover ? `"${handover.big}" seat ${handover.seat} (active ${handover.active}, me ${handover.me})` : "no status seen");
+  note("and there is no second bar, banner or toast to read",
+    handover.banners === 0, `${handover.banners} of them on the board`);
   await sleep(140);
-  await host.eval(`(() => {
-    const node = document.querySelector(".board__banner");
-    for (const animation of node?.getAnimations?.() ?? []) {
-      animation.pause();
-      animation.currentTime = 350;
-    }
-    return true;
-  })()`);
-  await shot(host, "phase1-turn-banner-390");
-  await host.eval(`(() => {
-    const node = document.querySelector(".board__banner");
-    for (const animation of node?.getAnimations?.() ?? []) animation.play();
-    return true;
-  })()`);
+  await shot(host, "phase1-turn-status-390");
   await host.eval("window.__finishVisit()");
   await sleep(500);
 
@@ -2980,14 +2982,17 @@ try {
     const b = document.querySelector(".board");
     const g = b.game;
     const h = b.querySelector(".board__card");
-    const toasts = [...b.querySelectorAll(".board__toast")];
+    const n = b.querySelector('.board__announce[data-mode="announce"]');
     return {
       phase: g.phase,
       kind: g.landing?.kind,
       money: g.ledger.players.map((p) => p.money),
       short: g.ledger.players.find((p) => p.seat === 1).short,
       status: h.querySelector(".property-card__status").textContent,
-      toast: toasts.at(-1)?.textContent || "",
+      announce: n
+        ? [n.dataset.label, n.dataset.big, n.querySelector(".announce__sub")?.textContent]
+            .filter(Boolean).join(" ")
+        : "",
       nextText: h.querySelector(".property-card__next-label").textContent,
     };
   `);
@@ -2995,8 +3000,8 @@ try {
   note("a rent the payer cannot meet takes everything they hold and records the short",
     rentShort.kind === "rent" && rentShort.money[1] === 0 &&
       rentShort.money[0] === 1580 + 50 && rentShort.short === 180 - 50 &&
-      /Short \u20b9130/.test(rentShort.toast),
-    `money ${rentShort.money.join(" ")}, short ${rentShort.short}, toast "${rentShort.toast}"`);
+      /Short \u20b9130/.test(rentShort.announce),
+    `money ${rentShort.money.join(" ")}, short ${rentShort.short}, middle "${rentShort.announce}"`);
   note("and the card says the short, and still offers only Continue",
     /Short \u20b9130/.test(rentShort.status) && rentShort.nextText === "Continue",
     `"${rentShort.status}"`);
@@ -3054,11 +3059,14 @@ try {
     const b = document.querySelector(".board");
     const g = b.game;
     const buy = b.querySelector(".property-card__buy");
+    const n = b.querySelector('.board__announce[data-mode="announce"]');
     return {
       phase: g.phase,
       active: g.active,
       money: g.ledger.players.map((p) => p.money),
-      toast: b.querySelector(".board__toast")?.textContent || "",
+      announce: n
+        ? [n.dataset.label, n.querySelector(".announce__sub")?.textContent].filter(Boolean).join(" ")
+        : "",
       shaking: buy ? buy.getAnimations().some((a) => a.playState === "running") : false,
       owner: g.ledger.properties.get(b.game.landing?.id)?.owner ?? null,
     };
@@ -3066,8 +3074,9 @@ try {
   note("pressing an unaffordable Buy is refused with a sentence and a shake",
     refused.phase === "DECISION" && refused.active === 0 &&
       refused.money[0] === 10 && refused.owner === null &&
-      refused.toast.length > 0 && refused.shaking === true,
-    `money ${refused.money[0]}, owner ${refused.owner}, toast "${refused.toast}", shaking ${refused.shaking}`);
+      /NOT NOW/.test(refused.announce) && refused.announce.length > 8 &&
+      refused.shaking === true,
+    `money ${refused.money[0]}, owner ${refused.owner}, middle "${refused.announce}", shaking ${refused.shaking}`);
   await shot(host, "phase1-cannot-afford-390");
 
   await host.eval(`document.querySelector(".property-card__next").click(); true;`);
@@ -3266,7 +3275,7 @@ try {
   await host.eval(`document.querySelector(".property-card__close").click(); true;`);
   await host.eval(`(async () => {
     const b = document.querySelector(".board");
-    for (let i = 0; i < 60 && b.querySelector(".board__announce:not([hidden])"); i++) {
+    for (let i = 0; i < 60 && b.querySelector('.board__announce[data-mode="announce"]'); i++) {
       await new Promise((r) => setTimeout(r, 50));
     }
     return true;
@@ -3540,10 +3549,13 @@ try {
       while (performance.now() - start < ms) {
         const n = b.querySelector(".board__announce");
         const h = b.querySelector(".board__card");
-        const pick = (sel) => n?.querySelector(sel)?.textContent || "";
+        // The resting status is not an announcement. The same node carries
+        // both, so only `data-mode="announce"` counts as something being said.
+        const announcing = Boolean(n && !n.hidden && n.dataset.mode === "announce");
+        const pick = (sel) => (announcing ? n.querySelector(sel)?.textContent || "" : "");
         const sample = {
           t: Math.round(performance.now() - start),
-          hidden: n ? n.hidden : true,
+          hidden: !announcing,
           label: pick(".announce__label"),
           big: pick(".announce__big"),
           sub: pick(".announce__sub"),
@@ -3576,7 +3588,7 @@ try {
 
   // A clean, known board: the buyer owns all of Moon's set, Moon is upgraded
   // twice so its pips have something to show, and the throw will pass Start and
-  // land on Lagrange - a salary and a decision in one turn.
+  // land on Lagrange - a decision first, then a Redemption when the turn ends.
   await host.eval(`(async () => {
     const b = document.querySelector(".board");
     await window.__econ.quiet();
@@ -3590,47 +3602,53 @@ try {
     return true;
   })()`);
 
-  const salaryWatch = host.json("return await window.__watchAnnounce(7000);");
+  const redemptionWatch = host.json("return await window.__watchAnnounce(7000);");
   await host.eval(`(() => {
     const b = document.querySelector(".board");
     (async () => {
       await window.__econ.quiet();
       await b.play({ type: "roll", rng: (4 - 0.5) / 6 });
+      // Answer the landing card, then let the turn finish. The Redemption is
+      // paid by the turn's own end, so it cannot be seen until the visit is done.
+      await window.__finishVisit();
     })();
     return true;
   })()`);
-  const salarySamples = await salaryWatch;
+  const redemptionSamples = await redemptionWatch;
 
-  const salaryFirst = salarySamples.find((s) => !s.hidden && s.label === "SALARY");
-  const salaryEnd = salarySamples.find((s) => salaryFirst && s.t > salaryFirst.t && s.hidden);
-  const afterSalary = salarySamples.find(
-    (s) => salaryEnd && s.t >= salaryEnd.t && !s.cardHidden && s.cardVisible,
+  const redemptionFirst = redemptionSamples.find((s) => !s.hidden && s.label === "REDEMPTION");
+  const redemptionEnd = redemptionSamples.find(
+    (s) => redemptionFirst && s.t > redemptionFirst.t && s.hidden,
   );
-  const salaryRuns = appearances(salarySamples, "SALARY").count;
+  const beforeRedemption = redemptionSamples.find(
+    (s) => redemptionFirst && s.t < redemptionFirst.t && s.phase === "DECISION",
+  );
+  const redemptionRuns = appearances(redemptionSamples, "REDEMPTION").count;
 
-  note("passing Start says SALARY, +₹200 and Lap complete",
-    Boolean(salaryFirst) && salaryFirst.big === "+\u20b9200" &&
-      salaryFirst.sub === "Lap complete" && salaryRuns === 1,
-    salaryFirst
-      ? `${salaryFirst.label} / ${salaryFirst.big} / ${salaryFirst.sub}; ${salaryRuns} run(s)`
-      : "no salary announcement");
-  note("and the salary is said before the landing card is shown",
-    Boolean(salaryFirst) && salaryFirst.cardHidden === true &&
-      Boolean(afterSalary) && afterSalary.kind === "own" &&
-      afterSalary.phase === "DECISION",
-    `card hidden while salary: ${salaryFirst?.cardHidden}; ` +
-      `then ${afterSalary?.phase}/${afterSalary?.kind}`);
-  note("the announcement holds the middle for about a second and a half",
-    Boolean(salaryFirst) && Boolean(salaryEnd) &&
-      salaryEnd.t - salaryFirst.t >= 1400 && salaryEnd.t - salaryFirst.t <= 2300,
-    salaryEnd ? `${salaryEnd.t - salaryFirst.t}ms on screen` : "no exit seen");
-  note("and the salary itself is paid once, into the purse",
-    salarySamples.at(-1)?.money[0] === 2200,
-    `purse ${salarySamples.at(-1)?.money.join(" ")}`);
-  const maxSalaryCoins = Math.max(...salarySamples.map((s) => s.rupees), 0);
-  note("and it is paid in six to eight coins, not a silent number",
-    maxSalaryCoins >= 6 && maxSalaryCoins <= 8,
-    `${maxSalaryCoins} coin token(s) at the busiest sample`);
+  note("finishing a lap says REDEMPTION, +₹200 and Lap complete",
+    Boolean(redemptionFirst) && redemptionFirst.big === "+\u20b9200" &&
+      redemptionFirst.sub === "Lap complete" && redemptionRuns === 1,
+    redemptionFirst
+      ? `${redemptionFirst.label} / ${redemptionFirst.big} / ${redemptionFirst.sub}; ${redemptionRuns} run(s)`
+      : "no redemption announcement");
+  note("and it is said after the visit, never in the middle of the walk",
+    Boolean(beforeRedemption) && beforeRedemption.kind === "own" &&
+      beforeRedemption.money[0] === 2000 &&
+      Boolean(redemptionFirst) && redemptionFirst.cardHidden === true &&
+      redemptionFirst.money[0] === 2200,
+    `before: ${beforeRedemption?.phase}/${beforeRedemption?.kind} purse ${beforeRedemption?.money[0]}; ` +
+      `at redemption: card hidden ${redemptionFirst?.cardHidden}, purse ${redemptionFirst?.money[0]}`);
+  note("the announcement holds the middle long enough to be read",
+    Boolean(redemptionFirst) && Boolean(redemptionEnd) &&
+      redemptionEnd.t - redemptionFirst.t >= 2000 && redemptionEnd.t - redemptionFirst.t <= 3000,
+    redemptionEnd ? `${redemptionEnd.t - redemptionFirst.t}ms on screen` : "no exit seen");
+  note("and the redemption itself is paid once, into the purse",
+    redemptionSamples.at(-1)?.money[0] === 2200,
+    `purse ${redemptionSamples.at(-1)?.money?.join(" ")}`);
+  const maxRedemptionCoins = Math.max(...redemptionSamples.map((s) => s.rupees), 0);
+  note("and it is paid in one lead coin and two echoes, not a spray",
+    maxRedemptionCoins >= 1 && maxRedemptionCoins <= 3,
+    `${maxRedemptionCoins} coin token(s) at the busiest sample`);
 
   /* --- the profile ------------------------------------------------------ */
 

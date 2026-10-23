@@ -28,13 +28,9 @@
    the one part of a tile neither the name nor the coin uses.
    ========================================================================== */
 
-import { el } from "./dom.js";
 import { coinColor } from "./shared/civilizations.js";
 import { MAX_UPGRADE, moneyOf, ownerOf, levelOf, nameOfSeat } from "./shared/ledger.js";
 import { rupees } from "./shared/economy.js";
-
-/** How long a confirmation stays up before it takes itself away. */
-const TOAST_MS = 2600;
 
 /** How long the balance takes to count to its new figure. */
 export const COUNT_MS = 500;
@@ -168,78 +164,10 @@ export function statusOf(ledger, id, seat) {
   return `Owned by ${nameOfSeat(ledger, owner)}`;
 }
 
-/* ------------------------------------------------------------------- toasts */
-
-/**
- * A short confirmation, put where a player can see it without it blocking.
- *
- * Non-blocking by design: the brief asks for a confirmation of a rent payment
- * and nothing more, and a rent that interrupted play the way the chest does
- * would be a rent paid by pressing something.
- *
- * One at a time. A second message replaces the first rather than queueing, so a
- * player who lands twice in quick succession reads the latest fact and not a
- * backlog of the ones before it.
- */
-export function toast(root, message, { tone = "plain" } = {}) {
-  const host = root.querySelector(".board__toasts") || mountToasts(root);
-
-  const node = el("p", {
-    class: `board__toast board__toast--${tone}`,
-    text: message,
-    role: "status",
-  });
-  host.replaceChildren(node);
-
-  // Restart the animation rather than skipping it when a message lands within
-  // the previous one's lifetime, or the second message arrives invisible.
-  node.animate(
-    [
-      { transform: "translateY(6px)", opacity: 0 },
-      { transform: "translateY(0)", opacity: 1 },
-    ],
-    { duration: 180, easing: "ease-out" },
-  );
-
-  clearTimeout(node._timer);
-  node._timer = setTimeout(() => {
-    node
-      .animate([{ opacity: 1 }, { opacity: 0 }], { duration: 220, easing: "ease-in" })
-      .finished.then(() => node.remove())
-      .catch(() => node.remove());
-  }, TOAST_MS);
-
-  return node;
-}
-
-function mountToasts(root) {
-  const host = el("div", { class: "board__toasts", "aria-live": "polite" });
-  (root.querySelector(".board") || root).append(host);
-  return host;
-}
-
 /* --------------------------------------------------------------- the pips */
 
 /** How many pips a built square wears, for a check to count. */
 export function pipsFor(ledger, id) {
   const owner = ownerOf(ledger, id);
   return owner === null ? 0 : Math.max(0, Math.min(MAX_UPGRADE, levelOf(ledger, id)));
-}
-
-/** The sentence a rent payment gets, in the room's own voice. */
-export function rentMessage(ledger, { from, to, rent }) {
-  if (!rent) return "";
-  const payer = nameOfSeat(ledger, from) || "Someone";
-  const holder = nameOfSeat(ledger, to) || "Someone";
-  return `${payer} paid ${rupees(rent)} rent to ${holder}`;
-}
-
-/**
- * The notice a short rent gets. The payer paid everything they hold and the
- * ledger kept the rest as a short; the notice says only that, because nothing
- * else happened.
- */
-export function rentShortMessage({ shortfall }) {
-  if (!shortfall) return "";
-  return `Short ${rupees(shortfall)}`;
 }

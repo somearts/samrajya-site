@@ -44,7 +44,15 @@
    rather than a silent negative balance nobody notices until the end.
    ========================================================================== */
 
-import { MAX_UPGRADE, STARTING_MONEY, isPriced, priceOf, rentFor, upgradeAt } from "./economy.js";
+import {
+  MAX_UPGRADE,
+  REDEMPTION,
+  STARTING_MONEY,
+  isPriced,
+  priceOf,
+  rentFor,
+  upgradeAt,
+} from "./economy.js";
 import { CELLS } from "./spaces.js";
 
 export { MAX_UPGRADE, STARTING_MONEY };
@@ -155,13 +163,25 @@ export function recordEntry(ledger, { turn = null, seat, kind, text, amount }) {
   ledger.history.unshift({ turn, seat, kind, text, amount, balance });
 }
 
-/** Pay a salary of 200 for crossing or landing on Start. */
-export function salary(ledger, seat, turn = null) {
+/**
+ * Pay the Redemption for coming back round to Start.
+ *
+ * Named for the lap rather than for a wage: the board is a circuit of space,
+ * and the payment is what the circuit returns to a player who completes it.
+ * The game calls this once, when the turn is fully resolved - never mid-walk.
+ */
+export function redemption(ledger, seat, turn = null) {
   const player = playerAt(ledger, seat);
   if (!player) return no("That seat is not playing.");
-  player.money += 200;
-  recordEntry(ledger, { turn, seat, kind: "salary", text: "Salary · lap complete", amount: 200 });
-  return yes({ amount: 200, money: player.money });
+  player.money += REDEMPTION;
+  recordEntry(ledger, {
+    turn,
+    seat,
+    kind: "redemption",
+    text: "Redemption · lap complete",
+    amount: REDEMPTION,
+  });
+  return yes({ amount: REDEMPTION, money: player.money });
 }
 
 /** The seat holding a square, or null when nobody holds it. */

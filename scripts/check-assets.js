@@ -408,8 +408,11 @@ async function main() {
   const boardJs = await readFile(join(OUT, "assets", "js", "board.js"), "utf8");
   const boardCss = await readFile(join(OUT, "assets", "css", "board.css"), "utf8");
   const diceCode = await readFile(join(OUT, "assets", "js", "dice.js"), "utf8");
+  const announcementsCode = await readFile(
+    join(OUT, "assets", "js", "shared", "announcements.js"),
+    "utf8",
+  );
 const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "utf8");
-const turnCode = await readFile(join(OUT, "assets", "js", "turn.js"), "utf8");
 
   check(
     "six columns of one cell size",
@@ -507,7 +510,7 @@ const turnCode = await readFile(join(OUT, "assets", "js", "turn.js"), "utf8");
     "the die is about half the size it was",
     /--die-size:\s*calc\(var\(--cell\) \* 0\.62\)/.test(boardCss) &&
       /\.board__dice \{[^}]*width:\s*var\(--die-size\)/.test(boardCss),
-    "it was 1.15 cells; it is an object rather than a feature, and the size is written once so the turn pill cannot drift from it",
+    "it was 1.15 cells; it is an object rather than a feature, and the size is written once so nothing else can drift from it",
   );
   check(
     "the die carries no outline in any state",
@@ -517,25 +520,20 @@ const turnCode = await readFile(join(OUT, "assets", "js", "turn.js"), "utf8");
     "an outline on an SVG is drawn round its rectangular box, not round the die, and a tap is enough to call it focus",
   );
   check(
-    "and the turn pill is placed from the die's own edge and the band's own floor",
-    /\.board__turn \{[\s\S]*?8 \* var\(--cell\) \+ 7\.5 \* var\(--hair\) \+ var\(--die-half\)/.test(boardCss) &&
-      /\.board__turn \{[\s\S]*?pointer-events:\s*none/.test(boardCss),
-    "so the gap above and below it stays equal at every board size, and the die is the only thing in the middle that can be pressed",
+    "the middle's status is a capsule above the die, and it takes no taps",
+    /\.board__announce--status \{[\s\S]*?place-self:\s*start center/.test(boardCss) &&
+      /\.board__announce--status \{[\s\S]*?pointer-events:\s*none/.test(boardCss) &&
+      /\.board__announce--status \{[\s\S]*?--cell\) \* 1\.15/.test(boardCss),
+    "a status that could be pressed would be a control, and the die is the only thing in the middle that can be pressed",
   );
   check(
-    "the turn pill is transparent, and says who is playing",
-    /\.board__turn \{[\s\S]*?background:\s*none/.test(boardCss) &&
-      /\.board__turn \{[\s\S]*?border:\s*0/.test(boardCss) &&
-      /\.board__turn \{[\s\S]*?border-radius:\s*999px/.test(boardCss) &&
-      /font-size:\s*max\(11px,/.test(boardCss) &&
-      turnCode.includes("s turn"),
-    "readably sized rather than merely visible",
-  );
-  check(
-    "and it says plainly that the turn it names is local",
-    /LOCAL turn/.test(turnCode) && /board: null/.test(turnCode) &&
-      /different pills/.test(turnCode),
-    "the server has no turn, so two players in one room will not agree on it - which the file says rather than hides",
+    "and it says whose turn it is in two temperatures",
+    /\.board__announce--wait \.announce__big/.test(boardCss) &&
+      /\.board__announce--wait \.announce__label::before/.test(boardCss) &&
+      /@keyframes wait-pulse/.test(boardCss) &&
+      boardJs.includes("statusFor(game") &&
+      announcementsCode.includes('"Opponent\\u2019s Turn"'),
+    "the turn you own is inked and still; the turn you are waiting on is softer and pulses",
   );
   check(
     "the card's body copy is readable, and the labels stay labels",
@@ -1102,10 +1100,10 @@ const turnCode = await readFile(join(OUT, "assets", "js", "turn.js"), "utf8");
     /grid-area: 1 \/ 1/.test(boardCss) && /place-self: stretch/.test(boardCss),
   );
   check(
-    "the record hides the die, the turn line and the card rather than removing them",
+    "the record hides the die, the status and the card rather than removing them",
     /profile: profileSeat !== null/.test(boardJs) &&
       /ui\.card \|\| ui\.announcement \|\| ui\.profile/.test(diceJs) &&
-      /\.board\[data-profile="true"\] \.board__turn/.test(boardCss) &&
+      /announce\.status\(null\)/.test(boardJs) &&
       /\.board\[data-profile="true"\] \.board__card/.test(boardCss),
     "so closing the record gives back exactly what was underneath it",
   );
