@@ -311,7 +311,7 @@ test("an owned square is not offered to the next player", () => {
   const { state } = take(before, { type: "roll" }, face(1));
   const opened = take(state, { type: "continue" }).state;
   assert.equal(opened.landing.kind, "rent");
-  assert.equal(decisionFor(opened, "moon").canBuy.ok, false);
+  assert.equal(opened.phase, PHASE.RESOLVING, "a rent is paid and resolved, never offered for sale");
 });
 
 /* ---------------------------------------------------------------- building */
@@ -414,9 +414,8 @@ test("landing on somebody else's square pays the right rent to the right seat", 
   assert.equal(moneyOf(state.ledger, 1), 2000 - baseRentOf("moon"));
 
   const opened = take(state, { type: "continue" }).state;
+  assert.equal(opened.phase, PHASE.RESOLVING, "a rent resolves on its own, no card");
   assert.equal(opened.landing.kind, "rent");
-  assert.equal(decisionFor(opened, "moon").rentPaid, baseRentOf("moon"));
-  assert.equal(decisionFor(opened, "moon").paid, true);
   assert.equal(take(opened, { type: "continue" }).state.phase, PHASE.TURN_END);
 });
 
@@ -455,11 +454,8 @@ test("a rent that cannot be fully paid takes everything the payer holds and reco
   assert.equal(events.find((e) => e.type === "refused"), undefined, "it is not a refusal");
 
   const opened = take(state, { type: "continue" }).state;
+  assert.equal(opened.phase, PHASE.RESOLVING, "a short rent also resolves on its own, no card");
   assert.equal(opened.landing.kind, "rent");
-  const decision = decisionFor(opened, "moon");
-  assert.equal(decision.rentPaid, 5, "the card says what actually moved");
-  assert.equal(decision.short, rent - 5);
-  assert.equal(decision.paid, false);
   // The visit can still be acknowledged; nothing is owed at TURN_END.
   assert.equal(take(opened, { type: "continue" }).state.phase, PHASE.TURN_END);
 });

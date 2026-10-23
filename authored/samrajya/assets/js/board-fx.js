@@ -22,6 +22,7 @@
    ========================================================================== */
 
 import { el } from "./dom.js";
+import { settled } from "./motion.js";
 import { prefersStill } from "./dice.js";
 import { seatId } from "./coins.js";
 import { rupees } from "./shared/economy.js";
@@ -75,16 +76,19 @@ export async function lift(root, board, seat, text, { tone = "spend" } = {}) {
     return;
   }
 
-  await node
-    .animate(
-      [
-        { transform: "translate(-50%, -50%) scale(.9)", opacity: 0 },
-        { transform: "translate(-50%, -50%) scale(1)", opacity: 1, offset: 0.15 },
-        { transform: "translate(-50%, -160%) scale(1)", opacity: 0 },
-      ],
-      { duration: 620, easing: "cubic-bezier(.2,.7,.3,1)", fill: "forwards" },
-    )
-    .finished.catch(() => {});
+  await settled(
+    node
+      .animate(
+        [
+          { transform: "translate(-50%, -50%) scale(.9)", opacity: 0 },
+          { transform: "translate(-50%, -50%) scale(1)", opacity: 1, offset: 0.15 },
+          { transform: "translate(-50%, -160%) scale(1)", opacity: 0 },
+        ],
+        { duration: 620, easing: "cubic-bezier(.2,.7,.3,1)", fill: "forwards" },
+      )
+      .finished,
+    700,
+  );
   node.remove();
 }
 
@@ -190,7 +194,7 @@ export async function flyCoins(board, { from, to, amount = 0 } = {}) {
     )
     .finished.catch(() => {});
 
-  await Promise.all([leadFlight, echoFlight, pulse]);
+  await settled(Promise.all([leadFlight, echoFlight, pulse]), leadDuration + 250);
   lead.remove();
   echo.remove();
   ring.remove();
@@ -237,16 +241,19 @@ export async function passedLabel(root, board, seat) {
   node.style.left = `${at.left}px`;
   node.style.top = `${at.top}px`;
   board.append(node);
-  await node
-    .animate(
-      [
-        { transform: "translate(-50%, -50%)", opacity: 0 },
-        { transform: "translate(-50%, -70%)", opacity: 1, offset: 0.25 },
-        { transform: "translate(-50%, -110%)", opacity: 0 },
-      ],
-      { duration: prefersStill() ? 240 : 620, easing: "ease-out", fill: "forwards" },
-    )
-    .finished.catch(() => {});
+  await settled(
+    node
+      .animate(
+        [
+          { transform: "translate(-50%, -50%)", opacity: 0 },
+          { transform: "translate(-50%, -70%)", opacity: 1, offset: 0.25 },
+          { transform: "translate(-50%, -110%)", opacity: 0 },
+        ],
+        { duration: prefersStill() ? 240 : 620, easing: "ease-out", fill: "forwards" },
+      )
+      .finished,
+    700,
+  );
   node.remove();
 }
 
@@ -254,18 +261,21 @@ export async function passedLabel(root, board, seat) {
 export async function shake(node) {
   if (!node) return;
   if (prefersStill()) return;
-  await node
-    .animate(
-      [
-        { transform: "translateX(0)" },
-        { transform: "translateX(-3px)" },
-        { transform: "translateX(3px)" },
-        { transform: "translateX(-2px)" },
-        { transform: "translateX(0)" },
-      ],
-      { duration: 260, easing: "ease-in-out" },
-    )
-    .finished.catch(() => {});
+  await settled(
+    node
+      .animate(
+        [
+          { transform: "translateX(0)" },
+          { transform: "translateX(-3px)" },
+          { transform: "translateX(3px)" },
+          { transform: "translateX(-2px)" },
+          { transform: "translateX(0)" },
+        ],
+        { duration: 260, easing: "ease-in-out" },
+      )
+      .finished,
+    340,
+  );
 }
 
 /** Slide a card away. Resolves after the card has gone. */
@@ -276,13 +286,16 @@ export async function cardAway(holder) {
     await wait(210);
     return;
   }
-  await holder
-    .animate(
-      [
-        { transform: "translateY(0) scale(1)", opacity: 1 },
-        { transform: "translateY(14px) scale(.985)", opacity: 0 },
-      ],
-      { duration: 240, easing: "ease-in", fill: "forwards" },
-    )
-    .finished.catch(() => {});
+  await settled(
+    holder
+      .animate(
+        [
+          { transform: "translateY(0) scale(1)", opacity: 1 },
+          { transform: "translateY(14px) scale(.985)", opacity: 0 },
+        ],
+        { duration: 240, easing: "ease-in", fill: "forwards" },
+      )
+      .finished,
+    320,
+  );
 }

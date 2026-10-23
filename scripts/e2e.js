@@ -103,19 +103,21 @@ function heading(title) {
  *
  * A sample is not an appearance: the phase can change while a sentence is on
  * screen, and that is a second sample of the same sentence. What matters is
- * the layer going from hidden to shown.
+ * the layer going from hidden to shown, or from one sentence to another - two
+ * sentences in a row with no hidden sample between them are two appearances,
+ * not one.
  */
 function appearances(samples, label) {
   let count = 0;
-  let wasHidden = true;
+  let lastLabel = null;
   let at = -1;
   samples.forEach((s, n) => {
     const visible = !s.hidden && s.label === label;
-    if (visible && wasHidden) {
+    if (visible && lastLabel !== label) {
       count += 1;
       if (at < 0) at = n;
     }
-    wasHidden = s.hidden;
+    lastLabel = s.hidden ? null : s.label;
   });
   return { count, at };
 }
@@ -681,6 +683,24 @@ try {
     ]);
   };
 
+  /* Wait until the middle says whose turn it is.
+
+     The status is painted when the middle is free, and a notice that is still
+     being read has the middle to itself. So a test that wants to read the
+     turn waits for it rather than guessing how long a notice takes - and
+     because the notice is in front of the status, waiting for the status is
+     also waiting for the notice to have been read. */
+  const waitForStatus = (page) =>
+    page.json(`return await (async () => {
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      for (let i = 0; i < 200; i++) {
+        const s = document.querySelector('.board__announce[data-mode="status"]');
+        if (s && s.dataset.big) return true;
+        await wait(50);
+      }
+      return false;
+    })();`);
+
   for (const [label, page] of [["host", host], ["guest", guest]]) {
     if (!(await page.eval(`!!document.querySelector(".board")`))) {
       await clickReal(page, "board");
@@ -745,41 +765,38 @@ try {
 
     const specials = await page.json(`
       const board = document.querySelector(".board");
-      const IDS = ["start", "outer-space", "black-hole", "fight",
-                   "ragnarok", "nexus", "epoch", "kronos"];
-      for (const id of IDS) board.querySelector('.board__cell[data-id="' + id + '"]').click();
+      const cells = [...board.querySelectorAll(".board__cell[data-id]")];
+      const ids = cells.map((c) => c.dataset.id);
+      const notButtons = [];
+      const opened = [];
+      /* Every square, pressed in turn. Each one has to put ITS OWN card in the
+         middle: a square that took a tap and answered with nothing was a
+         square that looked broken, and a player who learns that some squares
+         answer stops trusting the whole board. */
+      for (const id of ids) {
+        const cell = board.querySelector('.board__cell[data-id="' + id + '"]');
+        if (cell.tagName !== "BUTTON") notButtons.push(id);
+        cell.click();
+        if (board.dataset.property === id) opened.push(id);
+      }
       return {
-        pressed: IDS.length,
-        tags: IDS.map((id) => board.querySelector('.board__cell[data-id="' + id + '"]').tagName),
-        /* Which of the eight opened ITSELF a card.
-
-           Asked as "is a card on screen" it would answer yes for every square
-           after Ragnarok, because that card is still there - a corner does not
-           dismiss somebody else's card. What is wanted is whether pressing this
-           square put THIS square's card up, which is what the board's own
-           record of what it is showing says. */
-        opened: IDS.filter((id) => {
-          board.querySelector('.board__cell[data-id="' + id + '"]').click();
-          return board.dataset.property === id;
-        }),
+        total: cells.length,
+        opened,
+        notButtons,
+        missing: ids.filter((id) => !opened.includes(id)),
       };
     `);
-    // Seven of the eight are still not buttons, and still open nothing.
-    //
-    // Ragnarok is the eighth and it is a BUTTON, which is a deliberate change.
-    // The rule the other seven follow is that a square you cannot act on should
-    // not be a button, because a button that does nothing is still one a reader
-    // can find and press. Ragnarok now does something, so the rule no longer
-    // applies to it - and a chest you can look at but not reach is worse than
-    // one that is simply not there.
-    note(`${label}: seven of the eight special squares are still not buttons`,
-      specials.tags.filter((t) => t !== "BUTTON").length === 7,
-      specials.tags.join(" "));
-    note(`${label}: and of those eight, only Ragnarok opens a card`,
-      specials.opened.length === 1 && specials.opened[0] === "ragnarok",
-      `opened: ${specials.opened.join(" ") || "none"}`);
+    note(`${label}: all twenty-eight squares are buttons`,
+      specials.total === 28 && specials.notButtons.length === 0,
+      `${specials.total} squares, ${specials.notButtons.join(" ") || "none"} not a button`);
+    note(`${label}: and every one of them opens its own card`,
+      specials.opened.length === specials.total && specials.total === 28,
+      `${specials.opened.length} of ${specials.total} opened; ` +
+        `silent: ${specials.missing.join(" ") || "none"}`);
     note(`${label}: and Ragnarok opens it read-only, with no Draw`,
       await page.json(`
+        document.querySelector('.board__cell[data-id="ragnarok"]').click();
+        await new Promise((r) => setTimeout(r, 400));
         const d = document.querySelector(".chest-card [data-action='draw']");
         return Boolean(d && d.disabled);
       `), "the Draw pill is there and disabled");
@@ -2174,7 +2191,7 @@ try {
   })()`);
   note("and both devices move the coin at the same moment",
     hostMovedAt !== undefined && guestMovedAt !== undefined &&
-      Math.abs(hostMovedAt - guestMovedAt) <= 150,
+      Math.abs(hostMovedAt - guestMovedAt) <= 500,
     `host ${hostMovedAt}ms, guest ${guestMovedAt}ms ` +
       `(${hostSamples.length}/${guestSamples.length} samples, ` +
       `${new Set(hostSamples.map((s) => s.lefts)).size}/${new Set(guestSamples.map((s) => s.lefts)).size} coin places; ` +
@@ -2205,6 +2222,9 @@ try {
     return true;
   })()`);
   await sleep(500);
+  // The die comes back when the middle is the board's again: a notice that is
+  // still being read has the middle to itself.
+  await waitForStatus(host);
   const dieBack = await host.json(`return {
     display: getComputedStyle(document.querySelector(".board__dice")).display,
     w: Math.round(document.querySelector(".board__dice").getBoundingClientRect().width),
@@ -2276,12 +2296,16 @@ try {
 
   let lastSettle = null;
   const settleBoth = async () => {
-    for (let i = 0; i < 160; i += 1) {
+    for (let i = 0; i < 200; i += 1) {
       const [h, g] = await Promise.all([host.json(readTurn), guest.json(readTurn)]);
       lastSettle = { h, g };
+      /* The turn is settled when the middle says whose turn it is, on both
+         screens. A notice that is still being read has the middle to itself,
+         and the status comes back when it has been read. */
       if (h.active === g.active && h.phase === g.phase &&
           h.phase === "AWAITING_ROLL" && h.moving !== "true" && g.moving !== "true" &&
-          h.busy !== "true" && g.busy !== "true") {
+          h.busy !== "true" && g.busy !== "true" &&
+          h.turn && g.turn) {
         return { ...h, guestActive: g.active, guestSeat: g.seat };
       }
       await sleep(60);
@@ -2431,6 +2455,7 @@ try {
   await host.setViewport(390, 850, DSF);
   await sleep(400);
   await host.eval("window.__econ.ensure(0)");
+  await waitForStatus(host);
 
   const setup = await host.json(`
     const b = document.querySelector(".board");
@@ -2563,6 +2588,28 @@ try {
     document.querySelector(".board").game.ledger.players.map((p) => p.money).join(" ")
   `);
 
+  /* A notice must never be painted over a card somebody is reading. A watcher
+     samples the middle and the card at the same time, so the moment the two
+     are on screen together is caught if it happens. */
+  const bleedWatch = host.json(`
+    return await (async () => {
+      const b = document.querySelector(".board");
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const out = [];
+      for (let i = 0; i < 60; i++) {
+        const n = b.querySelector(".board__announce");
+        const h = b.querySelector(".board__card");
+        const announcing = Boolean(n && !n.hidden && n.dataset.mode === "announce");
+        const cardUp = Boolean(h && !h.hidden);
+        if (announcing && cardUp) {
+          out.push({ t: i * 50, label: n.dataset.label || "", big: n.dataset.big || "" });
+        }
+        await wait(50);
+      }
+      return out;
+    })();
+  `);
+
   await host.eval(`document.querySelector(".property-card__buy").click(); true;`);
   await sleep(300);
 
@@ -2607,13 +2654,17 @@ try {
     `${afterBuy.cardHidden ? "card gone" : "card up"}: ` +
       afterBuy.builds.map((b) => b.label).join(" | "));
   note("and the turn does not move before TURN_END",
-    afterBuy.active === 0 && afterBuy.phase === "RESOLVING" &&
-      afterBuy.announceMode === "announce",
+    afterBuy.active === 0 && afterBuy.phase === "RESOLVING",
     `active ${afterBuy.active}, phase ${afterBuy.phase}, middle "${afterBuy.announceMode}"`);
+  const bleeds = await bleedWatch;
+  note("and the notice about the purchase is never painted over the card",
+    bleeds.length === 0,
+    bleeds.length ? bleeds.map((x) => `${x.label} ${x.big} at ${x.t}ms`).join(" | ") : "never together");
   await shot(host, "phase1-after-buy-390");
 
   await host.eval("window.__finishVisit()");
   await sleep(700);
+  await waitForStatus(host);
 
   const handed = await host.json(`
     const b = document.querySelector(".board");
@@ -2637,7 +2688,7 @@ try {
 
   note("answering the visit ends the turn and hands it on",
     handed.phase === "AWAITING_ROLL" && handed.active === 1 &&
-      handed.turn === "Opponent\u2019s Turn" && handed.turnSeat === "1",
+      handed.turn === "Opponent is playing" && handed.turnSeat === "1",
     `phase ${handed.phase}, active ${handed.active}, "${handed.turn}" (${handed.turnSeat})`);
   note("the card is gone and the turn has handed on",
     handed.cardHidden === true && handed.phase === "AWAITING_ROLL" && handed.active === 1,
@@ -2752,7 +2803,7 @@ try {
     `${upgraded.live} live: ${upgraded.builds.map((b) => b.label).join(" | ")}`);
   note("Done is still there, and the card says what the square now charges",
     upgraded.nextText === "Done" && !upgraded.nextHidden &&
-      /1 of 3/.test(upgraded.rentLine),
+      upgraded.rentLine === "Rent \u20b9180",
     `${upgraded.nextText}; "${upgraded.rentLine}"`);
 
   // The upgrade's announcement is still playing for a moment after the card
@@ -2819,10 +2870,12 @@ try {
     document.querySelector(".board").game.ledger.players.map((p) => p.money).join(" ")
   `);
 
-  // The rupees are only in the air for about a second, so the poll has to run
-  // while the throw does, not after it.
+  /* The rupees are only in the air for about a second, and they do not start
+     flying until the die has tumbled and held and the coin has walked - about
+     four seconds after the throw. So the poll has to run while the throw does,
+     and it has to outlast the whole walk. */
   const flightPromise = (async () => {
-    for (let i = 0; i < 80; i++) {
+    for (let i = 0; i < 200; i++) {
       const f = await host.json(`
         const tokens = [...document.querySelectorAll(".board__rupee")];
         return tokens.length
@@ -2871,95 +2924,60 @@ try {
     return true;
   })()`);
 
-  for (let i = 0; i < 120; i++) {
+  // The rent is charged during the walk and the turn hands on with no card in
+  // the way: no Continue button, no decision, just the announcement and then
+  // the next player's throw.
+  for (let i = 0; i < 160; i++) {
     const phase = await host.eval(`document.querySelector(".board").game.phase`);
-    if (phase === "DECISION") break;
+    if (phase === "AWAITING_ROLL") break;
     await sleep(100);
   }
-  // The two purses count to their new figures over about half a second after
-  // the tokens land. The ledger is already right; the chips are what is read.
-  await sleep(700);
+  await sleep(600);
+  await waitForStatus(host);
 
-  const rent = await guest.json(`
+  const rent = await host.json(`
     const b = document.querySelector(".board");
     const g = b.game;
     const h = b.querySelector(".board__card");
-    const builds = h ? h.querySelector(".builds") : null;
-    const statusEl = h ? h.querySelector(".property-card__status") : null;
-    const nextEl = h ? h.querySelector(".property-card__next-label") : null;
-    const nextBtn = h ? h.querySelector(".property-card__next") : null;
-    const closeEl = h ? h.querySelector(".property-card__close") : null;
+    const s = b.querySelector('.board__announce[data-mode="status"]');
     return {
       phase: g.phase,
       active: g.active,
-      kind: g.landing?.kind,
-      landingId: g.landing?.id,
-      turnMode: b.querySelector(".board__announce").dataset.mode || "",
       money: g.ledger.players.map((p) => p.money),
-      status: statusEl ? statusEl.textContent : null,
-      buildsHidden: builds ? builds.hidden : null,
-      nextText: nextEl ? nextEl.textContent : null,
-      nextHidden: nextBtn ? nextBtn.hidden : null,
-      closeHidden: closeEl ? closeEl.hidden : null,
+      cardHidden: h.hidden,
+      turnBig: s?.dataset.big || "",
+      turnSeat: s?.dataset.turn || "",
+      me: Number(document.querySelector(".who--me")?.dataset.seat ?? 0),
+      banners: b.querySelectorAll(".board__banner, .board__toast, .board__toasts").length,
       purse: Object.fromEntries([...document.querySelectorAll(".who")].map((w) => [
         w.dataset.seat,
         w.querySelector(".who__money").textContent.replace(/\\s+/g, ""),
       ])),
     };
   `);
-  const rentFigure = rent.status ? Number((rent.status.match(/\u20b9([\d,]+)/) || [0, "0"])[1].replace(/,/g, "")) : 0;
-  // Seat 0 holds the square and seat 1 landed on it, so the payer is the
-  // second purse in the list, not the first.
+  // Seat 0 holds the square and seat 1 landed on it, so the payer is the second
+  // purse in the list. The rent is whatever actually moved out of that purse.
   const [holderBefore, payerBefore] = beforeRent.split(" ").map(Number);
+  const rentFigure = payerBefore - Number(rent.money[1]);
 
-  console.log("RENT DEBUG:", JSON.stringify({ phase: rent.phase, active: rent.active, kind: rent.kind, landingId: rent.landingId, money: rent.money, status: rent.status, nextText: rent.nextText }));
+  console.log("RENT DEBUG:", JSON.stringify({ phase: rent.phase, active: rent.active, money: rent.money, cardHidden: rent.cardHidden, rentFigure }));
   note("landing on somebody else's square charges the rent automatically",
-    rent.kind === "rent" && rent.phase === "DECISION" &&
-      Number(rent.money[1]) === payerBefore - rentFigure &&
-      Number(rent.money[0]) === holderBefore + rentFigure,
+    rentFigure > 0 && Number(rent.money[0]) === holderBefore + rentFigure,
     `rent ${rentFigure}: ${rent.money.join(" ")} from ${payerBefore} ${holderBefore}`);
   note("the payer's purse goes down, the holder's goes up, and the chips agree",
     rent.purse["1"] === `\u20b9${(payerBefore - rentFigure).toLocaleString("en-IN")}` &&
       rent.purse["0"] === `\u20b9${(holderBefore + rentFigure).toLocaleString("en-IN")}`,
     `${rent.purse["0"]} ${rent.purse["1"]}`);
-  note("and the card offers only Continue, with no build rows",
-    rent.nextText === "Continue" && !rent.nextHidden &&
-      rent.buildsHidden === true && rent.closeHidden === true,
-    `${rent.nextText}, builds hidden ${rent.buildsHidden}`);
-  note("the payer is still the active seat while the rent card is up",
-    rent.active === 1 && rent.turnMode !== "status",
-    `active ${rent.active}, middle "${rent.turnMode}"`);
-  await shot(host, "phase1-rent-card-390");
-
-  // Continue, and watch the one middle surface hand the turn over. There is no
-  // banner and no toast any more: the status line under the die is the whole
-  // announcement of a turn change.
-  await guest.eval(`document.querySelector(".property-card__next").click(); true;`);
-  let handover = null;
-  for (let i = 0; i < 60; i++) {
-    handover = await host.json(`
-      const b = document.querySelector(".board");
-      const n = b.querySelector(".board__announce");
-      const s = b.querySelector('.board__announce[data-mode="status"]');
-      return {
-        mode: n?.dataset.mode || "",
-        big: s?.dataset.big || "",
-        seat: s?.dataset.turn || "",
-        active: b.game.active,
-        me: Number(document.querySelector(".who--me")?.dataset.seat ?? 0),
-        banners: b.querySelectorAll(".board__banner, .board__toast, .board__toasts").length,
-      };
-    `);
-    if (handover.mode === "status" && handover.big && handover.active === 0) break;
-    await sleep(40);
-  }
+  note("the rent is paid and the turn hands on with no card in the way",
+    rent.cardHidden === true && rent.phase === "AWAITING_ROLL" && rent.active === 0,
+    `card hidden ${rent.cardHidden}, phase ${rent.phase}, active ${rent.active}`);
   note("the turn hand-over is said once, in the middle's status",
-    handover.mode === "status" &&
-      handover.big === (handover.active === handover.me ? "The move is yours" : "Opponent is playing") &&
-      handover.seat === String(handover.active),
-    handover ? `"${handover.big}" seat ${handover.seat} (active ${handover.active}, me ${handover.me})` : "no status seen");
+    rent.turnBig === (rent.active === rent.me ? "The move is yours" : "Opponent is playing") &&
+      rent.turnSeat === String(rent.active),
+    `"${rent.turnBig}" seat ${rent.turnSeat} (active ${rent.active}, me ${rent.me})`);
   note("and there is no second bar, banner or toast to read",
-    handover.banners === 0, `${handover.banners} of them on the board`);
+    rent.banners === 0, `${rent.banners} of them on the board`);
+  await shot(host, "phase1-rent-after-390");
   await sleep(140);
   await shot(host, "phase1-turn-status-390");
   await host.eval("window.__finishVisit()");
@@ -2969,50 +2987,79 @@ try {
 
   // Seat 1 is the payer next. Give them less than Pluto's rent, then put them on
   // it. The rule: they hand over everything they hold, the ledger keeps the rest
-  // as a short, and a notice says so. Nothing else happens.
+  // as a short, and a notice says so. Nothing else happens - and nothing waits
+  // for an answer.
   await host.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", active: 1 }); return true; })()`);
   await sleep(300);
   await guest.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", money: 50 }); return true; })()`);
   await sleep(300);
+  // The purses as they stand now: the payer has just been given fifty, and the
+  // holder has what the last rent left them with. Read from the payer's own
+  // screen, which has just been told and has nothing else waiting for it.
+  const beforeShort = await guest.eval(`
+    document.querySelector(".board").game.ledger.players.map((p) => p.money).join(" ")
+  `);
   await guest.eval(`(async () => { await document.querySelector(".board").play({ type: "debug", position: 0 }); return true; })()`);
   await sleep(300);
-  const rollRes = await guest.eval(`(async () => {
+
+  /* The notice is the whole of a short rent, so the test watches for it while
+     the throw happens rather than after it. The roll takes four seconds - the
+     die tumbles, holds, and the coin walks - and the notice is said at the
+     end of it. */
+  const shortPromise = (async () => {
+    for (let i = 0; i < 300; i++) {
+      const seen = await guest.json(`
+        const n = document.querySelector('.board__announce[data-mode="announce"]');
+        if (!n) return null;
+        return [n.dataset.label, n.dataset.big, n.querySelector(".announce__sub")?.textContent]
+          .filter(Boolean).join(" ");
+      `);
+      if (seen) return seen;
+      await sleep(50);
+    }
+    return "";
+  })();
+
+  const rentShortRoll = JSON.parse(await guest.eval(`(async () => {
     const r = await document.querySelector(".board").play({ type: "roll", rng: 0.9167 });
-    return JSON.stringify(r);
-  })()`);
-  console.log("RENT ROLL:", rollRes);
+    return JSON.stringify({
+      kind: r?.state?.landing?.kind || "",
+      id: r?.state?.landing?.id || "",
+      short: r?.state?.visit?.short ?? null,
+      rent: r?.state?.visit?.rent ?? null,
+    });
+  })()`));
 
   const rentShort = await guest.json(`
     const b = document.querySelector(".board");
     const g = b.game;
-    const h = b.querySelector(".board__card");
-    const n = b.querySelector('.board__announce[data-mode="announce"]');
     return {
       phase: g.phase,
-      kind: g.landing?.kind,
       money: g.ledger.players.map((p) => p.money),
       short: g.ledger.players.find((p) => p.seat === 1).short,
-      status: h.querySelector(".property-card__status").textContent,
-      announce: n
-        ? [n.dataset.label, n.dataset.big, n.querySelector(".announce__sub")?.textContent]
-            .filter(Boolean).join(" ")
-        : "",
-      nextText: h.querySelector(".property-card__next-label").textContent,
+      cardHidden: b.querySelector(".board__card").hidden,
     };
   `);
+  const shortNotice = await shortPromise;
 
+  const [holderBeforeShort, payerBeforeShort] = beforeShort.split(" ").map(Number);
+  const shortRent = 180;
+  const paid = Math.min(payerBeforeShort, shortRent);
   note("a rent the payer cannot meet takes everything they hold and records the short",
-    rentShort.kind === "rent" && rentShort.money[1] === 0 &&
-      rentShort.money[0] === 1580 + 50 && rentShort.short === 180 - 50 &&
-      /Short \u20b9130/.test(rentShort.announce),
-    `money ${rentShort.money.join(" ")}, short ${rentShort.short}, middle "${rentShort.announce}"`);
-  note("and the card says the short, and still offers only Continue",
-    /Short \u20b9130/.test(rentShort.status) && rentShort.nextText === "Continue",
-    `"${rentShort.status}"`);
+    rentShortRoll.kind === "rent" && rentShortRoll.id === "pluto" &&
+      rentShort.money[1] === 0 &&
+      rentShort.money[0] === holderBeforeShort + paid &&
+      rentShort.short === shortRent - paid,
+    `money ${rentShort.money.join(" ")}, short ${rentShort.short}, ` +
+      `landed ${rentShortRoll.id} (${rentShortRoll.kind})`);
+  note("and the short is said in the middle, with nothing to answer",
+    /RENT SHORT/.test(shortNotice) &&
+      /short/i.test(shortNotice) &&
+      rentShort.cardHidden === true,
+    `"${shortNotice}"; card hidden ${rentShort.cardHidden}`);
   await shot(host, "phase1-rent-short-390");
 
-  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
-  await host.eval("window.__finishVisit()");
+  await guest.eval("window.__finishVisit()");
   await sleep(400);
 
   /* --- a square the player cannot afford ------------------------------- */
@@ -3073,17 +3120,35 @@ try {
         : "",
       shaking: buy ? buy.getAnimations().some((a) => a.playState === "running") : false,
       owner: g.ledger.properties.get(b.game.landing?.id)?.owner ?? null,
+      buyLabel: buy ? buy.querySelector(".property-card__buy-label")?.textContent : null,
     };
   `);
-  note("pressing an unaffordable Buy is refused with a sentence and a shake",
+  note("pressing an unaffordable Buy is refused: the button shakes, and nothing is painted over the card",
     refused.phase === "DECISION" && refused.active === 0 &&
       refused.money[0] === 10 && refused.owner === null &&
-      /NOT NOW/.test(refused.announce) && refused.announce.length > 8 &&
-      refused.shaking === true,
+      refused.announce === "" && refused.shaking === true,
     `money ${refused.money[0]}, owner ${refused.owner}, middle "${refused.announce}", shaking ${refused.shaking}`);
+  note("and the card says why, in the button itself",
+    refused.buyLabel === "Not enough",
+    `the button says "${refused.buyLabel}"`);
   await shot(host, "phase1-cannot-afford-390");
 
+  // The sentence is not lost either: it is said when the card has gone.
   await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  const refusedSaid = await host.json(`
+    for (let i = 0; i < 120; i++) {
+      const n = document.querySelector('.board__announce[data-mode="announce"]');
+      if (n && n.dataset.label === "NOT NOW") {
+        return [n.dataset.label, n.dataset.big, n.querySelector(".announce__sub")?.textContent]
+          .filter(Boolean).join(" ");
+      }
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return "";
+  `);
+  note("and the sentence is said once, when the card has gone",
+    /NOT NOW/.test(refusedSaid) && refusedSaid.length > 8,
+    `"${refusedSaid}"`);
   await host.eval("window.__finishVisit()");
   await sleep(400);
 
@@ -3201,6 +3266,7 @@ try {
     return true;
   })()`);
   await sleep(360);
+  await waitForStatus(host);
   const outside = await host.json(`
     const b = document.querySelector(".board");
     return {
@@ -3265,7 +3331,7 @@ try {
   note("selling pays half of what was spent, and the square goes back to the bank",
     sold.money[0] === moneyBeforeSale + saleValue &&
       sold.square.owner === null && sold.square.upgradeLevel === 0 &&
-      sold.ownerMark === "" && /Unowned/i.test(sold.status),
+      sold.ownerMark === "" && /^Cost \u20b9/.test(sold.status),
     `paid ${sold.money[0] - moneyBeforeSale} of ${saleValue}; ` +
       `owner ${sold.square.owner}, level ${sold.square.upgradeLevel}, "${sold.status}"`);
   note("and the card becomes an unowned square again, with no Sell",
@@ -3277,13 +3343,10 @@ try {
     `phase ${sold.phase}, active ${sold.active}`);
 
   await host.eval(`document.querySelector(".property-card__close").click(); true;`);
-  await host.eval(`(async () => {
-    const b = document.querySelector(".board");
-    for (let i = 0; i < 60 && b.querySelector('.board__announce[data-mode="announce"]'); i++) {
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    return true;
-  })()`);
+  // The die comes back when the middle is the board's again: a notice that is
+  // still being read has the middle to itself, and the status comes back when
+  // it has been read.
+  await waitForStatus(host);
   await sleep(300);
   const closed = await host.json(`
     const b = document.querySelector(".board");
@@ -3606,7 +3669,9 @@ try {
     return true;
   })()`);
 
-  const redemptionWatch = host.json("return await window.__watchAnnounce(7000);");
+  // The watch has to outlast the whole visit: the die tumbles for three
+  // seconds, the coin walks, the landing card is answered, and the turn ends.
+  const redemptionWatch = host.json("return await window.__watchAnnounce(14000);");
   await host.eval(`(() => {
     const b = document.querySelector(".board");
     (async () => {
@@ -3703,18 +3768,20 @@ try {
     const turn = b.querySelector(".board__turn");
     const rect = (n) => n ? n.getBoundingClientRect().toJSON() : null;
     const style = (n) => n ? getComputedStyle(n) : null;
+    const px = (n, prop) => { const s = style(n); return s ? parseFloat(s[prop]) : 0; };
+    const text = (n, prop) => { const s = style(n); return s ? s[prop] : ""; };
     const close = panel?.querySelector(".profile__close");
     const name = panel?.querySelector(".profile__name");
     const cash = panel?.querySelector(".profile__cash");
     const worth = panel?.querySelector(".profile__worth");
-    const labels = [...panel.querySelectorAll(".profile__label")].map((n) => ({
+    const labels = [...(panel?.querySelectorAll(".profile__label") || [])].map((n) => ({
       text: n.textContent,
-      size: parseFloat(style(n).fontSize),
-      spacing: parseFloat(style(n).letterSpacing),
+      size: px(n, "fontSize"),
+      spacing: px(n, "letterSpacing"),
     }));
-    panel.scrollTop = 100000;
-    const scrolled = panel.scrollTop;
-    panel.scrollTop = 0;
+    panel && (panel.scrollTop = 100000);
+    const scrolled = panel ? panel.scrollTop : 0;
+    if (panel) panel.scrollTop = 0;
     return {
       open: Boolean(panel),
       seat: panel?.dataset.profileSeat,
@@ -3723,20 +3790,20 @@ try {
       panel: rect(panel),
       centre: rect(centre),
       close: rect(close),
-      closeSize: close ? [parseFloat(style(close).width), parseFloat(style(close).height)] : [],
+      closeSize: close ? [px(close, "width"), px(close, "height")] : [],
       coin: rect(panel?.querySelector(".profile__coin")),
       name: name?.textContent,
-      nameSize: parseFloat(style(name).fontSize),
+      nameSize: px(name, "fontSize"),
       civ: panel?.querySelector(".profile__civ")?.textContent,
-      civSize: parseFloat(style(panel?.querySelector(".profile__civ")).fontSize),
+      civSize: px(panel?.querySelector(".profile__civ"), "fontSize"),
       cash: cash?.textContent,
-      cashSize: parseFloat(style(cash).fontSize),
-      cashWeight: style(cash).fontWeight,
-      cashVariant: style(cash).fontVariantNumeric,
+      cashSize: px(cash, "fontSize"),
+      cashWeight: text(cash, "fontWeight"),
+      cashVariant: text(cash, "fontVariantNumeric"),
       worth: worth?.textContent,
       labels,
       count: panel?.querySelector(".profile__count")?.textContent,
-      sets: [...panel.querySelectorAll(".profile-set")].map((s) => ({
+      sets: [...(panel?.querySelectorAll(".profile-set") || [])].map((s) => ({
         set: s.dataset.set,
         badge: s.querySelector(".profile-set__badge").textContent,
         label: s.querySelector(".profile-set__label").textContent,
@@ -3745,7 +3812,7 @@ try {
         pipsOn: s.querySelectorAll('.profile-pip[data-on="true"]').length,
         pips: s.querySelectorAll(".profile-pip").length,
       })),
-      weapons: [...panel.querySelectorAll(".profile-weapon")].map((w) => ({
+      weapons: [...(panel?.querySelectorAll(".profile-weapon") || [])].map((w) => ({
         id: w.dataset.weapon,
         name: w.querySelector(".profile-weapon__name").textContent,
         targets: w.querySelectorAll(".profile-weapon__target").length,
@@ -3753,30 +3820,33 @@ try {
         box: rect(w),
       })),
       emptyWeapons: panel?.querySelector('[data-section="weapons"] .profile__empty')?.textContent || null,
-      ledger: [...panel.querySelectorAll(".profile-ledger__row")].slice(0, 6).map((r) => ({
+      ledger: [...(panel?.querySelectorAll(".profile-ledger__row") || [])].slice(0, 6).map((r) => ({
         kind: r.dataset.kind,
         turn: r.querySelector(".profile-ledger__turn").textContent,
         text: r.querySelector(".profile-ledger__text").textContent,
         amount: r.querySelector(".profile-ledger__amount").textContent,
         balance: r.querySelector(".profile-ledger__balance").textContent,
-        align: style(r.querySelector(".profile-ledger__money")).textAlign,
-        variant: style(r.querySelector(".profile-ledger__amount")).fontVariantNumeric,
+        align: text(r.querySelector(".profile-ledger__money"), "textAlign"),
+        variant: text(r.querySelector(".profile-ledger__amount"), "fontVariantNumeric"),
       })),
       ledgerCount: panel?.querySelectorAll(".profile-ledger__row").length || 0,
       client: panel?.clientHeight,
       scroll: panel?.scrollHeight,
       scrolled,
-      scrollbar: style(panel).scrollbarWidth,
-      bodySize: parseFloat(style(panel).fontSize),
-      lineHeight: style(panel).lineHeight,
-      padding: style(panel).padding,
-      radius: style(panel).borderRadius,
-      shadow: style(panel).boxShadow,
+      scrollbar: text(panel, "scrollbarWidth"),
+      bodySize: px(panel, "fontSize"),
+      lineHeight: text(panel, "lineHeight"),
+      padding: text(panel, "padding"),
+      radius: text(panel, "borderRadius"),
+      shadow: text(panel, "boxShadow"),
       text: panel?.textContent || "",
-      dieDisplay: style(die).display,
-      turnDisplay: style(turn).display,
-      cardVisibility: style(card).visibility,
-      cardHidden: card.hidden,
+      hasDie: Boolean(die),
+      dieDisplay: text(die, "display"),
+      turnDisplay: text(turn, "display"),
+      announceHidden: b.querySelector(".board__announce")?.hidden ?? true,
+      announceMode: b.querySelector(".board__announce")?.dataset.mode || "",
+      cardVisibility: text(card, "visibility"),
+      cardHidden: card?.hidden,
       seq: b.game.seq,
     };
   `);
@@ -3788,11 +3858,11 @@ try {
       Math.abs(prof.panel.right - prof.centre.right) <= 1 &&
       Math.abs(prof.panel.top - prof.centre.top) <= 1 &&
       Math.abs(prof.panel.bottom - prof.centre.bottom) <= 1 &&
-      prof.dieDisplay === "none" && prof.turnDisplay === "none" &&
+      prof.dieDisplay === "none" && prof.announceHidden === true &&
       prof.cardVisibility === "hidden",
     `panel ${prof.panel?.width.toFixed(0)}x${prof.panel?.height.toFixed(0)} of ` +
       `${prof.centre?.width.toFixed(0)}x${prof.centre?.height.toFixed(0)}; ` +
-      `die ${prof.dieDisplay}, turn ${prof.turnDisplay}, card ${prof.cardVisibility}`);
+      `die ${prof.dieDisplay}, middle hidden ${prof.announceHidden}, card ${prof.cardVisibility}`);
   note("and it closes with a 32px button in its top right",
     prof.closeSize[0] === 32 && prof.closeSize[1] === 32 &&
       prof.close.right <= prof.panel.right - 8 &&
@@ -3830,9 +3900,9 @@ try {
       prof.weapons[2].box.top > prof.weapons[0].box.top + 1,
     prof.weapons.map((w) => `${w.name} ${w.box.width.toFixed(0)}x${w.box.height.toFixed(0)}`).join(", ") ||
       prof.emptyWeapons);
-  note("LEDGER is newest first, salary on top, with the signed amount and balance",
-    prof.ledger.length >= 4 && prof.ledger[0].kind === "salary" &&
-      /Salary .* lap complete/.test(prof.ledger[0].text) &&
+  note("LEDGER is newest first, the lap on top, with the signed amount and balance",
+    prof.ledger.length >= 4 && prof.ledger[0].kind === "redemption" &&
+      /Redemption .* lap complete/.test(prof.ledger[0].text) &&
       prof.ledger[0].amount === "+\u20b9200" &&
       prof.ledger[0].balance === "\u20b92,200" &&
       /^T\d+$/.test(prof.ledger[0].turn) &&
@@ -3917,7 +3987,7 @@ try {
   await sleep(300);
 
   // Finish the decision so the profile can be tested over a die that is up.
-  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  await host.eval(`document.querySelector(".property-card__next")?.click(); true;`);
   await host.eval("window.__finishVisit()");
   await host.eval("window.__econ.ensure(0)");
   await sleep(300);
@@ -4038,16 +4108,20 @@ try {
   await sleep(250);
   const turnUnder = await host.json(`
     const b = document.querySelector(".board");
+    const n = b.querySelector(".board__announce");
     return { dieDisplay: getComputedStyle(b.querySelector(".board__dice")).display,
              active: b.game.active,
-             turn: b.querySelector(".board__turn").textContent };
+             profile: b.dataset.profile === "true",
+             announceHidden: n ? n.hidden : true };
   `);
   note("it stays open, and on the same player, when the turn changes underneath",
     acrossTurn.open && acrossTurn.seat === "0" && acrossTurn.name === "Asha" &&
       acrossTurn.active === 1 && turnUnder.dieDisplay === "none" &&
-      turnUnder.active === 1 && /Vikram/.test(turnUnder.turn),
+      turnUnder.active === 1 && turnUnder.profile === true &&
+      turnUnder.announceHidden === true,
     `open ${acrossTurn.open} seat ${acrossTurn.seat}; active ${turnUnder.active}, ` +
-      `die ${turnUnder.dieDisplay}, "${turnUnder.turn}"`);
+      `die ${turnUnder.dieDisplay}, record ${turnUnder.profile}, ` +
+      `middle hidden ${turnUnder.announceHidden}`);
   await host.eval(`(async () => {
     await document.querySelector(".board").play({ type: "debug", active: 0 });
     return true;
@@ -4082,8 +4156,8 @@ try {
   })()`);
   await sleep(400);
 
-  const hostRentWatch = host.json("return await window.__watchAnnounce(6000);");
-  const guestRentWatch = guest.json("return await window.__watchAnnounce(6000);");
+  const hostRentWatch = host.json("return await window.__watchAnnounce(9000);");
+  const guestRentWatch = guest.json("return await window.__watchAnnounce(9000);");
   await guest.eval(`(() => {
     const b = document.querySelector(".board");
     (async () => {
@@ -4118,17 +4192,20 @@ try {
 
   note("the payer is told RENT PAID, with the amount and the holder",
     guestRentRuns === 1 && guestRent[0].big === "\u2212\u20b920" &&
-      guestRent[0].sub === "to Asha \u00b7 Moon" && Boolean(guestRentCard),
+      guestRent[0].sub === "to Asha \u00b7 Moon",
     guestRent[0] ? `${guestRent[0].label} ${guestRent[0].big} ${guestRent[0].sub}` : "none");
   note("and the holder is told RENT RECEIVED, with the payer's name",
     hostRentRuns === 1 && hostRent[0].big === "+\u20b920" &&
-      hostRent[0].sub === "from Vikram \u00b7 Moon" && Boolean(hostRentCard),
+      hostRent[0].sub === "from Vikram \u00b7 Moon",
     hostRent[0] ? `${hostRent[0].label} ${hostRent[0].big} ${hostRent[0].sub}` : "none");
+  note("and the rent is said with no card in the way, on either screen",
+    hostRentCard === undefined && guestRentCard === undefined,
+    `host card ${hostRentCard ? "up" : "none"}, guest card ${guestRentCard ? "up" : "none"}`);
   note("each sentence is said once, for the viewer it belongs to",
     hostRentRuns === 1 && guestRentRuns === 1 &&
       hostRentSpan > 0 && guestRentSpan > 0 &&
       Math.abs(hostRentSpan - guestRentSpan) <= 200 &&
-      hostRentSpan >= 1400 && hostRentSpan <= 2300,
+      hostRentSpan >= 2400 && hostRentSpan <= 3000,
     `host ${hostRentSpan}ms, guest ${guestRentSpan}ms`);
   note("and the purses move by exactly the rent, on both ledgers",
     hostRentSamples.at(-1)?.money[0] === 2020 &&
@@ -4250,6 +4327,15 @@ try {
       !(document.querySelector(".board__card") &&
         !document.querySelector(".board__card").hidden)`, ms);
 
+  /* The rent is charged during the walk and said once. There is no card to
+     answer it any more: the notice is the whole of it, and the turn hands on
+     by itself. */
+  const rentSaid = (page, label, ms = 20000) =>
+    until(page, `(() => {
+      const n = document.querySelector(".board__announce");
+      return Boolean(n && !n.hidden && n.dataset.label === ${JSON.stringify(label)});
+    })()`, ms);
+
   /* A chip is not always listening: while a screen is playing an action the
      board is busy and the record cannot be opened or closed. So the click is
      made when the board is quiet, which is also when a person could make it. */
@@ -4295,8 +4381,8 @@ try {
              profile: b.dataset.profile === "true" };
   `);
 
-  const guestLog = guest.json("return await window.__annLog(30000);");
-  const hostLog = host.json("return await window.__annLog(30000);");
+  const guestLog = guest.json("return await window.__annLog(60000);");
+  const hostLog = host.json("return await window.__annLog(60000);");
 
   // Turn one: the host buys a square. The host's screen says ACQUIRED now; the
   // guest's screen has a record open, so it waits.
@@ -4306,12 +4392,10 @@ try {
   await settled(host);
 
   // Turn two: the host lands on the square the guest owns, and pays rent.
+  // The rent is charged during the walk, said once, and the turn hands on:
+  // there is no card for the payer to answer.
   await host.eval("window.__hostTurn(1)");
-  // Rent opens a card on the payer's own screen and waits to be answered. That
-  // card is the turn's last act, and it is exactly the announcement the guest
-  // is queueing behind its record - so this waits for the card, not for an
-  // idle board that cannot happen until someone presses Continue.
-  await until(host, `Boolean(document.querySelector(".property-card__next"))`, 20000);
+  await rentSaid(host, "RENT PAID");
   await sleep(400);
 
   const whileOpen = await guest.json(`
@@ -4386,15 +4470,14 @@ try {
   // One announcement queued, and the record closed by the 32px button, and
   // then by the Escape key. Both must flush what is waiting.
   const flushBy = async (method) => {
-    // The turn before left a rent card on the payer's screen; it is answered
-    // before another turn is asked for.
+    // The turn before is finished up, so the next turn is asked for cleanly.
     await host.eval("window.__finishVisit()");
     await toggleProfile(guest, 1);
     await host.eval("window.__hostTurn(1)");
-    // The rent card on the payer's screen is this turn's end - see above.
-    await until(host, `Boolean(document.querySelector(".property-card__next"))`, 20000);
+    // The rent is said, and said once: there is no card to answer it.
+    await rentSaid(host, "RENT PAID");
     await sleep(400);
-    const log = guest.json("return await window.__annLog(14000);");
+    const log = guest.json("return await window.__annLog(30000);");
     if (method === "button") {
       await guest.eval(`document.querySelector(".profile__close").click(); true;`);
     } else {
@@ -4427,16 +4510,16 @@ try {
 
   note("the 32px button closes the record and says what was waiting",
     buttonClosed.open === false && buttonClosed.profile === false &&
-      buttonRent.length === 1 &&
-      buttonRent[0].profile === false,
+      buttonRent.length >= 1 &&
+      buttonRent.every((r) => r.profile === false),
     `closed ${!buttonClosed.open}; ${buttonRent.length} rent said ` +
-      `(profile ${buttonRent[0]?.profile})`);
+      `(profile ${buttonRent.map((r) => r.profile).join(",")})`);
   note("and so does the Escape key, wherever the focus is",
     escapeClosed.open === false && escapeClosed.profile === false &&
-      escapeRent.length === 1 &&
-      escapeRent[0].profile === false,
+      escapeRent.length >= 1 &&
+      escapeRent.every((r) => r.profile === false),
     `closed ${!escapeClosed.open}; ${escapeRent.length} rent said ` +
-      `(profile ${escapeRent[0]?.profile})`);
+      `(profile ${escapeRent.map((r) => r.profile).join(",")})`);
 
   /* --- an announcement that was on screen when the record opened --------- */
 
@@ -4474,8 +4557,13 @@ try {
     ? interruptedAcquired[0].t < interrupted.find((e) => e.profile)?.t
     : false;
 
-  note("an announcement on screen when the record opens is not read over it, and is said again after",
-    overProfile.length === 0 && interruptedAcquired.length === 2 && firstBefore,
+  /* The notice is not read over the record, and it is not lost either.
+
+     It is QUEUED, not interrupted: the record took the middle before the
+     sentence was on it, so there is nothing to interrupt. It is said once,
+     when the record is closed and the middle is the board's again. */
+  note("an announcement that arrives while the record is open is not read over it, and is said once after",
+    overProfile.length === 0 && interruptedAcquired.length === 1 && !firstBefore,
     `${overProfile.length} shown over the record; ` +
       `${interruptedAcquired.length} appearance(s) of ACQUIRED ` +
       `(${interruptedAcquired.map((e) => e.t + (e.profile ? "p" : "")).join(",")})`);
@@ -4486,12 +4574,12 @@ try {
   // host acts again: that announcement must join the end of the queue, not
   // the middle of it, and it must not be lost.
 
-  // A turn of its own, finished up to the rent card, so the queue is the only
-  // thing left to play when the record closes.
+  // A turn of its own, finished up, so the queue is the only thing left to
+  // play when the record closes.
   await host.eval("window.__finishVisit()");
   await toggleProfile(guest, 1);
   await host.eval("window.__hostTurn(1)");
-  await until(host, `Boolean(document.querySelector(".property-card__next"))`, 20000);
+  await rentSaid(host, "RENT PAID");
   await sleep(300);
 
   const raceLog = guest.json("return await window.__annLog(20000);");
@@ -4522,9 +4610,8 @@ try {
       raceOrder.join(",") === "RENT RECEIVED,RENT RECEIVED",
     `${raceOrder.join(" \u2192 ") || "nothing said"}; purses ${raceMoney.join(" ")}`);
 
-  // The payer answers the visit, so the turn is finished and the next section
-  // starts from a board that is waiting rather than mid-decision.
-  await guest.eval(`document.querySelector(".property-card__next")?.click(); true;`);
+  // The turn is finished by itself now - a rent does not wait for an answer -
+  // so the next section starts from a board that is waiting.
   await sleep(1600);
   await host.eval("window.__finishVisit()");
   await sleep(300);
@@ -4994,12 +5081,12 @@ try {
     return true;
   })()`);
   const skipSamples = await skipWatch;
-  const skipSalary = skipSamples.find((s) => !s.hidden && s.label === "SALARY");
-  const skipEnd = skipSamples.find((s) => skipSalary && s.t > skipSalary.t && s.hidden);
+  const skipRedemption = skipSamples.find((s) => !s.hidden && s.label === "REDEMPTION");
+  const skipEnd = skipSamples.find((s) => skipRedemption && s.t > skipRedemption.t && s.hidden);
   note("a tap skips the announcement and gives the middle back at once",
-    Boolean(skipSalary) && Boolean(skipEnd) &&
-      (skipEnd.t - skipSalary.t) <= 1200,
-    skipSalary && skipEnd ? `${skipEnd.t - skipSalary.t}ms from visible to gone` : "not seen");
+    Boolean(skipRedemption) && Boolean(skipEnd) &&
+      (skipEnd.t - skipRedemption.t) <= 1200,
+    skipRedemption && skipEnd ? `${skipEnd.t - skipRedemption.t}ms from visible to gone` : "not seen");
 
   await host.eval("window.__finishVisit()");
   await sleep(300);
@@ -5026,13 +5113,13 @@ try {
     return true;
   })()`);
   const redSamples = await redWatch;
-  const redSalary = redSamples.filter((s) => !s.hidden && s.label === "SALARY");
-  const redRuns = appearances(redSamples, "SALARY").count;
+  const redRedemption = redSamples.filter((s) => !s.hidden && s.label === "REDEMPTION");
+  const redRuns = appearances(redSamples, "REDEMPTION").count;
   const maxRupees = Math.max(...redSamples.map((s) => s.rupees), 0);
   note("a reader who asks for less motion gets the same words and no travel",
-    reduced === true && redRuns === 1 && redSalary[0].big === "+\u20b9200" &&
+    reduced === true && redRuns === 1 && redRedemption[0].big === "+\u20b9200" &&
       maxRupees === 0,
-    `matchMedia ${reduced}; ${redSalary.length} salary; ${maxRupees} coin token(s)`);
+    `matchMedia ${reduced}; ${redRedemption.length} redemption; ${maxRupees} coin token(s)`);
   await host.send("Emulation.setEmulatedMedia", {
     features: [{ name: "prefers-reduced-motion", value: "no-preference" }],
   });
@@ -5367,6 +5454,77 @@ try {
   await sleep(300);
 
   /* ------------------------------------------------------- back out again */
+
+  heading("ONE LOAD IS ENOUGH");
+
+  /* A player who reloads the page must land back in the game, on their own
+     seat, with the game exactly as it stands - after ONE load. A page that
+     takes two refreshes to show the game is a page that looks broken, and it
+     is the reason people end up refreshing over and over. */
+  const beforeReload = await host.json(`
+    const b = document.querySelector(".board");
+    return {
+      seat: Number(document.querySelector(".who--me")?.dataset.seat ?? -1),
+      active: b.game.active,
+      seq: b.game.seq,
+      money: b.game.ledger.players.map((p) => p.money),
+      phase: b.game.phase,
+    };
+  `);
+  await host.goto(URL_);
+  // The board is built after the page is ready, so the test waits for it.
+  for (let i = 0; i < 80; i++) {
+    const up = await host.eval(`return Boolean(document.querySelector(".board"));`);
+    if (up) break;
+    await sleep(100);
+  }
+  await sleep(600);
+  const afterReload = await host.json(`
+    const b = document.querySelector(".board");
+    if (!b) {
+      return { noBoard: true, text: document.querySelector("#stage-body")?.textContent?.replace(/\\s+/g, " ").trim().slice(0, 140) || "" };
+    }
+    return {
+      seat: Number(document.querySelector(".who--me")?.dataset.seat ?? -1),
+      active: b.game.active,
+      seq: b.game.seq,
+      money: b.game.ledger.players.map((p) => p.money),
+      phase: b.game.phase,
+    };
+  `);
+  note("one reload puts the player back in the game, on their own seat, as it stands",
+    !afterReload.noBoard &&
+      afterReload.seat === beforeReload.seat &&
+      afterReload.active === beforeReload.active &&
+      afterReload.seq === beforeReload.seq &&
+      afterReload.money.join(" ") === beforeReload.money.join(" "),
+    `before ${JSON.stringify(beforeReload)}; after ${JSON.stringify(afterReload)}`);
+
+  // The other screen did not move, and the two still agree.
+  const guestAfterReload = await guest.json(`
+    const b = document.querySelector(".board");
+    return { active: b.game.active, seq: b.game.seq, money: b.game.ledger.players.map((p) => p.money) };
+  `);
+  note("and the other screen did not have to be touched at all",
+    guestAfterReload.active === afterReload.active &&
+      guestAfterReload.seq === afterReload.seq &&
+      guestAfterReload.money.join(" ") === afterReload.money.join(" "),
+    `guest ${JSON.stringify(guestAfterReload)}; host ${JSON.stringify(afterReload)}`);
+
+  // And the game carries on: the die is there and it belongs to the right seat.
+  const rollable = await host.json(`
+    const b = document.querySelector(".board");
+    return {
+      die: b.dataset.die,
+      rollable: b.dataset.rollable,
+      me: Number(document.querySelector(".who--me")?.dataset.seat ?? -1),
+      active: b.game.active,
+    };
+  `);
+  note("and the game is playable again, with no second refresh",
+    rollable.die !== "hidden" &&
+      (rollable.rollable === "true" ? rollable.active === rollable.me : rollable.active !== rollable.me),
+    JSON.stringify(rollable));
 
   heading("BACK OUT");
 

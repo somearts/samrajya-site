@@ -79,20 +79,20 @@ test("redemption says REDEMPTION, the amount and why", () => {
   assert.equal(spec.tone, "earn");
 });
 
-test("the rent sentence names both players and reads the same on both phones", () => {
+test("the rent sentence is written for the phone that is reading it", () => {
   const rent = baseRentOf("moon");
   const event = { type: "rentPaid", id: "moon", from: 1, to: 0, amount: rent };
 
   const payer = announcementFor(event, { viewer: 1, ledger });
   assert.equal(payer.label, "RENT PAID");
   assert.equal(payer.big, `−₹${rent}`);
-  assert.equal(payer.sub, "Smith paid rent to Sam · Moon");
+  assert.equal(payer.sub, "to Sam · Moon");
   assert.equal(payer.seat, 1);
 
   const holder = announcementFor(event, { viewer: 0, ledger });
   assert.equal(holder.label, "RENT RECEIVED");
   assert.equal(holder.big, `+₹${rent}`);
-  assert.equal(holder.sub, "Smith paid rent to Sam · Moon");
+  assert.equal(holder.sub, "from Smith · Moon");
   assert.equal(holder.seat, 0);
 });
 
@@ -100,7 +100,7 @@ test("a rent that could not be covered says how short it was", () => {
   const event = { type: "rentShort", id: "moon", from: 1, to: 0, amount: 40, shortfall: 60 };
   const spec = announcementFor(event, { viewer: 1, ledger });
   assert.equal(spec.label, "RENT SHORT");
-  assert.equal(spec.sub, "Smith paid rent to Sam · Moon · short ₹60");
+  assert.equal(spec.sub, "to Sam · Moon · short ₹60");
 });
 
 test("movement, landing, the chest and the turn change stay quiet", () => {
@@ -121,11 +121,11 @@ test("a rename on the server reaches both sentences", () => {
   const event = { type: "rentPaid", id: "quasar", from: 0, to: 1, amount: 120 };
   assert.equal(
     announcementFor(event, { viewer: 0, ledger: renamed }).sub,
-    "Sakshi paid rent to Samrat · Quasar",
+    "to Samrat · Quasar",
   );
   assert.equal(
     announcementFor(event, { viewer: 1, ledger: renamed }).sub,
-    "Sakshi paid rent to Samrat · Quasar",
+    "from Sakshi · Quasar",
   );
 });
 
@@ -172,6 +172,18 @@ test("the status stands down while a decision card owns the middle", () => {
   game.phase = "DECISION";
   assert.equal(statusFor(game, { viewer: (game.active + 1) % 2 }), null);
   assert.equal(statusFor(game, { viewer: game.active }), null);
+});
+
+test("and the status is only ever said while the game is waiting for a throw", () => {
+  /* A status painted in any other phase is a status about to be contradicted:
+     the middle says "your turn" and a moment later says "their turn", and the
+     player sees a turn that did not happen. */
+  for (const phase of ["MOVING", "DECISION", "RESOLVING", "TURN_END"]) {
+    const game = createGame(PLAYERS);
+    game.phase = phase;
+    assert.equal(statusFor(game, { viewer: game.active }), null, phase);
+    assert.equal(statusFor(game, { viewer: (game.active + 1) % 2 }), null, phase);
+  }
 });
 
 test("a board with no turn has no status at all", () => {

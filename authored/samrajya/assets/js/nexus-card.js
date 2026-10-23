@@ -15,6 +15,7 @@
    ========================================================================== */
 
 import { el } from "./dom.js";
+import { settled } from "./motion.js";
 import { NEXUS_CARDS, NEXUS_PRAY_COST } from "./shared/nexus-cards.js";
 import { rupees } from "./shared/economy.js";
 
@@ -126,20 +127,23 @@ async function flyOffering(board, { from }) {
   dot.style.left = `${start.left + start.width / 2 - size / 2}px`;
   dot.style.top = `${start.top + start.height / 2 - size / 2}px`;
 
-  await dot
-    .animate(
-      [
-        { transform: "translate(0, 0) scale(1)", opacity: 1 },
-        {
-          transform:
-            `translate(${end.left + end.width / 2 - (start.left + start.width / 2)}px, ` +
-            `${end.top + end.height / 2 - (start.top + start.height / 2)}px) scale(0.35)`,
-          opacity: 0.7,
-        },
-      ],
-      { duration: FLY_MS, easing: "cubic-bezier(.4,.1,.2,1)", fill: "forwards" },
-    )
-    .finished.catch(() => {});
+  await settled(
+    dot
+      .animate(
+        [
+          { transform: "translate(0, 0) scale(1)", opacity: 1 },
+          {
+            transform:
+              `translate(${end.left + end.width / 2 - (start.left + start.width / 2)}px, ` +
+              `${end.top + end.height / 2 - (start.top + start.height / 2)}px) scale(0.35)`,
+            opacity: 0.7,
+          },
+        ],
+        { duration: FLY_MS, easing: "cubic-bezier(.4,.1,.2,1)", fill: "forwards" },
+      )
+      .finished,
+    FLY_MS + 150,
+  );
   dot.remove();
 }
 
@@ -184,46 +188,87 @@ export async function showNexus(
   const drawBtn = card.querySelector('[data-action="draw"]');
 
   const outcome = await new Promise((resolve) => {
-    let settled = false;
+    let done = false;
     const finish = (value) => {
-      if (settled) return;
-      settled = true;
+      if (done) return;
+      done = true;
       resolve(value);
     };
 
+    /* THE CARD ALWAYS ANSWERS.
+
+       Whatever happens when the player presses a button - the network drops,
+       the action is refused, the animation throws - the card has to come back
+       to a state the player can act on. A promise that never settles is a
+       board that is locked for the rest of the game, and a card that never
+       closes is a card nobody can get rid of. */
     prayBtn.addEventListener("click", async () => {
       prayBtn.disabled = true;
       drawBtn.disabled = true;
-      await flyOffering(board, { from: chip });
-      const event = typeof pray === "function" ? await pray() : null;
-      finish({ kind: "pray", event });
+      try {
+        await flyOffering(board, { from: chip });
+        const event = typeof pray === "function" ? await pray() : null;
+        finish({ kind: "pray", event });
+      } catch {
+        finish({ kind: "pray", event: null });
+      }
     }, { once: true });
 
     drawBtn.addEventListener("click", async () => {
       prayBtn.disabled = true;
       drawBtn.disabled = true;
-      const event = typeof draw === "function" ? await draw() : null;
-      finish({ kind: "draw", event });
+      try {
+        const event = typeof draw === "function" ? await draw() : null;
+        finish({ kind: "draw", event });
+      } catch {
+        finish({ kind: "draw", event: null });
+      }
     }, { once: true });
   });
 
   // Show the result before closing: what the offering bought, or what the
-  // card revealed.
+  // card revealed. If the action did not happen - the network dropped, the
+  // turn had moved on - the card says so rather than inventing an answer.
   result.hidden = false;
   if (outcome.kind === "pray") {
+    const took = Boolean(outcome.event);
     result.replaceChildren(
-      el("p", { class: "nexus-card__result-name", text: "Your offering is received" }),
-      el("p", { class: "nexus-card__result-text", text: "The temples are tended, the lamps are lit, and the silence holds." }),
-      el("p", { class: "nexus-card__result-amount nexus-card__result-amount--spend", text: `\u2212${rupees(NEXUS_PRAY_COST)}` }),
+      el("p", {
+        class: "nexus-card__result-name",
+        text: took ? "Your offering is received" : "The offering was not accepted",
+      }),
+      el("p", {
+        class: "nexus-card__result-text",
+        text: took
+          ? "The temples are tended, the lamps are lit, and the silence holds."
+          : "Nothing was taken and nothing was given. The turn has moved on.",
+      }),
+      took
+        ? el("p", {
+            class: "nexus-card__result-amount nexus-card__result-amount--spend",
+            text: `\u2212${rupees(NEXUS_PRAY_COST)}`,
+          })
+        : el("p", { class: "nexus-card__result-amount", text: "" }),
     );
   } else {
-    const cardData = outcome.event?.card || NEXUS_CARDS[0];
-    const tone = cardData.amount < 0 ? "spend" : "earn";
-    result.replaceChildren(
-      el("p", { class: "nexus-card__result-name", text: cardData.name }),
-      el("p", { class: "nexus-card__result-text", text: cardData.text }),
-      el("p", { class: `nexus-card__result-amount nexus-card__result-amount--${tone}`, text: `${cardData.amount < 0 ? "\u2212" : "+"}${rupees(Math.abs(cardData.amount))}` }),
-    );
+    const cardData = outcome.event?.card || null;
+    if (!cardData) {
+      result.replaceChildren(
+        el("p", { class: "nexus-card__result-name", text: "No card was drawn" }),
+        el("p", {
+          class: "nexus-card__result-text",
+          text: "The keeper did not turn a card. The turn has moved on.",
+        }),
+        el("p", { class: "nexus-card__result-amount", text: "" }),
+      );
+    } else {
+      const tone = cardData.amount < 0 ? "spend" : "earn";
+      result.replaceChildren(
+        el("p", { class: "nexus-card__result-name", text: cardData.name }),
+        el("p", { class: "nexus-card__result-text", text: cardData.text }),
+        el("p", { class: `nexus-card__result-amount nexus-card__result-amount--${tone}`, text: `${cardData.amount < 0 ? "\u2212" : "+"}${rupees(Math.abs(cardData.amount))}` }),
+      );
+    }
   }
 
   result.animate([{ opacity: 0 }, { opacity: 1 }], { duration: still() ? 1 : 280, fill: "both" });

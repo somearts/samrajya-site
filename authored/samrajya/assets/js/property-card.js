@@ -34,6 +34,7 @@
    ========================================================================== */
 
 import { el } from "./dom.js";
+import { settled } from "./motion.js";
 import { cardArt } from "./cards.js";
 import { propertyArt } from "./property-art.js";
 import { propertyFor } from "./shared/properties.js";
@@ -57,7 +58,6 @@ import { upgradeOffer } from "./shared/game.js";
 
 /** How long a turn takes. Short enough not to wait for, long enough to see. */
 const TURN_MS = 320;
-const SWAP_MS = 180;
 
 /** Reduce the work for a reader who has asked for less motion. */
 function still() {
@@ -551,7 +551,7 @@ export function syncCard(board, ctx) {
  * Returns a promise that settles when the card has finished turning, so a caller
  * can wait for it - and so a check can wait for it too.
  */
-export function showCard(board, id, ctx = null) {
+export async function showCard(board, id, ctx = null) {
   const property = propertyFor(id);
   const holder = board.querySelector(".board__card");
   if (!holder) return Promise.resolve(null);
@@ -615,10 +615,19 @@ export function showCard(board, id, ctx = null) {
     return Promise.resolve(property);
   }
 
-  if (!turning) {
-    // Appearing for the first time: turn in from the left.
-    draw();
-    return holder
+  /* THE CARD IS DRAWN AT ONCE.
+
+     The card the player asked for is the card on screen the moment they ask
+     for it. It used to be drawn half a second later - away, swap, and back -
+     and in that half second the middle was showing the PREVIOUS square's card
+     and the board's own record of what it was showing was the previous
+     square's. A tap that takes half a second to answer looks like a tap that
+     was not answered at all.
+
+     So the content is drawn first and the flourish is played over it. */
+  draw();
+  await settled(
+    holder
       .animate(
         [
           { transform: "rotateY(-88deg)", opacity: 0 },
@@ -626,31 +635,10 @@ export function showCard(board, id, ctx = null) {
         ],
         { duration: TURN_MS, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
       )
-      .finished.then(() => property);
-  }
-
-  // Changing property: away, swap, and back from the other side.
-  return holder
-    .animate(
-      [
-        { transform: "rotateY(0deg)", opacity: 1 },
-        { transform: "rotateY(88deg)", opacity: 0 },
-      ],
-      { duration: SWAP_MS, easing: "ease-in", fill: "both" },
-    )
-    .finished.then(() => {
-      draw();
-      return holder
-        .animate(
-          [
-            { transform: "rotateY(-88deg)", opacity: 0 },
-            { transform: "rotateY(0deg)", opacity: 1 },
-          ],
-          { duration: TURN_MS, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
-        )
-        .finished;
-    })
-    .then(() => property);
+      .finished,
+    TURN_MS + 150,
+  );
+  return property;
 }
 
 /** Take the card away. */

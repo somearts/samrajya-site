@@ -55,14 +55,45 @@ export class Page {
     this.ws = ws;
     this.nextId = 0;
     this.pending = new Map();
+    /* Everything the page said while it was being watched: uncaught errors and
+       console output. A board that throws does not say so on the screen, it just
+       stops - so the log is the only place the reason is written down. */
+    this.logs = [];
     ws.addEventListener("message", (event) => {
       const message = JSON.parse(event.data);
+      if (message.method === "Runtime.exceptionThrown") {
+        const details = message.params?.exceptionDetails;
+        this.logs.push({
+          kind: "error",
+          text:
+            details?.exception?.description ||
+            details?.text ||
+            "an uncaught error",
+        });
+        return;
+      }
+      if (message.method === "Runtime.consoleAPICalled") {
+        const type = message.params?.type || "log";
+        const text = (message.params?.args || [])
+          .map((a) => a.value ?? a.description ?? a.unserializableValue ?? "")
+          .join(" ");
+        this.logs.push({ kind: type, text });
+        return;
+      }
       const handler = this.pending.get(message.id);
       if (!handler) return;
       this.pending.delete(message.id);
       if (message.error) handler.reject(new Error(message.error.message));
       else handler.resolve(message.result);
     });
+  }
+
+  /** The uncaught errors the page has thrown, as one string. */
+  errors() {
+    return this.logs
+      .filter((entry) => entry.kind === "error" || entry.kind === "assert")
+      .map((entry) => entry.text)
+      .join("\n");
   }
 
   send(method, params = {}) {

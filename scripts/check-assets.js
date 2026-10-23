@@ -82,6 +82,33 @@ async function main() {
   check("it has a skip link", html.includes("skip-link"));
   check("it says something without scripting", html.includes("<noscript>"));
 
+  section("The modules");
+
+  /* EVERY SHIPPED MODULE MUST PARSE.
+
+     A syntax error in a module is invisible in a build and fatal in a browser:
+     the page falls back to its no-script text and the game is simply gone, with
+     nothing in the console that a person would read. Node can parse a module
+     without running it, so every file the client will load is parsed here. */
+  const modules = files.filter((f) => f.relative.endsWith(".js"));
+  let parsed = 0;
+  const unparsed = [];
+  for (const file of modules) {
+    const source = await readFile(join(OUT, file.relative), "utf8");
+    try {
+      // eslint-disable-next-line no-new-func
+      new Function(`return async () => { ${source.replace(/^\s*import[\s\S]*?;$/gm, "").replace(/^\s*export\s+/gm, "")} }`);
+      parsed += 1;
+    } catch (error) {
+      unparsed.push(`${file.relative}: ${error.message}`);
+    }
+  }
+  check(
+    `every shipped module parses (${parsed} of ${modules.length})`,
+    unparsed.length === 0,
+    unparsed.join(" | "),
+  );
+
   section("References");
 
   const refs = new Set();
@@ -456,7 +483,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
   );
   check(
     "the old 8x8 template is gone",
-    !boardCss.includes("grid-template-areas") && !boardCss.includes("--corner:"),
+    !boardCss.includes("grid-template-areas") && !/--corner:\s*[\d.]/.test(boardCss),
     "corner tracks at 16.85% made the corners a third larger than their neighbours",
   );
 
@@ -583,10 +610,12 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
     ),
   );
   check(
-    "only a property opens a card",
+    "every square opens a card, and the press is on the square",
     /cell\.matches\?\.\("button\[data-id\]"\)/.test(boardJs) &&
-      /isPurchasable\(cell\.id\)/.test(boardJs),
-    "corners and chests are not buttons, so pressing one cannot reach the card",
+      /squareCard\(cell, \{ onClose/.test(boardJs) &&
+      /isPurchasable\(landing\.id\)/.test(boardJs),
+    "a square that takes a tap and answers with nothing is a square that looks " +
+      "broken, so every one of the twenty-eight opens a card of its own",
   );
   check(
     "six faces, all in the markup, one shown",
@@ -1016,12 +1045,13 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
   const ledgerJs = await readFile(join(SHARED, "ledger.js"), "utf8");
 
   check(
-    "an announcement that arrives while a profile is open waits, and is not dropped",
-    /if \(profileOpen\(\)\) \{\s*\n\s*queue\.push\(/.test(announceJs) &&
-      announceJs.includes("flush()") &&
-      boardJs.includes("announce.flush()"),
-    "the record owns the middle for as long as it is open; what happened during " +
-      "that time is said afterwards rather than swallowed",
+    "an announcement that arrives while a card or a record has the middle waits, and is not dropped",
+    /if \(taken\(\)\) \{/.test(announceJs) &&
+      announceJs.includes("queue.push({ spec, resolve: null })") &&
+      boardJs.includes("announce.block("),
+    "a card is a thing the player is reading; a notice painted over it is a notice " +
+      "nobody reads, so what happened during that time is said afterwards rather " +
+      "than swallowed",
   );
   check(
     "and the game never waits for the middle to be free",
@@ -1032,13 +1062,21 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
       "not held up by it",
   );
   check(
-    "an announcement that is on screen when a record opens steps aside, and is said again after",
-    announceJs.includes("defer()") &&
+    "an announcement that is on screen when a card opens steps aside, and is said again after",
+    announceJs.includes("block(reason") &&
       /token\.stopped = true/.test(announceJs) &&
       /queue\.unshift\(item\)/.test(announceJs) &&
-      boardJs.includes("announce.defer()"),
-    "the record is the middle of the board while it is open, so the sentence " +
-      "steps aside and goes back to the front of the queue",
+      boardJs.includes("announce.unblock("),
+    "the card is the middle of the board while it is up, so the sentence steps " +
+      "aside and goes back to the front of the queue",
+  );
+  check(
+    "the middle has exactly one owner, and it is written down in one place",
+    /const wanted = \[\];/.test(boardJs) &&
+      /middleOwners\.add\(reason\)/.test(boardJs) &&
+      /announce\.unblock\(reason\)/.test(boardJs),
+    "a card and a record both take the middle; two owners at once is a notice " +
+      "painted over a card",
   );
   check(
     "the queue is said one at a time, in the order it was queued",

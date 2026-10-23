@@ -19,8 +19,20 @@
    A tap skips the announcement on screen. A reader who has asked for less
    motion gets the same words in a plain fade, and nothing travels.
 
-   THE QUEUE
+   ONE OWNER OF THE MIDDLE
+   -----------------------
+   The middle is one place, and only one thing can own it at a time: an
+   announcement, a card, or a player's record. A card is a thing the player is
+   reading, and a notification painted over it is a notification the player
+   cannot read and a card they cannot read either.
 
+   So the layer is told when something else has taken the middle - `block` and
+   `unblock` - and while it is blocked the announcement waits: it is said when
+   the card goes, not over the top of it. The same is true of the resting
+   status, which is not painted at all while a card is up.
+
+   THE QUEUE
+   ---------
    Two things want the middle at once: an announcement and a player's record.
    The record wins for as long as it is open; announcements wait - queued, never
    dropped - and are said in the order things happened the moment it closes.
@@ -75,8 +87,13 @@ function held(ms) {
  * the announcement has left the screen. `status(spec)` takes the same shape and
  * holds it until it is replaced. A null spec resolves at once, which is how an
  * event with nothing to announce stays quiet.
+ *
+ * `onChange` is called whenever the middle changes hands - an announcement
+ * comes on, an announcement goes, the status comes back. The board keeps the
+ * die's visibility in step with the middle, and the middle changes without the
+ * board being told unless it is.
  */
-export function announcementLayer(centre) {
+export function announcementLayer(centre, { onChange = null } = {}) {
   const node = el("div", {
     class: "board__announce",
     hidden: true,
@@ -95,10 +112,26 @@ export function announcementLayer(centre) {
   /* What the middle says when nothing is being announced. */
   let resting = null;
   let restingKey = null;
+  /* What has the middle instead of the announcement: a card, a record, or both.
+     A Set rather than a count, because the two can be open at once and either
+     one of them can be let go on its own. */
+  const blockers = new Set();
 
-  /** Is a profile holding the middle right now? */
-  const profileOpen = () =>
-    centre.closest(".board")?.dataset.profile === "true";
+  /* The shape of the layer as it was last seen. The board keeps the die's
+     visibility in step with the middle, and the middle changes hands on its
+     own - an announcement ends and the status comes back - so the board has to
+     be told that it happened. Only a real change is worth telling it about:
+     a repaint that changes nothing must not start a loop of repaints. */
+  let lastShape = "true|";
+  const changed = () => {
+    const shape = `${node.hidden}|${node.dataset.mode || ""}`;
+    if (shape === lastShape) return;
+    lastShape = shape;
+    if (typeof onChange === "function") onChange();
+  };
+
+  /** Is the middle somebody else's right now? */
+  const taken = () => blockers.size > 0;
 
   node.addEventListener("pointerdown", (event) => {
     // The status is not a control; only an announcement can be skipped.
@@ -130,6 +163,7 @@ export function announcementLayer(centre) {
       el("p", { class: "announce__sub", text: spec.sub || "" }),
     );
     node.hidden = false;
+    changed();
   }
 
   /** Take the middle down, leaving no text behind. */
@@ -140,11 +174,12 @@ export function announcementLayer(centre) {
     delete node.dataset.label;
     delete node.dataset.big;
     delete node.dataset.turn;
+    changed();
   }
 
   /** Put the resting status back, if there is one and the middle is free. */
   function paintStatus() {
-    if (current || pumping || profileOpen()) return;
+    if (current || pumping || taken()) return;
     if (!resting) {
       restingKey = null;
       clear();
@@ -182,8 +217,8 @@ export function announcementLayer(centre) {
         ];
     node.animate(enter, { duration: ENTER_MS, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" });
     await wait(ENTER_MS);
-    // A record opened over this one: it is taken off the screen and said
-    // again afterwards, rather than being read over or lost.
+    // Something else took the middle while this was coming in: it is taken off
+    // the screen and said again afterwards, rather than being read over.
     if (token.stopped) return;
 
     node.dataset.state = "hold";
@@ -211,15 +246,15 @@ export function announcementLayer(centre) {
     pumping = true;
     try {
       while (queue.length) {
-        // A record is holding the middle. The queue waits for it, in order.
-        if (profileOpen()) break;
+        // Something else has the middle. The queue waits for it, in order.
+        if (taken()) break;
         const item = queue.shift();
         const token = { stopped: false, skip: null };
         current = { item, token };
         await playNow(item.spec, token);
         if (current?.token === token) current = null;
-        // An announcement that was taken off the screen to make room for a
-        // record is said again by the queue, so it is not resolved here.
+        // An announcement that was taken off the screen to make room for a card
+        // is said again by the queue, so it is not resolved here.
         if (!token.stopped) item.resolve?.();
       }
     } finally {
@@ -243,7 +278,7 @@ export function announcementLayer(centre) {
      */
     show(spec) {
       if (!spec) return Promise.resolve();
-      if (profileOpen()) {
+      if (taken()) {
         queue.push({ spec, resolve: null });
         return Promise.resolve();
       }
@@ -265,29 +300,41 @@ export function announcementLayer(centre) {
       if (!pumping && !current) paintStatus();
     },
     /**
-     * Take the announcement on screen off, and say it again afterwards.
+     * Something else has taken the middle: a card, or a player's record.
      *
-     * A record opened while an announcement was being read: the record is the
-     * middle of the board now, so the announcement steps aside and goes back
-     * to the front of the queue. It is said again when the record closes, so
-     * nothing is read over the record and nothing is lost.
+     * The announcement on screen is taken off it and goes back to the front of
+     * the queue, so it is said again when the middle is free - never read over
+     * a card, and never lost. The resting status is not painted at all while
+     * the middle is somebody else's.
      */
-    defer() {
+    block(reason = "card") {
+      const first = blockers.size === 0;
+      blockers.add(reason);
+      if (!first) return;
       if (current) {
         const { item, token } = current;
         token.stopped = true;
         token.skip?.();
         current = null;
+        /* The caller is let go. The sentence goes back to the front of the
+           queue and is said again when the middle is free, but the action
+           that caused it is not held up waiting for a second reading of it. */
+        item.resolve?.();
         queue.unshift(item);
       }
       clear();
     },
-    /** Say everything that was waiting for the middle to be free. */
-    flush() {
-      if (profileOpen()) return Promise.resolve();
-      if (queue.length) return pump();
+    /**
+     * The card is gone, or the record is closed: the middle is free again.
+     */
+    unblock(reason = "card") {
+      blockers.delete(reason);
+      if (taken()) return;
+      if (queue.length) {
+        pump();
+        return;
+      }
       paintStatus();
-      return Promise.resolve();
     },
     /** Is a transient announcement covering the middle right now? */
     covering() {
@@ -300,9 +347,14 @@ export function announcementLayer(centre) {
         current.token.skip?.();
         current = null;
       }
+      /* Everything that was waiting is let go. A promise that is never
+         settled is a caller that waits for ever, and a caller waiting for
+         ever is a board that never finishes an action. */
+      for (const item of queue) item.resolve?.();
       queue.length = 0;
       resting = null;
       restingKey = null;
+      blockers.clear();
       clear();
     },
   };

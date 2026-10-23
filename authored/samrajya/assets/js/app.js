@@ -16,7 +16,7 @@
 
 import { $, el } from "./dom.js";
 import { Session } from "./session.js";
-import { welcomeView, createView, joinView, lobbyView, boardView } from "./views.js";
+import { welcomeView, createView, joinView, lobbyView, boardView, restoringView } from "./views.js";
 import { cleanName, parseRoomCode } from "./shared/identity.js";
 import { isCiv } from "./shared/civilizations.js";
 import { restoreGame } from "./shared/game.js";
@@ -69,9 +69,11 @@ function render() {
         ? createView(state, actions)
         : state.screen === "join"
           ? joinView(state, actions)
-          : state.screen === "board"
-            ? boardView(state, actions)
-            : lobbyView(state, actions);
+          : state.screen === "restoring"
+            ? restoringView(state, actions)
+            : state.screen === "board"
+              ? boardView(state, actions)
+              : lobbyView(state, actions);
 
   // The board screen is the only one that is not the composition, so it is the
   // only one that gets a class on the shell. Everything else shares the
@@ -617,6 +619,14 @@ async function boot() {
 
   const remembered = rememberedRoom();
   if (remembered) {
+    /* THE GAME IS BEING FOUND, AND THE SCREEN SAYS SO.
+
+       The room is one request away, and the request is made before the
+       welcome screen is drawn. A player who refreshes and sees the welcome
+       screen has been told, wrongly, that their game is gone - and the cure
+       they reach for is another refresh, which looks exactly the same. */
+    state.screen = "restoring";
+    render();
     const result = await session.room(remembered);
     if (result.ok && result.data.seat !== null && result.data.seat !== undefined) {
       adoptRoom(result.data);

@@ -48,6 +48,7 @@ import { DICE_DELAY_MS, DICE_HOLD_MS, DICE_ROLL_MS, pause } from "./timing.js";
 import { coins } from "./coin-layer.js";
 import { renderWeapons, showChest } from "./chest-card.js";
 import { showNexus } from "./nexus-card.js";
+import { squareCard } from "./square-card.js";
 import { RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
 import { NEXUS } from "./shared/nexus-cards.js";
 import { hideCard, showCard, syncCard } from "./property-card.js";
@@ -102,17 +103,26 @@ function centre() {
   return dice(Object.values(SETS).map((set) => set.color));
 }
 
-/** One corner: its mark, its name, and a rule beneath. */
+/**
+ * One corner: its mark, its name, and a rule beneath.
+ *
+ * A corner is a BUTTON, like every other square on the board. It used to be a
+ * plain box, on the grounds that a square you cannot act on should not look
+ * like a control. But every square on this board can now be read, and a square
+ * that took a tap and answered with nothing was a square that looked broken.
+ */
 function cornerCell(cell) {
   return el(
-    "div",
+    "button",
     {
+      type: "button",
       class: "board__cell board__cell--corner",
       style: { gridColumn: String(cell.col), gridRow: String(cell.row) },
       "data-id": cell.id,
       "data-index": String(cell.index),
       "data-cell": cell.type,
       "data-corner": cell.id,
+      "aria-label": `${cell.name}, corner`,
     },
     [
       el("span", {
@@ -180,18 +190,15 @@ function plainCell(cell) {
   };
 
   if (isChest) {
-    // Ragnarok is a button because it opens a card. The other three chests and
-    // the four corners still do nothing, and still are not buttons.
-    if (cell.id !== RAGNAROK.id) {
-      return el("div", props, [nameLines(cell)]);
-    }
-
+    // Every chest is a button, for the same reason every corner is: a chest
+    // can be read, and a square that answers a tap with nothing is a square
+    // that looks broken.
     return el(
       "button",
       {
         ...props,
         type: "button",
-        "aria-label": `${cell.name}, community chest`,
+        "aria-label": `${cell.name}, chest`,
       },
       [nameLines(cell)],
     );
@@ -285,7 +292,21 @@ export function board({
   // and takes the whole middle for one sentence when something has happened.
   // Both players read the same layer; the waiting player is never left with an
   // empty centre.
-  const announce = announcementLayer(centreArea);
+  //
+  // The layer tells the board when the middle changes hands - a notice ends,
+  // the status comes back - because the die's place in the middle depends on
+  // it, and the middle changes without the board being asked.
+  let repaintQueued = false;
+  const announce = announcementLayer(centreArea, {
+    onChange: () => {
+      if (repaintQueued) return;
+      repaintQueued = true;
+      queueMicrotask(() => {
+        repaintQueued = false;
+        paintPhase();
+      });
+    },
+  });
 
   /* ------------------------------------------------------------- the game */
 
@@ -325,6 +346,10 @@ export function board({
      that comes down the socket - and a card that is built twice is a card whose
      buttons belong to a card nobody can see. */
   let cardKey = null;
+  /* What has the middle of the board right now: a card, a player's record, or
+     both. The announcement layer is told about it in `paintPhase`, which is
+     the one place that knows. */
+  const middleOwners = new Set();
 
   function closeProfile() {
     if (profileSeat === null) return;
@@ -332,11 +357,10 @@ export function board({
     delete frame.dataset.profile;
     delete frame.dataset.profileSeat;
     centreArea.querySelector(".board__profile")?.remove();
-    // The middle is the board's again, so the die comes back to it.
+    // The middle is the board's again, so the die comes back to it. The
+    // announcement layer is told by `paintPhase`, which is the one place that
+    // knows what has the middle.
     paintPhase();
-    // Anything that happened while the record was open is said now, in the
-    // order it happened, rather than being swallowed by the record.
-    announce.flush();
   }
 
   function renderProfile() {
@@ -360,9 +384,6 @@ export function board({
   function openProfile(seat) {
     const wanted = Number(seat);
     if (!Number.isInteger(wanted)) return;
-    // The record is the middle of the board now. Anything being said steps
-    // aside and is said again when the record closes.
-    announce.defer();
     if (profileSeat === wanted) {
       closeProfile();
       return;
@@ -370,6 +391,9 @@ export function board({
     profileSeat = wanted;
     renderProfile();
     // The record is the middle of the board now, so the die gives way to it.
+    // `paintPhase` is what tells the announcement layer that the middle has
+    // been taken: anything being said steps aside and is said when the record
+    // closes.
     paintPhase();
   }
 
@@ -432,12 +456,38 @@ export function board({
     die?.setAttribute("aria-hidden", String(!rollable));
     frame.dataset.rollable = rollable ? "true" : "false";
 
-    /* What the middle says when nothing is being announced. A card or a record
-       owns the middle when it is up, so the status stands down; while an action
-       is being played the status is left exactly as it was, and the `run`/snapshot
-       teardown repaints it once the animation is over. */
+    /* THE MIDDLE HAS ONE OWNER AT A TIME.
+
+       A card is a thing the player is reading and a record is a thing the
+       player is reading; neither can have a notification painted over it. So
+       while either of them is up the announcement layer is told the middle
+       has been taken: anything being said steps aside and is said when the
+       card goes, never over the top of it. */
     const cardUp = Boolean(holder() && !holder().hidden);
-    if (cardUp || profileSeat !== null) {
+    const wanted = [];
+    if (cardUp) wanted.push("card");
+    if (profileSeat !== null) wanted.push("profile");
+    for (const reason of middleOwners) {
+      if (!wanted.includes(reason)) {
+        middleOwners.delete(reason);
+        announce.unblock(reason);
+      }
+    }
+    for (const reason of wanted) {
+      if (!middleOwners.has(reason)) {
+        middleOwners.add(reason);
+        announce.block(reason);
+      }
+    }
+    const owner = wanted.length > 0;
+
+    /* What the middle says when nothing is being announced. The status is a
+       state and not a fact: it says whose turn it is, and it says it only
+       while the game is waiting for a throw. In every other phase the middle
+       belongs to the action - the die is tumbling, a card is up, or the turn
+       is changing - and a status painted there would flash a turn that has
+       not happened yet. */
+    if (owner) {
       announce.status(null);
     } else if (!busy) {
       const status = statusFor(game, { viewer: mySeat });
@@ -550,14 +600,6 @@ export function board({
         seat: game?.active ?? null,
         why: response.error,
       };
-      // The one middle voice says what was refused, in words, for long enough
-      // to be read. There is no second black bar for errors.
-      await announce.show({
-        label: "NOT NOW",
-        big: "That cannot happen",
-        sub: no.why,
-        tone: "refused",
-      });
       const target =
         action.type === "buy"
           ? holder()?.querySelector(".property-card__buy")
@@ -566,7 +608,16 @@ export function board({
             : action.type === "sell"
               ? holder()?.querySelector(".property-card__sell")
               : die;
+      // The button answers the tap at once with a shake, and the middle says
+      // why at the same time. Neither waits for the other, and the board does
+      // not stand still for either: a refusal is a sentence, not a pause.
       shake(target);
+      await announce.show({
+        label: "NOT NOW",
+        big: "That cannot happen",
+        sub: no.why,
+        tone: "refused",
+      });
       return { events: [no] };
     }
 
@@ -576,23 +627,31 @@ export function board({
     // action is the exception: it changes the state without changing the number,
     // so a board that applied it once must not refuse it a second time.
     const isDebug = action.type === "debug";
-    if (!isDebug && state.seq <= lastSeq) {
-      return { events: [] };
+    const repeated = !isDebug && state.seq <= lastSeq;
+    if (!repeated) {
+      if (isDebug && action.reset) lastSeq = -1;
+      lastSeq = state.seq;
+
+      game = state;
+      frame.game = game;
+      frame.ledger = game.ledger;
+      paintPhase();
+      // The card is put in step with the new state BEFORE the animation runs, so
+      // a purchase stops offering itself at the instant it is accepted and the
+      // build rows show what they have become while the ring is still drawing.
+      // Waiting for the animation would leave a live Buy button under the finger.
+      syncCard(frame, context());
+
+      await playEvents(response.data.events);
     }
-    if (isDebug && action.reset) lastSeq = -1;
-    lastSeq = state.seq;
+    /* THE SOCKET GOT THERE FIRST.
 
-    game = state;
-    frame.game = game;
-    frame.ledger = game.ledger;
-    paintPhase();
-    // The card is put in step with the new state BEFORE the animation runs, so
-    // a purchase stops offering itself at the instant it is accepted and the
-    // build rows show what they have become while the ring is still drawing.
-    // Waiting for the animation would leave a live Buy button under the finger.
-    syncCard(frame, context());
-
-    await playEvents(response.data.events);
+       When the snapshot that came down the socket applied this action, the
+       events were played with it and the state is already the board's. The
+       answer to THIS call is still the server's, though, and it is still this
+       call's to hand back: a chest card waiting to hear which weapon it drew
+       must not be told "bad luck" because the socket was a moment quicker
+       than the reply. */
 
     // The coin already walked during `moved`; syncing here is what puts the
     // weapons and the final slot on screen without moving anybody twice.
@@ -678,7 +737,13 @@ export function board({
     coinColor(game?.ledger?.players?.find((p) => p.seat === Number(seat))?.civ) ||
     "var(--ink)";
 
-  /** Say what happened, worded for this viewer, or say nothing. */
+  /** Say what happened, worded for this viewer, or say nothing.
+   *
+   * The announcement is waited for, because it is a thing the player is
+   * reading and the middle belongs to it while it is there. A queued
+   * announcement - one that arrives while a card has the middle - resolves at
+   * once: the game does not stand still for a notice it cannot show yet.
+   */
   async function say(event) {
     const spec = announcementFor(event, { viewer: mySeat, ledger: game?.ledger });
     if (!spec) return;
@@ -894,81 +959,86 @@ export function board({
     if (landing.kind === "chest") {
       cardMode = mine ? "decision" : "read";
       reading = false;
-      paintPhase();
+
+      /* THE CHEST CARD DOES NOT HOLD THE BOARD'S LOCK.
+
+         The card asks a question - draw, or pray - and the player answers it
+         in their own time. Waiting for that answer INSIDE the turn's own lock
+         meant the whole board was locked while the card was up: the die would
+         not roll, no square could be read, and a card whose buttons could not
+         be reached was a game that looked frozen.
+
+         So the card is opened and the turn's lock is released. The card's own
+         close hands the turn on. */
+      const closed = () => {
+        closeRead();
+        void afterChest();
+      };
 
       if (landing.id === NEXUS.id) {
-        if (mine) {
-          await showNexus(frame, {
-            drawable: true,
-            chip: chip(game.active),
-            pray: async () => {
-              const result = await step({ type: "pray" });
-              return result?.events.find((event) => event.type === "prayed");
-            },
-            draw: async () => {
-              const result = await step({ type: "drawNexus" });
-              return result?.events.find((event) => event.type === "nexusDrawn");
-            },
-            onClose: () => closeRead(),
-          });
-        } else {
-          showNexus(frame, { drawable: false, onClose: () => closeRead() });
-        }
+        const showing = mine
+          ? showNexus(frame, {
+              drawable: true,
+              chip: chip(game.active),
+              pray: async () => {
+                const result = await step({ type: "pray" });
+                return result?.events?.find((event) => event.type === "prayed") || null;
+              },
+              draw: async () => {
+                const result = await step({ type: "drawNexus" });
+                return result?.events?.find((event) => event.type === "nexusDrawn") || null;
+              },
+              onClose: closed,
+            })
+          : showNexus(frame, { drawable: false, onClose: closed });
+        // The card is in the holder already; the die and status step aside now,
+        // before the player is asked, rather than after their answer.
         paintPhase();
-        cardMode = "read";
-        frame.dataset.reading = "false";
-        if (mine && game.phase === PHASE.DECISION && game.landing?.kind === "chest") {
-          await step({ type: "continue" });
-        }
+        showing.catch(() => {});
         return;
       }
 
-      if (mine) {
-        await showChest(frame, {
-          drawable: true,
-          // The draw is an action. The card shuffles and reveals; the game
-          // chooses. There is no second random generator behind the glass.
-          draw: async () => {
-            // The e2e may force the draw (for bad luck) by setting
-            // window.__drawRng; the server honours it only in the preview.
-            const rng = window.__drawRng;
-            const result = await step(
-              rng !== undefined ? { type: "drawWeapon", rng } : { type: "drawWeapon" },
-            );
-            const drawn = result?.events.find((event) => event.type === "weaponDrawn");
-            return drawn?.weapon || BAD_LUCK;
-          },
-          collect: async () => {
-            await step({ type: "collectWeapon" });
-          },
-          // The chest closes itself when the visit is over, and the board has
-          // to be told, so the die comes back to the middle.
-          onClose: () => closeRead(),
-          onWeapon: () => paint({ animate: false }),
-        });
-      } else {
-        showChest(frame, { drawable: false, onClose: () => closeRead() });
-      }
+      const showing = mine
+        ? showChest(frame, {
+            drawable: true,
+            // The draw is an action. The card shuffles and reveals; the game
+            // chooses. There is no second random generator behind the glass.
+            draw: async () => {
+              // The e2e may force the draw (for bad luck) by setting
+              // window.__drawRng; the server honours it only in the preview.
+              const rng = window.__drawRng;
+              const result = await step(
+                rng !== undefined ? { type: "drawWeapon", rng } : { type: "drawWeapon" },
+              );
+              const drawn = result?.events.find((event) => event.type === "weaponDrawn");
+              return drawn?.weapon || BAD_LUCK;
+            },
+            collect: async () => {
+              await step({ type: "collectWeapon" });
+            },
+            // The chest closes itself when the visit is over, and the board has
+            // to be told, so the die comes back to the middle.
+            onClose: closed,
+            onWeapon: () => paint({ animate: false }),
+          })
+        : showChest(frame, { drawable: false, onClose: closed });
       // The card is in the middle now, so the die gives way to it.
       paintPhase();
-      cardMode = "read";
-      frame.dataset.reading = "false";
-      // Bad luck leaves the visit open until it is acknowledged; collecting
-      // leaves it in RESOLVING. Either way the phase settles from here.
-      if (mine && game.phase === PHASE.DECISION && game.landing?.kind === "chest") {
-        await step({ type: "continue" });
-      }
+      showing.catch(() => {});
       return;
     }
 
     if (!landing.id || !isPurchasable(landing.id)) return;
     cardMode = mine ? "decision" : "read";
     reading = false;
+    // `showCard` puts the card into the holder synchronously, so the phase is
+    // painted once here (the die and status step aside the moment the card is
+    // up, before its entrance animation) and once after the turn settles.
+    const showing = showCard(frame, landing.id, context());
     paintPhase();
     try {
-      await showCard(frame, landing.id, context());
+      await showing;
     } finally {
-      // The card is in the middle now, so the die gives way to it.
       paintPhase();
     }
   }
@@ -982,6 +1052,22 @@ export function board({
     frame.dataset.cardMode = "read";
     // The middle is empty again, so the die comes back.
     paintPhase();
+  }
+
+  /**
+   * The chest card has closed: the visit is over, and the turn carries on.
+   *
+   * The player whose turn it is is the one who drives this. The other screen
+   * is watching a decision it is not answering, and its card is taken away
+   * when the decision is answered - not by anything it does itself.
+   */
+  async function afterChest() {
+    if (!isMyTurn()) return;
+    if (game.phase === PHASE.DECISION && game.landing?.kind === "chest") {
+      await run({ type: "continue" });
+      return;
+    }
+    await settle();
   }
 
   /**
@@ -1000,6 +1086,16 @@ export function board({
 
   /* ------------------------------------------------------------------ cards */
 
+  /**
+   * Open the card for a square the player pressed.
+   *
+   * EVERY square on the board answers a tap with a card in the middle: a
+   * property with its price, the Nexus with its keeper, Ragnarok with its
+   * weapons, and the corners and the quiet chests with the plain card that
+   * says what they are. The only square that answers with nothing is the one
+   * whose card is already open - and even that does not close and reopen it
+   * under the player's finger.
+   */
   function openRead(id) {
     if (game.phase !== PHASE.AWAITING_ROLL) return;
     if (busy) return;
@@ -1014,33 +1110,45 @@ export function board({
     // new one in the same call so the middle is never empty between them.
     if (reading && cardKey !== wantedKey) closeRead();
 
+    const cell = CELLS.find((entry) => entry.id === id);
+    if (!cell) return;
+
     reading = true;
     cardMode = "read";
     cardKey = wantedKey;
-    paintPhase();
 
-    if (id === RAGNAROK.id) {
-      showChest(frame, { drawable: false, onClose: () => closeRead() });
-      // The card is in the middle now, so the die gives way to it.
-      paintPhase();
-      return;
-    }
-    if (id === NEXUS.id) {
+    if (cell.id === NEXUS.id) {
       showNexus(frame, { drawable: false, onClose: () => closeRead() });
-      // The card is in the middle now, so the die gives way to it.
       paintPhase();
       return;
     }
-    if (!isPurchasable(id)) {
+    if (cell.id === RAGNAROK.id) {
+      showChest(frame, { drawable: false, onClose: () => closeRead() });
+      paintPhase();
+      return;
+    }
+    if (cell.type === "property") {
+      // The card's turn can be interrupted, and then the promise it returns is
+      // refused rather than settled - so the middle is put right either way.
+      const showing = showCard(frame, id, context());
+      paintPhase();
+      showing.finally(() => paintPhase());
+      return;
+    }
+
+    // A corner, or a chest whose purpose has not been decided: the plain card.
+    const holder = frame.querySelector(".board__card");
+    if (!holder) {
       closeRead();
       return;
     }
-    // The card's turn can be interrupted, and then the promise it returns is
-    // refused rather than settled - so the middle is put right either way.
-    showCard(frame, id, context()).finally(() => {
-      // The card is in the middle now, so the die gives way to it.
-      paintPhase();
-    });
+    holder.replaceChildren(squareCard(cell, { onClose: () => closeRead() }));
+    holder.hidden = false;
+    holder.dataset.property = cell.id;
+    holder.dataset.cardKind = "property";
+    holder.scrollTop = 0;
+    frame.dataset.property = cell.id;
+    paintPhase();
   }
 
   function closeRead() {

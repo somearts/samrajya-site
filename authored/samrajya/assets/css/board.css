@@ -638,6 +638,15 @@
   width: calc(var(--cell) * 4 + var(--hair) * 3 - var(--card-gap) * 2);
   height: calc(var(--cell) * 3 + var(--hair) * 2 - var(--card-gap) * 2);
   pointer-events: none;
+
+  /* ABOVE THE ANNOUNCEMENT.
+
+     The announcement layer is the middle of the board, and a card is the
+     middle of the board too. They are never on screen at the same time - the
+     layer is told when a card goes up and stands down - but the order is
+     still decided here, so that a mistake in that telling shows a card on
+     top rather than a notice painted over a card somebody is reading. */
+  z-index: 50;
 }
 
 /* The floating card: ivory, a hairline, and the soft shadow that says it is
@@ -1561,6 +1570,38 @@
   flex-shrink: 0;
 }
 
+/* ============================================================ the plain square
+
+   The card for a square that has no other card: the four corners and the two
+   chests whose purpose has not been decided yet. It is the smallest card in
+   the game - a name, a line about the square, and a way to close it - and it
+   uses the same shell as every other card, because it is the same object: a
+   thing the board puts in the middle and reads. */
+
+.square-card {
+  align-content: start;
+  justify-items: center;
+  text-align: center;
+}
+
+.square-card__kind {
+  margin: 0;
+  font-size: max(9px, calc(var(--cell) * 0.12));
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 52%, transparent);
+}
+
+.square-card__body {
+  display: grid;
+  gap: 0.5em;
+  max-width: 30ch;
+  margin: 0;
+  font-size: max(10.5px, calc(var(--cell) * 0.14));
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
 /* ============================================================== the nexus
 
    THE UNNAMED KEEPER
@@ -1569,19 +1610,29 @@
    above the mythology, the text is set as short lines rather than one long
    paragraph, and the two actions are stacked like quiet vows rather than
    buttons. It uses the full middle, because the experience is meant to feel
-   like entering a small shrine. */
+   like entering a small shrine.
+
+   IT FITS. IT MUST FIT.
+
+   The card used to be taller than the space it was given, and it scrolled.
+   The two actions were at the bottom of the CONTENT, which put them below
+   the bottom of the card: a player could see the keeper, and the prayers, and
+   no way to make either of them. A card whose buttons are out of reach is a
+   frozen game.
+
+   So the card is exactly the height of the space it has: the figure has its
+   own size, the mythology takes what is left and scrolls inside itself, and
+   the two actions are pinned to the bottom where they always are. */
 
 .nexus-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: calc(var(--cell) * 0.1);
-  height: auto;
+  gap: calc(var(--cell) * 0.12);
+  height: 100%;
   max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
   padding: calc(var(--cell) * 0.18) calc(var(--cell) * 0.22);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
+  overflow: hidden;
   text-align: center;
 }
 
@@ -1591,49 +1642,71 @@
 
 .nexus-card__figure-wrap {
   flex: 0 0 auto;
-  display: grid;
-  place-items: end center;
+  position: relative;
   width: 100%;
-  height: calc(var(--cell) * 2.2);
+  height: calc(var(--cell) * 1.55);
+  padding-bottom: calc(var(--cell) * 0.06);
+  overflow: hidden;
 }
 
 .nexus-card__god {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  object-position: center bottom;
 }
 
 .nexus-card__title {
-  margin: 0;
-  font-size: max(13px, calc(var(--cell) * 0.195));
+  flex: 0 0 auto;
+  margin: calc(var(--cell) * 0.02) 0 0;
+  font-size: max(13px, calc(var(--cell) * 0.185));
   font-weight: 400;
   letter-spacing: 0.04em;
   line-height: 1.2;
   color: var(--ink);
 }
 
+/* The mythology takes what is left of the card and scrolls inside itself. It
+   is the only part of the card that may move, and it never moves the two
+   actions out of the player's reach. */
 .nexus-card__mythology {
+  flex: 1 1 auto;
+  min-height: 0;
   display: grid;
-  gap: 0.55em;
+  align-content: start;
+  gap: 0.5em;
   max-width: 34ch;
   margin: 0;
-  font-size: max(10.5px, calc(var(--cell) * 0.14));
-  line-height: 1.45;
+  padding-right: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  font-size: max(10px, calc(var(--cell) * 0.132));
+  line-height: 1.4;
   color: var(--ink-soft);
+}
+
+.nexus-card__mythology::-webkit-scrollbar {
+  display: none;
 }
 
 .nexus-card__mythology span {
   display: block;
 }
 
+/* The two actions are pinned to the bottom of the card, always in the same
+   place, always reachable. */
 .nexus-card__actions {
+  flex: 0 0 auto;
   display: grid;
   gap: calc(var(--cell) * 0.07);
   width: 100%;
   max-width: 28ch;
   margin-top: auto;
-  padding-top: calc(var(--cell) * 0.12);
+  padding-top: calc(var(--cell) * 0.1);
 }
 
 .nexus-card__pray,
@@ -1678,12 +1751,13 @@
 }
 
 .nexus-card__result {
+  flex: 0 0 auto;
   display: grid;
   gap: calc(var(--cell) * 0.05);
   width: 100%;
   max-width: 30ch;
   margin-top: auto;
-  padding-top: calc(var(--cell) * 0.14);
+  padding-top: calc(var(--cell) * 0.12);
 }
 
 .nexus-card__result-name {
@@ -1865,6 +1939,27 @@ button.board__cell--chest {
 }
 
 button.board__cell--chest:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+
+/* A CORNER IS A BUTTON TOO.
+
+   Every square on the board opens a card now, so every square is a button.
+   The reset is the same decision the chest button makes: nothing the browser
+   adds on its own. The corner's own ground is left alone - it is black, and
+   a corner that was washed cream was a corner that looked like a square. */
+button.board__cell--corner {
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 0;
+}
+
+button.board__cell--corner:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: -2px;
 }
@@ -3014,6 +3109,15 @@ button.board__cell--chest:focus-visible {
   background: color-mix(in srgb, var(--centre-ground) 92%, var(--motif, var(--ink)));
   text-align: center;
   cursor: pointer;
+
+  /* The layer is over the middle of the board, and a card is in the middle
+     too. The layer takes no taps while it is only holding the status, so it
+     can never be the thing that swallows a press meant for a card. */
+  pointer-events: none;
+}
+
+.board__announce--announce {
+  pointer-events: auto;
 }
 
 .board__announce[hidden] {

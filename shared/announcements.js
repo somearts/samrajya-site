@@ -116,21 +116,22 @@ export function announcementFor(event, { viewer = null, ledger = null } = {}) {
     case "rentPaid":
     case "rentShort": {
       const received = mine !== null && Number(event.to) === mine;
-      const amount = event.type === "rentPaid" ? event.amount || 0 : event.amount || 0;
+      const amount = event.amount || 0;
       const square = squareName(event.id);
-      /* One sentence for both phones, naming both players. The label and the
-         signed figure already say who is looking at it; the line beneath says
-         the fact they share, so a rent is never a silent subtraction. */
-      const sentence = `${nameOf(event.from)} paid rent to ${nameOf(event.to)}`;
+      /* One sentence for both phones, each naming the other party.
+
+         The payer is told who was paid; the holder is told who paid. Neither
+         screen is told a sentence written for the other one, and the amount is
+         signed from the point of view of the person reading it. */
       const short =
         event.type === "rentShort" && event.shortfall > 0
           ? ` \u00b7 short ${rupees(event.shortfall)}`
           : "";
       if (received) {
         return {
-          label: "RENT RECEIVED",
+          label: event.type === "rentShort" ? "RENT SHORT" : "RENT RECEIVED",
           big: signed(amount),
-          sub: `${sentence} \u00b7 ${square}${short}`,
+          sub: `from ${nameOf(event.from)} \u00b7 ${square}${short}`,
           seat: event.to,
           tone: "earn",
         };
@@ -138,7 +139,7 @@ export function announcementFor(event, { viewer = null, ledger = null } = {}) {
       return {
         label: event.type === "rentShort" ? "RENT SHORT" : "RENT PAID",
         big: signed(-amount),
-        sub: `${sentence} \u00b7 ${square}${short}`,
+        sub: `to ${nameOf(event.to)} \u00b7 ${square}${short}`,
         seat: event.from,
         tone: "spend",
       };
@@ -164,11 +165,21 @@ export function announcementFor(event, { viewer = null, ledger = null } = {}) {
  */
 export function statusFor(game, { viewer = null } = {}) {
   if (!game || game.active === null || game.active === undefined) return null;
+
+  /* THE STATUS IS A STATE, AND IT IS ONLY TRUE WHILE THE GAME IS WAITING.
+
+     The game is waiting for a throw in one phase only. In every other phase
+     the middle belongs to something else: the die is tumbling, a card is up,
+     the visit is resolving, or the turn is changing hands. A status painted
+     there is a status that is about to be contradicted - which is exactly how
+     "your turn" flashed on a screen whose turn had not changed yet, and then
+     said the opposite a moment later. */
+  if (game.phase !== "AWAITING_ROLL") return null;
+
   const mine = viewer !== null && viewer !== undefined && Number(game.active) === Number(viewer);
   const name = nameOfSeat(game.ledger, game.active) || "Your opponent";
 
   if (mine) {
-    if (game.phase !== "AWAITING_ROLL") return null;
     return {
       label: "YOUR TURN",
       big: "The move is yours",
@@ -177,10 +188,6 @@ export function statusFor(game, { viewer = null } = {}) {
       tone: "turn",
     };
   }
-
-  /* A read-only decision card owns the middle on the watching screen, so the
-     status has nothing to add while it is up. */
-  if (game.phase === "DECISION") return null;
 
   return {
     label: "THEIR TURN",

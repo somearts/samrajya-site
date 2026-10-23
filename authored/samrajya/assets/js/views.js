@@ -19,10 +19,31 @@ import { purseOf, figureOf } from "./economy-ui.js";
 import { choices, civById, coinColor } from "./shared/civilizations.js";
 import { NAME_MAX } from "./shared/identity.js";
 
+/* ----------------------------------------------------------------- restoring
+
+   The screen between a refresh and the game.
+
+   A refresh is not a page load of nothing: the browser already holds a seat,
+   and the game is one request away. Showing the welcome screen in the gap
+   makes a game that is there look like a game that is gone - and a player who
+   thinks the game has gone refreshes again, and again, and each refresh looks
+   the same. So the gap says what it is: the game is being found, and it will
+   be here in a moment. */
+
+export function restoringView(state) {
+  return {
+    body: el("div", { class: "composition composition--restoring" }, [
+      el("h1", { class: "visually-hidden", text: "Samrajya Kalchakra" }),
+      ...markup(masthead()),
+      el("p", { class: "restoring__note", text: "Finding your game" }),
+    ]),
+    foot: null,
+  };
+}
+
 /* ------------------------------------------------------------------ welcome */
 
-export function welcomeView(state, actions) {
-  const composition = el("div", { class: "composition" }, [
+export function welcomeView(state, actions) {  const composition = el("div", { class: "composition" }, [
     el("h1", { class: "visually-hidden", text: "Samrajya Kalchakra" }),
     ...markup(masthead()),
     el("p", { class: "tagline" }, ["Empires rise.", el("br"), "Time turns."]),

@@ -179,6 +179,30 @@ input {
   width: 100%;
 }
 
+/* The gap between a refresh and the game. The wordmark is there, so the page
+   does not change shape under the player, and one line says what is being
+   waited for. */
+.restoring__note {
+  margin: calc(var(--mark) * 0.06) 0 0;
+  font-size: calc(var(--mark) * 0.028);
+  font-weight: 300;
+  letter-spacing: 0.17em;
+  text-indent: 0.17em;
+  color: color-mix(in srgb, var(--ink) 58%, transparent);
+  animation: restoring-pulse 1800ms ease-in-out infinite;
+}
+
+@keyframes restoring-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .restoring__note {
+    animation: none;
+  }
+}
+
 .wordmark {
   display: block;
   height: auto;

@@ -58,6 +58,7 @@
    ========================================================================== */
 
 import { el } from "./dom.js";
+import { settled } from "./motion.js";
 import { RAGNAROK, WEAPONS, drawWeapon, weaponById } from "./shared/weapons.js";
 import { SETS } from "./shared/spaces.js";
 import { propertyFor } from "./shared/properties.js";
@@ -411,15 +412,18 @@ export async function showChest(
 
   /* The card's turn-in, now that the button is listening. */
   if (!still()) {
-    await holder
-      .animate(
-        [
-          { transform: "rotateY(-88deg)", opacity: 0 },
-          { transform: "rotateY(0deg)", opacity: 1 },
-        ],
-        { duration: 320, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
-      )
-      .finished.catch(() => {});
+    await settled(
+      holder
+        .animate(
+          [
+            { transform: "rotateY(-88deg)", opacity: 0 },
+            { transform: "rotateY(0deg)", opacity: 1 },
+          ],
+          { duration: 320, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
+        )
+        .finished,
+      420,
+    );
   }
 
   const drawn = await drawnPromise;
@@ -498,16 +502,19 @@ async function reveal(card, slots, outcome, result, { still: quiet, chosenSlot }
     // Turn it over, then bring it forward.
     chosen.classList.add("is-drawn");
     if (!quiet) {
-      await chosen
-        .animate(
-          [
-            { transform: "rotateY(0deg) scale(1)" },
-            { transform: "rotateY(180deg) scale(1)" },
-            { transform: "rotateY(360deg) scale(1.08)" },
-          ],
-          { duration: 560, easing: "cubic-bezier(.3,.7,.3,1)", fill: "both" },
-        )
-        .finished.catch(() => {});
+      await settled(
+        chosen
+          .animate(
+            [
+              { transform: "rotateY(0deg) scale(1)" },
+              { transform: "rotateY(180deg) scale(1)" },
+              { transform: "rotateY(360deg) scale(1.08)" },
+            ],
+            { duration: 560, easing: "cubic-bezier(.3,.7,.3,1)", fill: "both" },
+          )
+          .finished,
+        660,
+      );
     }
     for (const slot of slots) if (slot !== chosen) slot.hidden = true;
     await wait(160);
@@ -571,19 +578,22 @@ async function flyToName(board, card, weaponId, { still: quiet }) {
   dot.style.left = `${from.left + from.width / 2 - size / 2}px`;
   dot.style.top = `${from.top + from.height / 2 - size / 2}px`;
 
-  await dot
-    .animate(
-      [
-        { transform: "translate(0, 0) scale(1)", opacity: 1 },
-        {
-          transform:
-            `translate(${to.left + to.width / 2 - (from.left + from.width / 2)}px, ` +
-            `${to.top + to.height / 2 - (from.top + from.height / 2)}px) scale(0.28)`,
-          opacity: 0.9,
-        },
-      ],
-      { duration: FLY_MS, easing: "cubic-bezier(.4,.1,.2,1)", fill: "forwards" },
-    )
-    .finished.catch(() => {});
+  await settled(
+    dot
+      .animate(
+        [
+          { transform: "translate(0, 0) scale(1)", opacity: 1 },
+          {
+            transform:
+              `translate(${to.left + to.width / 2 - (from.left + from.width / 2)}px, ` +
+              `${to.top + to.height / 2 - (from.top + from.height / 2)}px) scale(0.28)`,
+            opacity: 0.9,
+          },
+        ],
+        { duration: FLY_MS, easing: "cubic-bezier(.4,.1,.2,1)", fill: "forwards" },
+      )
+      .finished,
+    FLY_MS + 150,
+  );
   dot.remove();
 }

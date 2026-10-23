@@ -744,11 +744,15 @@ export function applyAction(state, action, rng = Math.random) {
 
       if (state.phase === PHASE.MOVING) {
         /* The coin has stopped. A square with something to decide opens its
-           card; a square with nothing to decide only gets its highlight. */
+           card; a square with nothing to decide - and a rent, which is paid
+           and announced during the walk - goes straight on to resolve. */
+        const kind = state.landing?.kind;
         next.phase =
-          state.landing && state.landing.kind !== "none"
-            ? PHASE.DECISION
-            : PHASE.RESOLVING;
+          kind === "rent"
+            ? PHASE.RESOLVING
+            : state.landing && kind !== "none"
+              ? PHASE.DECISION
+              : PHASE.RESOLVING;
         return { state: next, events };
       }
 
