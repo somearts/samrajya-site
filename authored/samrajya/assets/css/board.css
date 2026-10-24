@@ -1948,13 +1948,21 @@ button.board__cell--chest:focus-visible {
    Every square on the board opens a card now, so every square is a button.
    The reset is the same decision the chest button makes: nothing the browser
    adds on its own. The corner's own ground is left alone - it is black, and
-   a corner that was washed cream was a corner that looked like a square. */
+   a corner that was washed cream was a corner that looked like a square.
+
+   The ink is NOT inherited here, and that is the whole point of this rule
+   saying it out loud. `.board__cell--corner` sets `color: var(--cell-ground)`
+   so the mark and the name are cream on the black tile, but a selector of this
+   weight (`button.board__cell--corner`, an element plus a class) beats it and
+   `color: inherit` handed the corner the page's dark ink instead - so the name
+   and the currentColor mark were drawn dark-on-black and disappeared. The
+   colour is restated at the same weight as the reset rather than inherited. */
 button.board__cell--corner {
   appearance: none;
   -webkit-appearance: none;
   margin: 0;
   font: inherit;
-  color: inherit;
+  color: var(--cell-ground);
   cursor: pointer;
   border: 0;
 }
