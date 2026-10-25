@@ -30,6 +30,17 @@ const API = "/samrajya/api";
 const STORAGE_KEY = "samrajya.identity";
 const CREATE_KEY = "samrajya.create-key";
 
+/**
+ * How long a request may go unanswered.
+ *
+ * The server answers a move in milliseconds, so a request still outstanding
+ * after this is not slow, it is lost. It matters because a move holds the
+ * board's lock while it waits: without a limit, a connection that goes quiet
+ * mid-request leaves the board locked forever - a game that never moves again
+ * and never says why. Bounded, it becomes a sentence the player can act on.
+ */
+const PATIENCE = 15000;
+
 /** A result is either `{ ok: true, data }` or `{ ok: false, error }`. */
 const ok = (data) => ({ ok: true, data });
 const fail = (error, code) => ({ ok: false, error, code });
@@ -197,35 +208,51 @@ export class Session {
   }
 
   async #send(path, method = "GET", body) {
-    let response;
+    // One clock for the whole exchange. The wait for the answer and the reading
+    // of it are the same silence, and the second one is the one that hangs.
+    const abort = new AbortController();
+    const patience = setTimeout(() => abort.abort(), PATIENCE);
+    const tooLong = () =>
+      fail("The server is taking too long. Check your network and try again.");
     try {
-      response = await fetch(`${API}${path}`, {
-        method,
-        headers: {
-          [PLAYER_HEADER]: this.identity,
-          ...(body === undefined ? {} : { "content-type": "application/json" }),
-        },
-        body: body === undefined ? undefined : JSON.stringify(body),
-        cache: "no-store",
-      });
-    } catch {
-      return fail("No connection to the server. Check your network and try again.");
-    }
+      let response;
+      try {
+        response = await fetch(`${API}${path}`, {
+          method,
+          headers: {
+            [PLAYER_HEADER]: this.identity,
+            ...(body === undefined ? {} : { "content-type": "application/json" }),
+          },
+          body: body === undefined ? undefined : JSON.stringify(body),
+          cache: "no-store",
+          signal: abort.signal,
+        });
+      } catch {
+        return abort.signal.aborted
+          ? tooLong()
+          : fail("No connection to the server. Check your network and try again.");
+      }
 
-    let parsed = null;
-    try {
-      parsed = await response.json();
-    } catch {
-      parsed = null;
-    }
+      let parsed = null;
+      try {
+        parsed = await response.json();
+      } catch {
+        parsed = null;
+      }
+      // A body cut short by the clock is no body at all, whatever the status
+      // line said before it.
+      if (abort.signal.aborted) return tooLong();
 
-    if (!response.ok) {
-      return fail(
-        parsed?.error || "Something went wrong at our end. Please try again.",
-        parsed?.code,
-      );
+      if (!response.ok) {
+        return fail(
+          parsed?.error || "Something went wrong at our end. Please try again.",
+          parsed?.code,
+        );
+      }
+      return { ok: true, body: parsed };
+    } finally {
+      clearTimeout(patience);
     }
-    return { ok: true, body: parsed };
   }
 }
 

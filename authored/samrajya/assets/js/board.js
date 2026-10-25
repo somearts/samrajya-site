@@ -920,17 +920,17 @@ export function board({
         continue;
       }
       if (game.phase === PHASE.MOVING) {
-        await step({ type: "continue" });
+        if (!(await step({ type: "continue" }))) return;
         continue;
       }
       if (game.phase === PHASE.RESOLVING) {
         await wait(260);
-        await step({ type: "continue" });
+        if (!(await step({ type: "continue" }))) return;
         continue;
       }
       if (game.phase === PHASE.TURN_END) {
         await wait(220);
-        await step({ type: "continue" });
+        if (!(await step({ type: "continue" }))) return;
         continue;
       }
       return;

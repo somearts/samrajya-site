@@ -2624,7 +2624,7 @@ try {
       announceMode: b.querySelector(".board__announce").dataset.mode || "",
       cardHidden: h.hidden,
       money: g.ledger.players.map((p) => p.money),
-      square: g.ledger.properties.get("pluto"),
+      square: g.ledger.properties.get(g.landing?.id ?? "pluto"),
       ownerMark: b.querySelector('.board__cell[data-id="pluto"]').dataset.owner ?? "",
       buyHidden: h.querySelector(".property-card__buy-slot").hidden,
       nextHidden: h.querySelector(".property-card__next").hidden,
@@ -2638,10 +2638,10 @@ try {
 
   note("Buy takes the price out of the buyer's purse and gives them the square",
     afterBuy.money[0] === Number(moneyBefore.split(" ")[0]) - 400 &&
-      afterBuy.square.owner === 0 && afterBuy.square.upgradeLevel === 0 &&
+      afterBuy.square?.owner === 0 && afterBuy.square?.upgradeLevel === 0 &&
       afterBuy.ownerMark === "0",
-    `money ${afterBuy.money.join(" ")}, owner ${afterBuy.square.owner}, ` +
-      `level ${afterBuy.square.upgradeLevel}, mark "${afterBuy.ownerMark}"`);
+    `money ${afterBuy.money.join(" ")}, owner ${afterBuy.square?.owner}, ` +
+      `level ${afterBuy.square?.upgradeLevel}, mark "${afterBuy.ownerMark}"`);
   note("the card stops offering the answer the instant it is accepted",
     afterBuy.buyHidden === true && afterBuy.nextHidden === true,
     `Buy hidden ${afterBuy.buyHidden}, Pass hidden ${afterBuy.nextHidden}`);
@@ -2775,7 +2775,7 @@ try {
       phase: g.phase,
       active: g.active,
       money: g.ledger.players.map((p) => p.money),
-      square: g.ledger.properties.get("pluto"),
+      square: g.ledger.properties.get(g.landing?.id ?? "pluto"),
       builds: builds.map((n) => ({
         state: n.dataset.state,
         label: n.querySelector(".build__button-label").textContent,
@@ -2823,7 +2823,7 @@ try {
     const g = b.game;
     const before = {
       money: g.ledger.players.map((p) => p.money),
-      level: g.ledger.properties.get("pluto").upgradeLevel,
+      level: g.ledger.properties.get("pluto")?.upgradeLevel,
     };
     const result = await b.play({ type: "upgrade" });
     const refused = result?.events.find((e) => e.type === "refused");
@@ -2832,7 +2832,7 @@ try {
       before,
       after: {
         money: g.ledger.players.map((p) => p.money),
-        level: g.ledger.properties.get("pluto").upgradeLevel,
+        level: g.ledger.properties.get("pluto")?.upgradeLevel,
       },
       phase: g.phase,
     };
@@ -3104,21 +3104,42 @@ try {
     `${short.label} ${short.cost}; disabled ${short.disabled}, aria ${short.aria}, title "${short.title}"` +
       `; ${short.landingId}/${short.cardMode}/${short.cardKind}, owner ${short.owner}`);
 
-  await host.eval(`document.querySelector(".property-card__buy").click(); true;`);
-  await sleep(200);
+  /* A press sent into a board that is still finishing its settle is dropped, and
+     a dropped press looks exactly like a refusal that said nothing: no shake, no
+     sentence, and a card that never leaves. So the board is waited for before
+     the button is pressed, and the press is watched rather than sampled once -
+     the shake is 260ms long and the answer to it comes back over the network. */
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    for (let i = 0; i < 100 && b.dataset.busy === "true"; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    b.querySelector(".property-card__buy")?.click();
+    return true;
+  })()`);
   const refused = await host.json(`
     const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    let shaking = false;
+    let announce = "";
+    for (let i = 0; i < 40; i++) {
+      const buy = b.querySelector(".property-card__buy");
+      if (buy && buy.getAnimations().some((a) => a.playState === "running")) shaking = true;
+      const n = b.querySelector('.board__announce[data-mode="announce"]');
+      if (n) {
+        announce = [n.dataset.label, n.querySelector(".announce__sub")?.textContent]
+          .filter(Boolean).join(" ");
+      }
+      await wait(30);
+    }
     const g = b.game;
     const buy = b.querySelector(".property-card__buy");
-    const n = b.querySelector('.board__announce[data-mode="announce"]');
     return {
       phase: g.phase,
       active: g.active,
       money: g.ledger.players.map((p) => p.money),
-      announce: n
-        ? [n.dataset.label, n.querySelector(".announce__sub")?.textContent].filter(Boolean).join(" ")
-        : "",
-      shaking: buy ? buy.getAnimations().some((a) => a.playState === "running") : false,
+      announce,
+      shaking,
       owner: g.ledger.properties.get(b.game.landing?.id)?.owner ?? null,
       buyLabel: buy ? buy.querySelector(".property-card__buy-label")?.textContent : null,
     };
@@ -3134,9 +3155,16 @@ try {
   await shot(host, "phase1-cannot-afford-390");
 
   // The sentence is not lost either: it is said when the card has gone.
-  await host.eval(`document.querySelector(".property-card__next").click(); true;`);
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    for (let i = 0; i < 100 && b.dataset.busy === "true"; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    b.querySelector(".property-card__next")?.click();
+    return true;
+  })()`);
   const refusedSaid = await host.json(`
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 240; i++) {
       const n = document.querySelector('.board__announce[data-mode="announce"]');
       if (n && n.dataset.label === "NOT NOW") {
         return [n.dataset.label, n.dataset.big, n.querySelector(".announce__sub")?.textContent]
@@ -3317,7 +3345,7 @@ try {
     const sell = h.querySelector(".property-card__sell");
     return {
       money: g.ledger.players.map((p) => p.money),
-      square: g.ledger.properties.get("pluto"),
+      square: g.ledger.properties.get(g.landing?.id ?? "pluto"),
       ownerMark: b.querySelector('.board__cell[data-id="pluto"]').dataset.owner ?? "",
       status: h.querySelector(".property-card__status").textContent,
       sellHidden: sell.hidden,
@@ -3510,7 +3538,6 @@ try {
 
   await host.eval(`(async () => {
     const b = document.querySelector(".board");
-    await b.play({ type: "debug", active: 0 });
     await b.play({ type: "debug", position: 1 });
     return true;
   })()`);
@@ -3524,13 +3551,23 @@ try {
     await b.play({ type: "debug", position: 1 });
     return true;
   })()`);
+  // Wait for the guest's position to reach this screen before measuring.
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 80; i++) {
+      if (b.game.pieces.filter((p) => p.position === 1).length >= 2) return true;
+      await wait(100);
+    }
+    return false;
+  })()`);
   await host.eval(`(async () => {
     const b = document.querySelector(".board");
     await b.play({ type: "debug", active: 1 });
     b.coins.sync(b.game.pieces);
     return true;
   })()`);
-  await sleep(1200);
+  await sleep(800);
 
   const chips = await host.json(`
     const b = document.querySelector(".board");
@@ -3607,11 +3644,10 @@ try {
   // between two samples never becomes part of the measurement. `skipAt` taps the
   // layer at that moment, which is the only way a test can prove the skip.
   const WATCHER = `
-    window.__watchAnnounce = async (ms, skipAt = -1) => {
+    window.__watchAnnounce = async (ms, skipAt = -1, skipLabel = "") => {
       const b = document.querySelector(".board");
       const out = [];
       let last = "";
-      let skipped = false;
       const start = performance.now();
       while (performance.now() - start < ms) {
         const n = b.querySelector(".board__announce");
@@ -3642,8 +3678,16 @@ try {
           out.push(sample);
           last = key;
         }
-        if (!skipped && skipAt >= 0 && sample.t >= skipAt && !sample.hidden) {
-          skipped = true;
+        // Tap to skip while the announcement is visible. token.skip is only
+        // wired up once the entrance animation finishes, so the first sample
+        // (during the enter) cannot skip yet: keep tapping on every visible
+        // sample until the announcement leaves. The layer's skip is idempotent,
+        // so repeated taps are harmless.
+        if (
+          !sample.hidden &&
+          (!skipLabel || sample.label === skipLabel) &&
+          (skipAt === "first" || (typeof skipAt === "number" && skipAt >= 0 && sample.t >= skipAt))
+        ) {
           n?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
         }
         await new Promise((r) => setTimeout(r, 40));
@@ -4104,8 +4148,8 @@ try {
       active: b.game.active,
     };
   `);
-  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
-  await sleep(250);
+  // Read the record where it stands. The chip is a toggle, so pressing it here
+  // would close the very record this check is about.
   const turnUnder = await host.json(`
     const b = document.querySelector(".board");
     const n = b.querySelector(".board__announce");
@@ -4122,6 +4166,10 @@ try {
     `open ${acrossTurn.open} seat ${acrossTurn.seat}; active ${turnUnder.active}, ` +
       `die ${turnUnder.dieDisplay}, record ${turnUnder.profile}, ` +
       `middle hidden ${turnUnder.announceHidden}`);
+  // Give the middle back before the next section, which starts from a board
+  // with nothing open on it.
+  await host.eval(`document.querySelector('.who[data-seat="0"]').click(); true;`);
+  await sleep(250);
   await host.eval(`(async () => {
     await document.querySelector(".board").play({ type: "debug", active: 0 });
     return true;
@@ -4277,9 +4325,11 @@ try {
         out.push({
           t: Math.round(performance.now() - start),
           visible,
+          mode: visible ? n.dataset.mode || "" : "",
           label: pick(".announce__label"),
           big: pick(".announce__big"),
           sub: pick(".announce__sub"),
+          seat: visible ? n.dataset.turn || "" : "",
           profile: b.dataset.profile === "true",
           busy: b.dataset.busy,
         });
@@ -4601,14 +4651,35 @@ try {
   await sleep(1200);
   const raceEntries = await raceLog;
   const raceSaid = said(raceEntries, "RENT RECEIVED");
-  const raceOrder = raceEntries.filter((e) => e.visible).map((e) => e.label);
+  const raceAnnouncements = raceEntries
+    .filter((e) => e.visible && e.mode === "announce")
+    .map((e) => e.label);
+  const raceOrder = raceEntries
+    .filter((e) => e.visible)
+    .map((e) => `${e.mode}:${e.label}@${e.t}`);
   const raceMoney = await guest.json(`return b.game.ledger.players.map((p) => p.money);`.replace("b.game", "document.querySelector('.board').game"));
 
+  /* The resting status shares the surface with the announcements, so it is
+     allowed to sit between them - it is not something being said, it is whose
+     turn it is. What is NOT allowed is the status flipping its owner back and
+     forth - the "your turn" then "opponent's turn" then "your turn" flash
+     this whole layer exists to remove. A same-seat repaint is redundant but
+     not a flash, so it does not count. */
+  let lastStatusSeat = null;
+  let statusFlips = 0;
+  for (const e of raceEntries) {
+    if (!e.visible || e.mode !== "status") continue;
+    if (lastStatusSeat !== null && e.seat !== "" && e.seat !== lastStatusSeat) statusFlips += 1;
+    if (e.seat !== "") lastStatusSeat = e.seat;
+  }
+
   note("an announcement that arrives while the queue is being said joins its end",
-    raceSaid.length === 2 &&
-      raceOrder.filter((l) => l === "RENT RECEIVED").length === 2 &&
-      raceOrder.join(",") === "RENT RECEIVED,RENT RECEIVED",
+    raceSaid.length === 2 && raceAnnouncements.join(",") === "RENT RECEIVED,RENT RECEIVED",
     `${raceOrder.join(" \u2192 ") || "nothing said"}; purses ${raceMoney.join(" ")}`);
+  note("and the resting status does not flip its owner back and forth",
+    statusFlips === 0,
+    `${statusFlips} owner flip(s) with nothing said between them; ` +
+      raceOrder.join(" \u2192 "));
 
   // The turn is finished by itself now - a rent does not wait for an answer -
   // so the next section starts from a board that is waiting.
@@ -4804,6 +4875,21 @@ try {
       return false;
     })();`);
 
+  /* Wait until the middle is the board's again: the turn is waiting, no card is
+     up and nothing is being announced. The die is put away while a card or a
+     sentence has the middle, so a die read before this settles is a die that is
+     still waiting for the notice above it to finish. */
+  const free = (page, ms = 30000) =>
+    until(page, `(() => {
+      const b = document.querySelector(".board");
+      const n = b.querySelector(".board__announce");
+      const h = b.querySelector(".board__card");
+      return b.dataset.busy !== "true" &&
+        b.game.phase === "AWAITING_ROLL" &&
+        (!h || h.hidden) &&
+        (!n || n.hidden || n.dataset.mode !== "announce");
+    })()`, ms);
+
   /* One turn on a seat's own screen, thrown where the test says.
      A press sent into an animation is dropped, so the board is waited for
      between the steps, and the landing is checked afterwards: a turn that
@@ -4907,6 +4993,10 @@ try {
   const hostBuy = await answerBuy(host);
   await settleBoard(guest);
   await settleBoard(host);
+  // The buy is said in the middle; the die comes back when the sentence has
+  // gone. Reading it before then would call a notice a missing die.
+  await free(guest);
+  await free(host);
   const afterBuyHost = await centreState(host);
   const afterBuyGuest = await centreState(guest);
   note("when the decision is answered, the card goes on both screens",
@@ -4935,6 +5025,8 @@ try {
   await answerBuy(guest);
   await settleBoard(host);
   await settleBoard(guest);
+  await free(host);
+  await free(guest);
   const backToHost = await centreState(host);
   note("so the first player is handed back a clear board and a usable die",
     backToHost.cardHidden === true && backToHost.dieDisplay !== "none" &&
@@ -4980,6 +5072,7 @@ try {
   // on screen when the log starts.
   const turnChangeSaid = turnChangeEntries.filter(
     (e) => e.visible && e.label === "ACQUIRED" && e.sub === "\u2212\u20b9300");
+  await free(guest);
   const afterRecord = await centreState(guest);
   note("a turn change while an announcement is waiting still delivers it",
     recordOpened === true &&
@@ -5050,6 +5143,7 @@ try {
   })()`);
   await sleep(2500);
   await settleBoard(guest);
+  await free(guest);
   const chestGone = await centreState(guest);
   note("and it goes when the visit is over, as the property card does",
     chestGone.cardHidden === true && chestGone.overlap === false &&
@@ -5071,12 +5165,31 @@ try {
   })()`);
   await sleep(300);
 
-  const skipWatch = host.json("return await window.__watchAnnounce(6000, 700);");
+  /* A tap skips the announcement and gives the middle back at once.
+
+     The Redemption is paid when the turn ends, not mid-walk, so the visit has
+     to finish before it appears. Set seat 0 up on Start-plus-26 (Kronos), roll
+     four onto Lagrange Point L2 - which seat 0 now owns - answer the visit, and
+     let the turn end: that pays the Redemption. The watcher taps it the moment
+     it shows. */
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await window.__econ.quiet();
+    await b.play({ type: "debug", money: 2000 });
+    await b.play({ type: "debug", owner: { id: "lagrange-l2", seat: 0, level: 0 } });
+    await b.play({ type: "debug", active: 0 });
+    await b.play({ type: "debug", position: 26 });
+    return true;
+  })()`);
+  await sleep(300);
+
+  const skipWatch = host.json(`return await window.__watchAnnounce(12000, "first", "REDEMPTION");`);
   await host.eval(`(() => {
     const b = document.querySelector(".board");
     (async () => {
       await window.__econ.quiet();
       await b.play({ type: "roll", rng: (4 - 0.5) / 6 });
+      await window.__finishVisit();
     })();
     return true;
   })()`);
@@ -5099,16 +5212,21 @@ try {
 
   await host.eval("window.__econ.ensure(0)");
   await host.eval(`(async () => {
-    await document.querySelector(".board").play({ type: "debug", position: 26 });
+    const b = document.querySelector(".board");
+    await window.__econ.quiet();
+    await b.play({ type: "debug", position: 26 });
     return true;
   })()`);
   await sleep(300);
-  const redWatch = host.json("return await window.__watchAnnounce(6000);");
+  const redWatch = host.json("return await window.__watchAnnounce(8000);");
   await host.eval(`(() => {
     const b = document.querySelector(".board");
     (async () => {
       await window.__econ.quiet();
       await b.play({ type: "roll", rng: (4 - 0.5) / 6 });
+      // The Redemption is paid when the turn ends, so finish the visit and let
+      // the turn end while the watcher is listening.
+      await window.__finishVisit();
     })();
     return true;
   })()`);
@@ -5474,7 +5592,7 @@ try {
   await host.goto(URL_);
   // The board is built after the page is ready, so the test waits for it.
   for (let i = 0; i < 80; i++) {
-    const up = await host.eval(`return Boolean(document.querySelector(".board"));`);
+    const up = await host.eval(`Boolean(document.querySelector(".board"))`);
     if (up) break;
     await sleep(100);
   }
