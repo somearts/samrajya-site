@@ -363,6 +363,46 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
 }
 
 /**
+ * A chest that is being LOOKED AT rather than visited.
+ *
+ * This is the pop-up a player gets for pressing the Nexus or Ragnarok tile:
+ * the god's picture, the mythology, the two options - all there, all disabled,
+ * because nobody is at the chest. It is the same drawing as the shared stage,
+ * so the two can never drift apart, and it is drawn the same way: from a
+ * record of what the screen is, not from an event that may never arrive.
+ */
+export function drawChestPeek(board, kind, { onClose = null } = {}) {
+  const holder = board.querySelector(".board__card");
+  if (!holder) return null;
+
+  resetHolder(holder);
+  holder.dataset.cardKind = "chest";
+  holder.dataset.property = kind === "nexus" ? "nexus" : "ragnarok";
+  board.dataset.property = holder.dataset.property;
+
+  const card = kind === "nexus"
+    ? nexusCard({ drawable: false, phase: "peek", caption: null })
+    : ragnarokCard({ drawable: false, phase: "peek", caption: null });
+
+  /* A close button, so the pop-up can be dismissed. */
+  card.prepend(el("button", {
+    type: "button",
+    class: "property-card__close",
+    "aria-label": "Close",
+    title: "Close",
+    "data-action": "close",
+    text: "\u00d7",
+    onclick: () => {
+      if (typeof onClose === "function") onClose();
+    },
+  }));
+
+  holder.replaceChildren(card);
+  holder.hidden = false;
+  return card;
+}
+
+/**
  * The Nexus's shuffle and reveal, played from the state's own clock.
  *
  * The stage is a pure function of `chest`, so this runs whenever the state

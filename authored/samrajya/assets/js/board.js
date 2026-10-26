@@ -46,8 +46,7 @@ import { DICE_DELAY_MS, DICE_HOLD_MS, DICE_ROLL_MS, pause } from "./timing.js";
 // The layer draws the coins; the rules they obey - including the name a seat
 // goes by - are in coins.js, which imports nothing and is tested on its own.
 import { coins } from "./coin-layer.js";
-import { renderWeapons, showChest } from "./chest-card.js";
-import { showNexus } from "./nexus-card.js";
+import { renderWeapons } from "./chest-card.js";
 import { squareCard } from "./square-card.js";
 import { RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
 import { NEXUS } from "./shared/nexus-cards.js";
@@ -76,6 +75,7 @@ import {
 import {
   chestDoneButton,
   chestWaiting,
+  drawChestPeek,
   drawChestStage,
   playNexusStage,
   playRagnarokStage,
@@ -1271,9 +1271,25 @@ export function board({
    * under the player's finger.
    */
   function openRead(id) {
-    if (game.phase !== PHASE.AWAITING_ROLL) return;
     if (busy) return;
-    if (isDecision()) return;
+
+    const cell = CELLS.find((entry) => entry.id === id);
+    if (!cell) return;
+
+    /* THE CHEST TILES ANSWER AT ANY TIME.
+
+       Pressing the Nexus or Ragnarok tile opens its pop-up whatever the game
+       is doing - the god's picture, the mythology, the two options, disabled.
+       The tile is a place a player can look at, and a place that only answers
+       sometimes is a place that looks broken.
+
+       Everything else waits for the board to be at rest, because a card in
+       the middle during a turn would cover the thing being decided. */
+    const isChestTile = cell.id === NEXUS.id || cell.id === RAGNAROK.id;
+    if (!isChestTile) {
+      if (game.phase !== PHASE.AWAITING_ROLL) return;
+      if (isDecision()) return;
+    }
 
     const wantedKey = `${game.turn}:${id}:read`;
     // Already reading the requested tile: swallow the tap so the card stays
@@ -1284,23 +1300,33 @@ export function board({
     // new one in the same call so the middle is never empty between them.
     if (reading && cardKey !== wantedKey) closeRead();
 
-    const cell = CELLS.find((entry) => entry.id === id);
-    if (!cell) return;
-
     reading = true;
     cardMode = "read";
     cardKey = wantedKey;
 
-    if (cell.id === NEXUS.id) {
-      showNexus(frame, { drawable: false, onClose: () => closeRead() });
+    /* THE CHESTS ARE LOOKED AT, NOT VISITED.
+
+       Pressing the Nexus or Ragnarok tile opens the same screen the visit
+       opens - the god's picture, the mythology, the two options - with the
+       options disabled, because nobody is at the chest.
+
+       It is drawn by the same code that draws the shared stage, so the pop-up
+       and the visit can never drift apart. The old version had its own
+       drawing, built when the press happened and living until it was closed:
+       that is a screen that waits for its own event, and it is why a press
+       could seem to do nothing until the page was reloaded.
+
+       A chest that is OPEN is not looked at: the visit is on the screen and
+       it is the same screen, so there is nothing to open. */
+    if (cell.id === NEXUS.id || cell.id === RAGNAROK.id) {
+      if (game.chest) return;
+      drawChestPeek(frame, cell.id === NEXUS.id ? "nexus" : "ragnarok", {
+        onClose: () => closeRead(),
+      });
       paintPhase();
       return;
     }
-    if (cell.id === RAGNAROK.id) {
-      showChest(frame, { drawable: false, onClose: () => closeRead() });
-      paintPhase();
-      return;
-    }
+
     if (cell.type === "property") {
       // The card's turn can be interrupted, and then the promise it returns is
       // refused rather than settled - so the middle is put right either way.
@@ -1359,9 +1385,16 @@ export function board({
   for (const cell of cells) {
     if (!cell.matches?.("button[data-id]")) continue;
     cell.addEventListener("click", () => {
-      if (busy || isDecision()) return;
-      if (game.phase !== PHASE.AWAITING_ROLL) return;
+      if (busy) return;
       const id = cell.dataset.id;
+      /* The chest tiles answer at any time - the pop-up is read-only and
+         covers nothing that is being decided. Everything else waits for the
+         board to be at rest. */
+      const isChestTile = id === NEXUS.id || id === RAGNAROK.id;
+      if (!isChestTile) {
+        if (isDecision()) return;
+        if (game.phase !== PHASE.AWAITING_ROLL) return;
+      }
       // The same tile is already open: ignore the click entirely. The card
       // must not close and reopen under the player's finger.
       if (reading && cardKey === `${game.turn}:${id}:read`) return;

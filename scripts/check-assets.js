@@ -1092,7 +1092,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
      which is how the Nexus and Ragnarok cards vanished and the board looked
      frozen. */
   const boardFxJs = await readFile(join(OUT, "assets", "js", "board-fx.js"), "utf8");
-  const nexusCardJs = await readFile(join(OUT, "assets", "js", "nexus-card.js"), "utf8");
+  const chestStageJs = await readFile(join(OUT, "assets", "js", "chest-stage.js"), "utf8");
   const chestCardJs = await readFile(join(OUT, "assets", "js", "chest-card.js"), "utf8");
   const propertyCardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "utf8");
   const gameJs = await readFile(join(SHARED, "game.js"), "utf8");
@@ -1109,7 +1109,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
   );
   check(
     "every card that opens puts the holder right before it draws itself",
-    /resetHolder\(holder\)/.test(nexusCardJs) &&
+    /resetHolder\(holder\)/.test(chestStageJs) &&
       /resetHolder\(holder\)/.test(chestCardJs) &&
       /resetHolder\(holder\)/.test(propertyCardJs),
     "a card must never be drawn inside a box the last one left transparent",
@@ -1130,11 +1130,10 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
       "no die, and the only way out was to reload the page",
   );
   check(
-    "a refused offering keeps the card up, with its buttons working",
-    /if \(!event\) \{/.test(nexusCardJs) &&
-      /prayBtn\.disabled = false;/.test(nexusCardJs),
-    "a refusal is not an answer: the card closed anyway and the player was " +
-      "left with a board that could not be played",
+    "a refused offering leaves the chest where it was",
+    /if \(state\.chest\.phase !== "open"\) \{/.test(gameJs),
+    "a refusal is not an answer: the card used to close anyway and the player " +
+      "was left with a board that could not be played",
   );
   check(
     "the board asks the server to move on when it is left with nothing to press",
@@ -1145,10 +1144,17 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
   check(
     "the Nexus's own words are written once, in the shared module",
     /export const NEXUS_KEEPER/.test(nexusCardsJs) &&
-      /NEXUS_KEEPER\.title/.test(nexusCardJs) &&
-      !/"He Who Must Not Be Named"/.test(nexusCardJs.replace(/\/\*[\s\S]*?\*\//g, "")),
+      /NEXUS_KEEPER\.title/.test(chestStageJs) &&
+      !/"He Who Must Not Be Named"/.test(chestStageJs.replace(/\/\*[\s\S]*?\*\//g, "")),
     "the keeper's title and mythology used to be written into the module that " +
       "draws the card, so there were two places to look and only one was edited",
+  );
+  check(
+    "the Nexus is looked at through the same drawing as the visit",
+    /export function drawChestPeek/.test(chestStageJs) &&
+      /drawChestPeek\(frame/.test(boardJs),
+    "a pop-up with a drawing of its own is a screen that waits for its own " +
+      "event, and a press on the tile could seem to do nothing at all",
   );
   check(
     "the notification's own words are not cut off",
@@ -1170,7 +1176,6 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
      Ragnarok and Nexus are shared screens. The screen is drawn from the
      state's chest, so both players see the same thing and a device that
      missed a message still shows it. */
-  const chestStageJs = await readFile(join(OUT, "assets", "js", "chest-stage.js"), "utf8");
 
   check(
     "the chest is a fact in the state, not an event",
