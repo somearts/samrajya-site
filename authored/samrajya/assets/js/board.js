@@ -73,6 +73,7 @@ import {
   shake,
 } from "./board-fx.js";
 import {
+  chestCollectButton,
   chestDoneButton,
   chestWaiting,
   drawChestPeek,
@@ -1099,8 +1100,16 @@ export function board({
             void run({ type: "drawNexus" });
           };
         } else {
-          handlers['[data-action="draw"]'] = () => {
-            void run({ type: "drawWeapon" });
+          /* Ragnarok offers three faces, and the player touches one of them.
+             The face that was touched is the one that turns over, on both
+             phones. */
+          for (const slot of [0, 1, 2]) {
+            handlers[`.chest-card__slot[data-slot="${slot}"]`] = () => {
+              void run({ type: "drawWeapon", slot });
+            };
+          }
+          handlers['[data-action="collect"]'] = () => {
+            void run({ type: "collectWeapon" });
           };
         }
       }
@@ -1109,7 +1118,11 @@ export function board({
       if (!card) return;
 
       /* The closing. The acting player presses Done and the chest goes; the
-         other player watches it go. */
+         other player watches it go.
+
+         The chest is finished when it has been ANSWERED - the weapon
+         collected, the card turned over, the offering made - so the Done pill
+         appears in every one of those stages, and only in those. */
       if (chest.phase === "revealed" || chest.phase === "done" || chest.phase === "praying") {
         if (mine) {
           if (!card.querySelector('[data-action="done"]')) {
@@ -1120,6 +1133,23 @@ export function board({
         } else if (!card.querySelector('[data-role="waiting"]')) {
           card.append(chestWaiting(name));
         }
+      }
+
+      /* RAGNAROK'S SECOND PRESS.
+
+         The weapon is drawn, and then it is collected: two presses, and the
+         second one is what makes the weapon the player's. The Collect pill
+         appears as soon as the weapon is on the screen. */
+      if (
+        chest.kind === "ragnarok" &&
+        (chest.phase === "revealed" || chest.phase === "done") &&
+        chest.result?.weapon &&
+        mine &&
+        !card.querySelector('[data-action="collect"]')
+      ) {
+        card.querySelector(".chest-card__collect-slot")?.append(chestCollectButton(() => {
+          void run({ type: "collectWeapon" });
+        }));
       }
 
       paintPhase();
@@ -1136,8 +1166,7 @@ export function board({
       : playRagnarokStage(frame, chest);
     Promise.resolve(playing)
       .then(() => {
-        /* The Nexus card's money moves when it is turned over, so the reveal
-           asks the server to do it.
+        /* The card is turned over, and the money moves with it.
 
            The board's lock is released first: a request sent into a busy
            board is dropped, and a dropped request is a card that is never
@@ -1149,6 +1178,13 @@ export function board({
           !chest.result?.revealed
         ) {
           revealNexusWhenFree();
+        }
+        if (
+          chest.kind === "ragnarok" &&
+          chest.phase === "drawing" &&
+          chest.choice === "draw"
+        ) {
+          revealWeaponWhenFree();
         }
       })
       .catch(() => {});
@@ -1164,17 +1200,37 @@ export function board({
     if (revealing) return;
     revealing = true;
     try {
-      for (let i = 0; i < 200; i += 1) {
-        if (!busy) break;
-        await wait(50);
-      }
-      if (busy) return;
+      if (!await waitForFree()) return;
       await run({ type: "revealNexus" });
     } catch {
       /* The server refused, which means the chest has moved on. */
     } finally {
       revealing = false;
     }
+  }
+
+  /* The same, for the weapon at Ragnarok. */
+  let revealingWeapon = false;
+  async function revealWeaponWhenFree() {
+    if (revealingWeapon) return;
+    revealingWeapon = true;
+    try {
+      if (!await waitForFree()) return;
+      await run({ type: "revealWeapon" });
+    } catch {
+      /* The server refused, which means the chest has moved on. */
+    } finally {
+      revealingWeapon = false;
+    }
+  }
+
+  /** Wait until the board is free, or give up. */
+  async function waitForFree() {
+    for (let i = 0; i < 200; i += 1) {
+      if (!busy) return true;
+      await wait(50);
+    }
+    return false;
   }
 
   /** Open the card the decision belongs to. */

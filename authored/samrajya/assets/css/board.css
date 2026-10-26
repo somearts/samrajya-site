@@ -1856,6 +1856,35 @@
   color: color-mix(in srgb, var(--ink) 48%, transparent);
 }
 
+/* The Collect pill. The weapon has been drawn; collecting it is what makes
+   it the player's. */
+.chest-card__collect-slot:empty {
+  display: none;
+}
+
+.chest-card__collect {
+  display: block;
+  width: 100%;
+  margin: calc(var(--cell) * 0.08) 0 0;
+  padding: 0.58em 1em;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: 999px;
+  background: var(--cell-ground);
+  font: inherit;
+  font-size: max(12px, calc(var(--cell) * 0.16));
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 160ms ease-out, border-color 160ms ease-out;
+}
+
+.chest-card__collect:hover {
+  background: color-mix(in srgb, var(--ink) 5%, var(--cell-ground));
+  border-color: color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
 /* The Done pill. It is the acting player's, and it is the only thing that
    closes the chest. */
 .chest-card__done {

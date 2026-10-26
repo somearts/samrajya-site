@@ -122,19 +122,26 @@ function nexusCard({ drawable, phase, caption }) {
 
 /** The chest of weapons: three slots and a draw. */
 function ragnarokCard({ drawable, phase, caption }) {
-  const slots = el("div", { class: "chest-card__slots" }, [
-    el("button", {
+  /* THE THREE FACES.
+
+   Ragnarok offers three card faces and the player touches one of them to
+   draw. They are the same three in every state - the same width, the same
+   shape, the same label area - so that the screen does not change size when
+   the card is turned over. */
+  const slots = el("div", { class: "chest-card__slots" },
+    [0, 1, 2].map((n) => el("button", {
       type: "button",
       class: "chest-card__slot",
       "data-action": "draw",
+      "data-slot": String(n),
       disabled: !drawable || phase !== "open",
       "aria-label": "Draw a weapon",
     }, [
       el("span", { class: "chest-card__slot-back", "aria-hidden": "true" }),
       el("span", { class: "chest-card__slot-name" }, [el("span", { text: "?" })]),
       el("span", { class: "chest-card__pill" }),
-    ]),
-  ]);
+    ])),
+  );
 
   const card = el("article", {
     class: "property-card chest-card",
@@ -149,6 +156,9 @@ function ragnarokCard({ drawable, phase, caption }) {
     ]),
     slots,
     el("div", { class: "chest-card__result", hidden: true }),
+    /* The Collect pill. The weapon is drawn, and the player takes it: that is
+       a second press, and it is the press that ends the visit. */
+    el("div", { class: "chest-card__collect-slot" }),
   ]);
 
   if (caption) card.append(caption);
@@ -537,6 +547,10 @@ export async function playNexusStage(board, chest, { chip = null, elapsed = 0 } 
 
 /**
  * The Ragnarok stage: the draw, and the weapon that was drawn.
+ *
+ * The weapon turns over in the face the player touched, and the other two
+ * go away. Both devices show the same face, because the weapon is in the
+ * state and not in a browser.
  */
 export async function playRagnarokStage(board, chest) {
   const holder = board.querySelector(".board__card");
@@ -546,17 +560,24 @@ export async function playRagnarokStage(board, chest) {
   const result = card.querySelector(".chest-card__result");
   const bad = Boolean(chest.result?.badLuck);
   const weapon = chest.result?.weapon ? weaponById(chest.result.weapon) : null;
+  const slots = [...card.querySelectorAll(".chest-card__slot")];
 
   if (chest.phase === "drawing" || chest.phase === "revealed") {
-    const slot = card.querySelector(".chest-card__slot");
-    if (slot) {
+    /* The face that was touched is the one that turns over. The chest says
+       which slot was chosen; without it, the middle one is the face. */
+    const chosenIndex = Number(chest.result?.slot ?? 1);
+    const chosen = slots[chosenIndex] || slots[1] || slots[0];
+    for (const [index, slot] of slots.entries()) {
       slot.dataset.phase = chest.phase;
-      if (!bad && weapon) {
+      if (!bad && weapon && slot === chosen) {
         slot.dataset.weapon = chest.result.weapon;
+        slot.classList.add("is-drawn");
         const name = slot.querySelector(".chest-card__slot-name");
         if (name) name.replaceChildren(el("span", { text: weapon.name }));
         const pill = slot.querySelector(".chest-card__pill");
         if (pill) pill.style.setProperty("--weapon", weapon.color || "var(--ink)");
+      } else if (chest.phase === "revealed") {
+        slot.hidden = true;
       }
     }
     if (result) {
@@ -574,6 +595,22 @@ export async function playRagnarokStage(board, chest) {
 }
 
 /* -------------------------------------------------------------- the closing */
+
+/**
+ * The Collect pill.
+ *
+ * The weapon has been drawn; collecting it is what makes it the player's. It
+ * is a press of its own, and after it the visit is over.
+ */
+export function chestCollectButton(onCollect) {
+  return el("button", {
+    type: "button",
+    class: "chest-card__collect",
+    "data-action": "collect",
+    text: "Collect",
+    onclick: onCollect,
+  });
+}
 
 /**
  * The Done pill.

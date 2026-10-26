@@ -1349,6 +1349,14 @@ const cardJs = await readShipped(join("assets", "js", "property-card.js"));
     "the turn ends when the actor taps Done, and the chest goes with it",
   );
   check(
+    "Ragnarok offers its three faces, and the weapon is turned over",
+    /\[0, 1, 2\]\.map/.test(chestStageJs) &&
+      /case "revealWeapon": \{/.test(gameJs) &&
+      /chestCollectButton/.test(chestStageJs),
+    "a chest with one face is a chest with one choice, and a weapon that is " +
+      "never turned over is a weapon nobody can take",
+  );
+  check(
     "the Nexus card's money moves when it is turned over, and once",
     /case "revealNexus": \{/.test(gameJs) &&
       /next\.chest\.result = \{[\s\S]{0,200}?revealed: true/.test(gameJs),

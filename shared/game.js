@@ -683,11 +683,53 @@ export function applyAction(state, action, rng = Math.random) {
       next.chest.phase = "drawing";
       next.chest.startedAt = now();
       next.chest.choice = "draw";
-      next.chest.result = outcome === BAD_LUCK ? { badLuck: true } : { weapon: outcome };
+      next.chest.result = {
+        badLuck: outcome === BAD_LUCK,
+        weapon: outcome === BAD_LUCK ? null : outcome,
+        /* The face the player touched. Both devices turn over the same one. */
+        slot: Number.isInteger(action.slot) ? Math.max(0, Math.min(2, action.slot)) : 1,
+      };
       ok("weaponDrawn", {
         seat: active,
         weapon: outcome === BAD_LUCK ? null : outcome,
         badLuck: outcome === BAD_LUCK,
+        slot: next.chest.result.slot,
+        startedAt: next.chest.startedAt,
+      });
+      return { state: next, events };
+    }
+
+    /* THE WEAPON IS TURNED OVER.
+
+       The draw is answered the moment the button is pressed, and the weapon
+       is in the chest from then. This is the moment the face turns over, and
+       it is a separate action so that both devices turn it over at the same
+       moment and the weapon is collectable only once it has been seen. */
+    case "revealWeapon": {
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "chest" ||
+        state.landing?.id !== RAGNAROK.id
+      ) {
+        return refused(state, action, "There is no chest to draw from.");
+      }
+      if (!state.chest || state.chest.choice !== "draw") {
+        return refused(state, action, "There is nothing to turn over.");
+      }
+      if (state.chest.phase === "revealed") {
+        return refused(state, action, "That weapon has already been turned over.");
+      }
+      if (!state.visit?.drawn) {
+        return refused(state, action, "Draw from the chest first.");
+      }
+
+      next.chest.phase = "revealed";
+      next.chest.startedAt = now();
+      ok("weaponRevealed", {
+        seat: active,
+        weapon: state.visit.drawn === BAD_LUCK ? null : state.visit.drawn,
+        badLuck: state.visit.drawn === BAD_LUCK,
         startedAt: next.chest.startedAt,
       });
       return { state: next, events };
@@ -714,7 +756,10 @@ export function applyAction(state, action, rng = Math.random) {
       piece.weapons.push(weapon);
       next.visit.collected = true;
       next.phase = PHASE.RESOLVING;
-      if (next.chest) next.chest.phase = "revealed";
+      /* The chest is answered: the weapon is the player's. The face turned over
+         a moment ago - that was `revealWeapon` - and this is the press that
+         takes it. */
+      if (next.chest) next.chest.phase = "done";
       recordEntry(next.ledger, {
         turn: state.turn,
         seat: active,
