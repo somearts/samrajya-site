@@ -150,6 +150,11 @@ export function announcementLayer(centre, { onChange = null } = {}) {
     node.dataset.mode = mode;
     node.dataset.label = spec.label || "";
     node.dataset.big = spec.big || "";
+    /* The line under the figure is a third piece of copy, and it is written
+       on the layer beside the other two so that it can be read from outside
+       the page - by a check, and by anything that wants to know what the
+       middle is saying without reading the DOM's text. */
+    node.dataset.sub = spec.sub || "";
     node.style.setProperty("--motif", spec.color || "var(--ink)");
     if (spec.seat !== undefined && spec.seat !== null) {
       node.dataset.turn = String(spec.seat);
@@ -173,6 +178,7 @@ export function announcementLayer(centre, { onChange = null } = {}) {
     delete node.dataset.mode;
     delete node.dataset.label;
     delete node.dataset.big;
+    delete node.dataset.sub;
     delete node.dataset.turn;
     changed();
   }

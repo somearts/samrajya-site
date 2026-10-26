@@ -1158,6 +1158,13 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
       "tops and the bottoms of a big figure were cut off",
   );
   check(
+    "all three lines of the notification are written on the layer",
+    /node\.dataset\.sub = spec\.sub \|\| "";/.test(announceJs) &&
+      /delete node\.dataset\.sub;/.test(announceJs),
+    "the line under the figure is a third piece of copy, and it has to be " +
+      "readable from outside the page as well as on it",
+  );
+  check(
     "and Escape closes the record wherever the focus is",
     /document\.addEventListener\("keydown", onEscape, true\)/.test(boardJs) &&
       /document\.removeEventListener\("keydown", onEscape, true\)/.test(boardJs),
