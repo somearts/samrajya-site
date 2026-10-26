@@ -179,7 +179,8 @@ async function main() {
   }
 
   const page = await get(`${GAME}/`);
-  const html = authorContent(await page.text());
+  const rawHtml = await page.text();
+  const html = authorContent(rawHtml);
   check("/samrajya/ is the game", page.ok, `status ${page.status}`);
   check("it is Samrajya", html.includes("Samrajya Kalchakra"));
   check("the tagline is right there", html.includes("Empires rise"));
@@ -196,8 +197,10 @@ async function main() {
   /* ----------------------------------------------------------- the assets */
   section("Every asset");
 
+  /* The references are read from the page AS IT WAS SERVED, because the names
+     in it are the hashed ones - the ones the browser will ask for. */
   const refs = new Set();
-  for (const m of html.matchAll(/(?:src|href)="([^"#]+)"/g)) {
+  for (const m of rawHtml.matchAll(/(?:src|href)="([^"#]+)"/g)) {
     if (!/^(https?:|data:|\/)/.test(m[1])) refs.add(m[1]);
   }
   const base = `${GAME}/`;
@@ -206,6 +209,27 @@ async function main() {
     const response = await get(target);
     check(`${ref}`, response.ok, `status ${response.status}`);
   }
+
+  /* THE HASHED NAMES.
+
+     Every asset the build publishes carries a hash of its contents, so that a
+     new build is a new URL and a browser can never serve a stale file. The
+     manifest says what each file is called now, and the shared rules modules
+     keep their own names - they are copied from shared/ and compared with it
+     byte for byte, so they are not hashed. */
+  let manifest = {};
+  try {
+    manifest = await (await get(`${GAME}/manifest.json`)).json();
+  } catch {
+    manifest = {};
+  }
+  const named = (stem) => {
+    const entries = Object.entries(manifest.files || {});
+    const hit = entries.find(([from]) => from === stem || from.endsWith(stem));
+    if (hit) return hit[1];
+    /* A shared module keeps its own name. */
+    return stem;
+  };
 
   for (const asset of [
     "assets/js/app.js",
@@ -220,7 +244,7 @@ async function main() {
     "assets/fonts/jost-300.woff2",
     "assets/img/mark.svg",
   ]) {
-    const response = await get(`${GAME}/${asset}`);
+    const response = await get(`${GAME}/${named(asset)}`);
     check(`${asset} is served`, response.ok, `status ${response.status}`);
   }
 
@@ -525,6 +549,12 @@ async function theWelcomeScreen() {
   }
 
   const sha = (s) => createHash("sha256").update(s).digest("hex").toUpperCase();
+  /* The AUTHORED page is compared with the live one.
+
+     The build puts a hash in every asset's name and writes the build's number
+     into the page, and `authorContent` puts both back the way the author
+     wrote them - so a change to the welcome screen still shows up, and the
+     build's own marks do not. */
   const source = authorContent(await readFile(join(PROJECT, "authored", "samrajya", "index.html"), "utf8"));
   const live = authorContent(await (await get(`${BASE}/samrajya/`)).text());
 

@@ -44,6 +44,12 @@ const LIVE = "https://golake.app/samrajya/";
 const mode = process.argv[2] || "check";
 const sha = (s) => createHash("sha256").update(s).digest("hex").toUpperCase();
 
+/* The AUTHORED page is what is compared.
+
+   The build puts a hash in every asset's name and writes the build's number
+   into the page, and `authorContent` puts both back the way the author wrote
+   them - so the comparison is still the author's markup, and a change to the
+   welcome screen still shows up. */
 const source = authorContent(await readFile(SOURCE, "utf8"));
 
 let live;
