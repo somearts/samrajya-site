@@ -1703,6 +1703,35 @@
   color: var(--ink-soft);
 }
 
+/* THE DECK'S PLACE.
+
+   The deck goes where the options were: it takes the room the mythology had,
+   and the mythology gives it up, because a card that shows the keeper's words
+   AND a deck AND the options is a card saying three things at once. The
+   options are gone by then anyway - the choice has been made.
+
+   The slot is always in the card, so the card does not jump when the deck
+   arrives; it is simply empty until the deck is put in it. */
+.nexus-card__deck-slot {
+  flex: 1 1 auto;
+  min-height: 0;
+  /* A BLOCK that fills the place it is given. A grid that places its children
+     in the middle sizes them by their content, and the deck inside is out of
+     the flow - so a centred slot collapses to nothing. */
+  display: block;
+  width: 100%;
+}
+
+.nexus-card__deck-slot[hidden] {
+  display: none;
+}
+
+/* While the deck is in the card, the mythology stands down. */
+.nexus-card[data-phase="shuffling"] .nexus-card__mythology,
+.nexus-card[data-phase="revealed"] .nexus-card__mythology {
+  display: none;
+}
+
 .nexus-card__mythology::-webkit-scrollbar {
   display: none;
 }
@@ -1917,10 +1946,14 @@
    thirty. */
 .nexus-card__deck-wrap {
   position: relative;
-  flex: 0 1 auto;
-  min-height: calc(var(--cell) * 3.4);
-  display: grid;
-  place-items: center;
+  /* The wrap is a BLOCK, and it fills the place it is given. A grid that
+     places its children in the middle sizes them by their content, and the
+     deck inside is out of the flow - so a centred wrap collapses to nothing
+     and a deck of nothing is not a deck. */
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: calc(var(--cell) * 3.2);
   perspective: 800px;
 }
 
@@ -1930,6 +1963,9 @@
   top: 50%;
   width: calc(var(--cell) * 1.5);
   height: calc(var(--cell) * 2.1);
+  /* The stack is CENTRED on the place it is put, and it keeps its own size -
+     an absolutely placed box with no size of its own collapses to nothing, and
+     a deck of nothing is not a deck. */
   transform: translate(-50%, -50%);
 }
 
@@ -1950,19 +1986,53 @@
 }
 
 /* The layers of the stack. Each one is a little further down the pile, so the
-   stack has depth without thirty of anything. */
+   stack has depth without thirty of anything. The steps are small but they
+   have to be SEEN: a stack whose layers are a pixel apart is one card, and a
+   deck of one card is not a deck. */
 .nexus-card__deck-back:nth-child(1) { transform: translate(0, 0); }
-.nexus-card__deck-back:nth-child(2) { transform: translate(0, 1px); }
-.nexus-card__deck-back:nth-child(3) { transform: translate(0, 2px); }
-.nexus-card__deck-back:nth-child(4) { transform: translate(0, 3px); }
-.nexus-card__deck-back:nth-child(5) { transform: translate(0, 4px); }
-.nexus-card__deck-back:nth-child(6) { transform: translate(0, 5px); }
-.nexus-card__deck-back:nth-child(7) { transform: translate(0, 6px); }
-.nexus-card__deck-back:nth-child(8) { transform: translate(0, 7px); }
-.nexus-card__deck-back:nth-child(9) { transform: translate(0, 8px); }
-.nexus-card__deck-back:nth-child(10) { transform: translate(0, 9px); }
-.nexus-card__deck-back:nth-child(11) { transform: translate(0, 10px); }
-.nexus-card__deck-back:nth-child(12) { transform: translate(0, 11px); }
+.nexus-card__deck-back:nth-child(2) { transform: translate(0, 2px); }
+.nexus-card__deck-back:nth-child(3) { transform: translate(0, 4px); }
+.nexus-card__deck-back:nth-child(4) { transform: translate(0, 6px); }
+.nexus-card__deck-back:nth-child(5) { transform: translate(0, 8px); }
+.nexus-card__deck-back:nth-child(6) { transform: translate(0, 10px); }
+.nexus-card__deck-back:nth-child(7) { transform: translate(0, 12px); }
+.nexus-card__deck-back:nth-child(8) { transform: translate(0, 14px); }
+.nexus-card__deck-back:nth-child(9) { transform: translate(0, 16px); }
+.nexus-card__deck-back:nth-child(10) { transform: translate(0, 18px); }
+.nexus-card__deck-back:nth-child(11) { transform: translate(0, 20px); }
+.nexus-card__deck-back:nth-child(12) { transform: translate(0, 22px); }
+
+/* The stack is behind the top card, and it is behind the top card by a
+   hair's breadth - the top card is the one being dealt.
+
+   The top card sits a little ABOVE the pile, because a card that is exactly
+   under the top of the stack is not on top of it: the stack's own first layer
+   covers it, and the player sees one flat card where there should be a deck
+   with a card on it. */
+.nexus-card__deck {
+  z-index: 1;
+}
+
+.nexus-card__deck-top {
+  z-index: 2;
+  top: calc(50% - 4px);
+}
+
+/* ONCE THE CARD IS TURNED OVER, THE DECK AND THE BACK ARE GONE.
+
+   The top card has left the deck, so the rest of it goes with it: a stack of
+   card backs behind a face that is being read is a picture of two things at
+   once, and the face is the thing being read.
+
+   The BACK goes too. A back and a face are two faces of one card, and which
+   of them is painted depends on the order the browser sorts them in - which
+   is not an order anybody should have to reason about to see a card. When
+   the card has been turned over, its back is simply not there. */
+.nexus-card[data-phase="revealed"] .nexus-card__deck,
+.nexus-card[data-phase="revealed"] .nexus-card__deck-halves,
+.nexus-card[data-phase="revealed"] .nexus-card__deck-top-back {
+  display: none;
+}
 
 /* The two halves the deck splits into. */
 .nexus-card__deck-halves {
@@ -1974,7 +2044,6 @@
   gap: 2px;
   pointer-events: none;
 }
-
 .nexus-card__deck-half {
   position: relative;
   width: calc(var(--cell) * 0.7);
@@ -1994,7 +2063,10 @@
   top: 50%;
   width: calc(var(--cell) * 1.5);
   height: calc(var(--cell) * 2.1);
-  transform: translate(-50%, 0);
+  /* The card is CENTRED on the deck, not hung below it: a card that hangs off
+     the bottom of the deck is a card half outside the card, and the card's
+     own overflow hides it. */
+  transform: translate(-50%, -50%);
   transform-style: preserve-3d;
   will-change: transform;
 }

@@ -1202,6 +1202,27 @@ const cardJs = await readShipped(join("assets", "js", "property-card.js"));
       "draws the card, so there were two places to look and only one was edited",
   );
   check(
+    "the options go when the draw begins, and the deck takes their place",
+    /"data-shape": answered \? "deck" : "options"/.test(chestStageJs) &&
+      /\.nexus-card\[data-phase="shuffling"\] \.nexus-card__mythology/.test(boardCss),
+    "a card that shows the options AND the deck is a card saying two things at " +
+      "once, and the player pressed a button that is still there",
+  );
+  check(
+    "the card that is turned over shows its face, and not its back",
+    /\.nexus-card\[data-phase="revealed"\] \.nexus-card__deck-top-back/.test(boardCss) &&
+      /\.nexus-card\[data-phase="revealed"\] \.nexus-card__deck,/.test(boardCss),
+    "a card that has been turned over and still shows its back is a card that " +
+      "was never turned over",
+  );
+  check(
+    "the deck and the card that comes out of it are the same size, and the " +
+      "card is on top",
+    /\.nexus-card__deck-top \{\s*z-index:\s*2;/.test(boardCss) &&
+      /\.nexus-card__deck \{\s*z-index:\s*1;/.test(boardCss),
+    "a card under the top of the stack is not on top of the stack",
+  );
+  check(
     "the Nexus is looked at through the same drawing as the visit",
     /export function drawChestPeek/.test(chestStageJs) &&
       /drawChestPeek\(frame/.test(boardJs),

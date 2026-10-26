@@ -65,37 +65,51 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms
 /* ------------------------------------------------------------------ the card */
 
 /** The god's picture, the name, and the line that says what the place is. */
+/* THE CARD IS BUILT FOR ITS STAGE.
+
+   The two options are what the card is while nobody has chosen. Once the
+   choice is made, the options are GONE and the deck is what the card is: a
+   player who has pressed "Take My Chances" must not still be offered a
+   choice, and a card that shows the buttons and the deck at once is a card
+   that says two things at the same time.
+
+   So the card is built for its stage, and the stage is the server's. */
 function nexusCard({ drawable, phase, caption }) {
-  const actions = el("div", { class: "nexus-card__actions" }, [
-    el("button", {
-      type: "button",
-      class: "nexus-card__pray",
-      "data-action": "pray",
-      disabled: !drawable || phase !== "open",
-      "aria-disabled": String(!drawable || phase !== "open"),
-      title: drawable ? NEXUS_KEEPER.actions.pray.title : NEXUS_KEEPER.actions.pray.titleIdle,
-    }, [
-      el("span", { class: "nexus-card__action-name", text: NEXUS_KEEPER.actions.pray.name }),
-      el("span", { class: "nexus-card__action-note", text: `Tend the temples • ${rupees(NEXUS_PRAY_COST)}` }),
-    ]),
-    el("button", {
-      type: "button",
-      class: "nexus-card__draw",
-      "data-action": "draw",
-      disabled: !drawable || phase !== "open",
-      "aria-disabled": String(!drawable || phase !== "open"),
-      title: drawable ? NEXUS_KEEPER.actions.draw.title : NEXUS_KEEPER.actions.draw.titleIdle,
-    }, [
-      el("span", { class: "nexus-card__action-name", text: NEXUS_KEEPER.actions.draw.name }),
-      el("span", { class: "nexus-card__action-note", text: NEXUS_KEEPER.actions.draw.note }),
-    ]),
-  ]);
+  const answered = phase !== "open";
+
+  const actions = answered
+    ? null
+    : el("div", { class: "nexus-card__actions" }, [
+        el("button", {
+          type: "button",
+          class: "nexus-card__pray",
+          "data-action": "pray",
+          disabled: !drawable,
+          "aria-disabled": String(!drawable),
+          title: drawable ? NEXUS_KEEPER.actions.pray.title : NEXUS_KEEPER.actions.pray.titleIdle,
+        }, [
+          el("span", { class: "nexus-card__action-name", text: NEXUS_KEEPER.actions.pray.name }),
+          el("span", { class: "nexus-card__action-note", text: `Tend the temples • ${rupees(NEXUS_PRAY_COST)}` }),
+        ]),
+        el("button", {
+          type: "button",
+          class: "nexus-card__draw",
+          "data-action": "draw",
+          disabled: !drawable,
+          "aria-disabled": String(!drawable),
+          title: drawable ? NEXUS_KEEPER.actions.draw.title : NEXUS_KEEPER.actions.draw.titleIdle,
+        }, [
+          el("span", { class: "nexus-card__action-name", text: NEXUS_KEEPER.actions.draw.name }),
+          el("span", { class: "nexus-card__action-note", text: NEXUS_KEEPER.actions.draw.note }),
+        ]),
+      ]);
 
   const card = el("article", {
     class: "property-card nexus-card",
     "data-property": "nexus",
     "data-chest": "nexus",
     "data-phase": phase,
+    "data-shape": answered ? "deck" : "options",
     style: { "--accent": "var(--ink)" },
     "aria-live": "polite",
   }, [
@@ -109,10 +123,16 @@ function nexusCard({ drawable, phase, caption }) {
     ]),
     el("h3", { class: "nexus-card__title", text: NEXUS_KEEPER.title }),
     el("p", { class: "nexus-card__tagline", text: NEXUS_KEEPER.tagline }),
+    /* The mythology is what the card says about the keeper. It is the
+       longest thing on the card, and it is what gives way to the deck when
+       the draw begins. */
     el("p", { class: "nexus-card__mythology" },
       NEXUS_KEEPER.mythology.map((sentence) => el("span", { text: sentence })),
     ),
     actions,
+    /* The deck's place is reserved from the start, so the card does not jump
+       when the deck arrives. */
+    el("div", { class: "nexus-card__deck-slot", hidden: !answered }),
     el("div", { class: "nexus-card__result", hidden: true }),
   ]);
 
@@ -270,9 +290,9 @@ async function flipTop(card) {
   await settled(
     top.animate(
       [
-        { transform: "translate(-50%, 0) scale(1) rotateY(0deg)", opacity: 1 },
-        { transform: "translate(-50%, -34px) scale(1.25) rotateY(0deg)", offset: 0.4 },
-        { transform: "translate(-50%, -34px) scale(1.25) rotateY(180deg)", offset: 1 },
+        { transform: "translate(-50%, calc(-50% - 4px)) scale(1) rotateY(0deg)", opacity: 1 },
+        { transform: "translate(-50%, calc(-50% - 4px)) scale(1.25) rotateY(0deg)", offset: 0.4 },
+        { transform: "translate(-50%, calc(-50% - 4px)) scale(1.25) rotateY(180deg)", offset: 1 },
       ],
       { duration: FLIP_MS, easing: "cubic-bezier(.3,.7,.3,1)", fill: "both" },
     ).finished,
@@ -354,19 +374,24 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
 
      A card that is rebuilt every time the stage changes is a card whose
      animation is thrown away: the deck that is halfway through its shuffle
-     is wiped and started again, and the face that has just been turned over
-     is replaced by an empty one.
+     is wiped and started again, and - worst of all - the flip that turns the
+     card over is wiped with it, so the card is left showing its BACK.
 
      So the card that is already up is kept, and only its stage is written
-     into it. A different chest, or no chest at all, draws a new one. */
+     into it. The card IS rebuilt when its shape changes: the Nexus card has
+     the options while nobody has chosen and the deck afterwards, and a card
+     showing both is a card saying two things at once. */
   const existing = holder.querySelector(".nexus-card, .chest-card");
   const sameKind = existing && (
     (chest.kind === "nexus" && existing.classList.contains("nexus-card")) ||
     (chest.kind === "ragnarok" && existing.classList.contains("chest-card"))
   );
+  /* The shape of the card: does it have the options, or the deck? */
+  const shape = (phase) => (phase === "open" ? "options" : "deck");
+  const sameShape = sameKind && existing.dataset.shape === shape(chest.phase);
 
   let card = existing;
-  if (!sameKind) {
+  if (!sameShape) {
     card = chest.kind === "nexus"
       ? nexusCard({
           drawable: mine,
@@ -458,24 +483,24 @@ export async function playNexusStage(board, chest, { chip = null, elapsed = 0 } 
   const card = holder?.querySelector(".nexus-card");
   if (!card || !chest) return null;
 
+  /* THE DECK IS IN THE CARD'S OWN PLACE.
+
+     The deck goes where the options were, so the card does not grow a second
+     thing and the options are not left on the screen beside it. */
+  const slot = card.querySelector(".nexus-card__deck-slot");
+  if (slot && chest.phase !== "open" && !slot.querySelector(".nexus-card__deck-wrap")) {
+    slot.hidden = false;
+    slot.append(buildDeck());
+  }
+
   /* The deck is in the card while the shuffle is on. */
   if (chest.phase === "shuffling") {
-    if (!card.querySelector(".nexus-card__deck-wrap")) {
-      const wrap = buildDeck();
-      const result = card.querySelector(".nexus-card__result");
-      card.insertBefore(wrap, result || null);
-    }
     await shuffleDeck(card, { duration: Math.max(0, SHUFFLE_MS - elapsed) });
     if (chest.phase !== "shuffling") return card;
   }
 
   /* The card is turned over. */
   if (chest.phase === "revealed" && chest.result?.card) {
-    if (!card.querySelector(".nexus-card__deck-wrap")) {
-      const wrap = buildDeck();
-      const result = card.querySelector(".nexus-card__result");
-      card.insertBefore(wrap, result || null);
-    }
     /* The face is written BEFORE the flip, so the card turns over onto its
        face rather than onto an empty card.
 
