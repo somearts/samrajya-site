@@ -1179,6 +1179,17 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
       /from: chip, to: card, amount: NEXUS_PRAY_COST/.test(chestStageJs),
     "the ledger says what the offering was, and the coins say it too",
   );
+  const sharedAnnouncementsJs = await readFile(join(SHARED, "announcements.js"), "utf8");
+  check(
+    "the rent is a notice, and the notice is contained",
+    /case "rentPaid":/.test(sharedAnnouncementsJs) &&
+      /case "rentShort":/.test(sharedAnnouncementsJs) &&
+      /\.board__announce\s*\{[\s\S]{0,2400}?max-width:\s*100%;/.test(boardCss) &&
+      /\.board__announce\s*\{[\s\S]{0,2400}?overflow:\s*hidden;/.test(boardCss),
+    "the rent is paid during the walk and said in the middle, so the notice " +
+      "has to stay inside the middle and be clipped rather than run over a " +
+      "square, a name or a card",
+  );
   check(
     "the notification's own words are not cut off",
     /\.announce__big\s*\{[^}]*?font-size:\s*44px;[^}]*?line-height:\s*1\.45;/.test(boardCss) &&
