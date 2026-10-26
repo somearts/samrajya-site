@@ -38,6 +38,7 @@ function standOn(state, index, id, kind = "none") {
     prayed: false,
     nexusDrawn: false,
     nexusCard: null,
+    declined: false,
   };
   state.phase = PHASE.DECISION;
   return state;
@@ -99,11 +100,41 @@ test("the second Nexus action is refused", () => {
   assert.match(no.why, /already/i);
 });
 
-test("a draw must happen before the visit can end", () => {
+test("a visit can always be left, so the turn can never be stranded", () => {
+  /* THE NEXUS VISIT CANNOT BE A TRAP.
+
+     The visit used to be refused: "Choose how to approach the Nexus." The
+     client closed the card anyway, asked to continue, was refused again, and
+     the game sat in DECISION for ever - no card, no die, and the only way out
+     was to reload the page.
+
+     So the visit is never refused. A player who has neither prayed nor drawn
+     is leaving the Nexus without approaching it: no money moves, the turn
+     carries on, and both screens are told so in one sentence. */
   const state = createGame(PLAYERS);
   standOn(state, 11, NEXUS.id, "chest");
-  const no = refuse(state, { type: "continue" });
-  assert.match(no.why, /Nexus/i);
+  const { state: after, events } = take(state, { type: "continue" });
+  assert.equal(after.phase, PHASE.TURN_END);
+  assert.equal(after.visit.declined, true);
+  assert.ok(events.some((e) => e.type === "nexusDeclined"));
+});
+
+test("a visit that has been answered still ends the turn", () => {
+  const state = createGame(PLAYERS);
+  standOn(state, 11, NEXUS.id, "chest");
+  const { state: prayed } = take(state, { type: "pray" });
+  const { state: after, events } = take(prayed, { type: "continue" });
+  assert.equal(after.phase, PHASE.TURN_END);
+  assert.equal(after.visit.declined, false);
+  assert.ok(!events.some((e) => e.type === "nexusDeclined"));
+});
+
+test("a draw can be taken once and only once", () => {
+  const state = createGame(PLAYERS);
+  standOn(state, 11, NEXUS.id, "chest");
+  const { state: drawn } = take(state, { type: "drawNexus" });
+  const no = refuse(drawn, { type: "drawNexus" });
+  assert.match(no.why, /already/i);
 });
 
 test("drawNexusCard always returns one of the thirty", () => {

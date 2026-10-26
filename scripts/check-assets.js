@@ -1084,6 +1084,72 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
       /const item = queue\.shift\(\)/.test(announceJs),
     "one sentence at a time is the only way 'one at a time' can be true",
   );
+
+  /* ------------------------------------------------------------------ the
+     HOLDER. One box is used for all of the cards, and an animation that ends
+     with `fill: "forwards"` stays applied to it. A card drawn inside a holder
+     left at `opacity: 0` is a card that is in the page and paints nothing -
+     which is how the Nexus and Ragnarok cards vanished and the board looked
+     frozen. */
+  const boardFxJs = await readFile(join(OUT, "assets", "js", "board-fx.js"), "utf8");
+  const nexusCardJs = await readFile(join(OUT, "assets", "js", "nexus-card.js"), "utf8");
+  const chestCardJs = await readFile(join(OUT, "assets", "js", "chest-card.js"), "utf8");
+  const propertyCardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "utf8");
+  const gameJs = await readFile(join(SHARED, "game.js"), "utf8");
+  const nexusCardsJs = await readFile(join(SHARED, "nexus-cards.js"), "utf8");
+
+  check(
+    "a card that slides away does not leave the holder transparent",
+    /export function resetHolder/.test(boardFxJs) &&
+      /animation\.cancel\(\)/.test(boardFxJs) &&
+      /holder\.style\.opacity = ""/.test(boardFxJs),
+    "an animation with `fill: \"forwards\"` stays applied for good, so the " +
+      "holder kept the opacity the leaving card gave it and every card drawn " +
+      "afterwards was invisible",
+  );
+  check(
+    "every card that opens puts the holder right before it draws itself",
+    /resetHolder\(holder\)/.test(nexusCardJs) &&
+      /resetHolder\(holder\)/.test(chestCardJs) &&
+      /resetHolder\(holder\)/.test(propertyCardJs),
+    "a card must never be drawn inside a box the last one left transparent",
+  );
+  check(
+    "the notification cannot be painted over a record or a card",
+    /\.board__announce\s*\{[\s\S]{0,1400}?z-index:\s*10;/.test(boardCss) &&
+      /\.board__profile\s*\{[\s\S]{0,1400}?z-index:\s*20;/.test(boardCss) &&
+      /\.board__card\s*\{[\s\S]{0,1400}?z-index:\s*50;/.test(boardCss),
+    "the notification is the lowest of the three things that can own the middle, " +
+      "so a mistake in the telling shows the thing being read on top",
+  );
+  check(
+    "the Nexus visit can always be left, so the turn can never be stranded",
+    /next\.visit\.declined = true;/.test(gameJs) &&
+      /"nexusDeclined"/.test(gameJs),
+    "a visit that refused to be left left the game in DECISION with no card and " +
+      "no die, and the only way out was to reload the page",
+  );
+  check(
+    "a refused offering keeps the card up, with its buttons working",
+    /if \(!event\) \{/.test(nexusCardJs) &&
+      /prayBtn\.disabled = false;/.test(nexusCardJs),
+    "a refusal is not an answer: the card closed anyway and the player was " +
+      "left with a board that could not be played",
+  );
+  check(
+    "the board asks the server to move on when it is left with nothing to press",
+    /recoverStranded/.test(boardJs),
+    "a turn waiting for a decision with no card to answer it is a board that " +
+      "answers nothing, and the player has to reload the page to get it back",
+  );
+  check(
+    "the Nexus's own words are written once, in the shared module",
+    /export const NEXUS_KEEPER/.test(nexusCardsJs) &&
+      /NEXUS_KEEPER\.title/.test(nexusCardJs) &&
+      !/"He Who Must Not Be Named"/.test(nexusCardJs.replace(/\/\*[\s\S]*?\*\//g, "")),
+    "the keeper's title and mythology used to be written into the module that " +
+      "draws the card, so there were two places to look and only one was edited",
+  );
   check(
     "and Escape closes the record wherever the focus is",
     /document\.addEventListener\("keydown", onEscape, true\)/.test(boardJs) &&

@@ -113,6 +113,18 @@ export function announcementFor(event, { viewer = null, ledger = null } = {}) {
       };
     }
 
+    /* The player left the Nexus without praying and without drawing. Nothing
+       moved, and both screens are told so - one sentence, in the middle, and
+       the turn carries on. */
+    case "nexusDeclined":
+      return {
+        label: "THE NEXUS",
+        big: "Left in peace",
+        sub: "The keeper was not approached",
+        seat: event.seat,
+        tone: "plain",
+      };
+
     case "rentPaid":
     case "rentShort": {
       const received = mine !== null && Number(event.to) === mine;

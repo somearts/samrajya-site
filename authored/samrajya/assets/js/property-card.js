@@ -35,6 +35,7 @@
 
 import { el } from "./dom.js";
 import { settled } from "./motion.js";
+import { resetHolder } from "./board-fx.js";
 import { cardArt } from "./cards.js";
 import { propertyArt } from "./property-art.js";
 import { propertyFor } from "./shared/properties.js";
@@ -573,6 +574,10 @@ export async function showCard(board, id, ctx = null) {
   const turning = holder.dataset.property && holder.dataset.property !== id;
   board.dataset.property = id;
 
+  /* The holder is put right before the card is drawn, so that no card is ever
+     drawn inside a box the last one left transparent. See `resetHolder`. */
+  resetHolder(holder);
+
   // The card, the builds and the quiet sell pill, written in one go so the
   // builds can never appear beside an empty card on a slow frame.
   const draw = () => {
@@ -648,6 +653,9 @@ export function hideCard(board) {
   board.dataset.property = "";
   holder.replaceChildren();
   holder.hidden = true;
+  /* The holder is put right as it is emptied, so that the next card is never
+     drawn inside a box this one left transparent. */
+  resetHolder(holder);
   delete holder.dataset.cardKind;
   delete holder.dataset.mode;
   delete holder.dataset.decision;

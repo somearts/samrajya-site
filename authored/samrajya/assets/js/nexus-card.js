@@ -16,7 +16,8 @@
 
 import { el } from "./dom.js";
 import { settled } from "./motion.js";
-import { NEXUS_CARDS, NEXUS_PRAY_COST } from "./shared/nexus-cards.js";
+import { resetHolder } from "./board-fx.js";
+import { NEXUS_CARDS, NEXUS_KEEPER, NEXUS_PRAY_COST } from "./shared/nexus-cards.js";
 import { rupees } from "./shared/economy.js";
 
 /** How long the drawn card takes to settle before the card closes. */
@@ -39,21 +40,10 @@ function godFigure() {
   return el("img", {
     class: "nexus-card__god",
     src: "assets/img/god.png",
-    alt: "He Who Must Not Be Named",
+    alt: NEXUS_KEEPER.title,
     draggable: "false",
   });
 }
-
-const MYTHOLOGY = [
-  "He is not named in any scripture, yet every scripture owes him its silence.",
-  "They call him the Unnamed Keeper, the one who holds the thread from which every colony, every empire, and every roll of the dice is suspended.",
-  "Before the first board was carved, he was already watching.",
-  "He does not play, but without his stillness the game would scatter like dust.",
-  "Kings have offered him temples; priests have swept his floors for a thousand years.",
-  "He asks nothing, yet everything given to his upkeep returns to the balance of the board.",
-  "Some say he is the silence between turns, the breath before the die is thrown.",
-  "Approach him with reverence, or do not approach him at all.",
-];
 
 function nexusCard({ drawable = false } = {}) {
   return el("article", {
@@ -76,10 +66,12 @@ function nexusCard({ drawable = false } = {}) {
 
     el("div", { class: "nexus-card__figure-wrap" }, [godFigure()]),
 
-    el("h3", { class: "nexus-card__title", text: "He Who Must Not Be Named" }),
+    el("h3", { class: "nexus-card__title", text: NEXUS_KEEPER.title }),
+
+    el("p", { class: "nexus-card__tagline", text: NEXUS_KEEPER.tagline }),
 
     el("p", { class: "nexus-card__mythology" },
-      MYTHOLOGY.map((sentence) => el("span", { text: sentence })),
+      NEXUS_KEEPER.mythology.map((sentence) => el("span", { text: sentence })),
     ),
 
     el("div", { class: "nexus-card__actions" }, [
@@ -89,9 +81,9 @@ function nexusCard({ drawable = false } = {}) {
         "data-action": "pray",
         disabled: !drawable,
         "aria-disabled": String(!drawable),
-        title: drawable ? "Contribute to the upkeep of the sacred places" : "Only when you land here",
+        title: drawable ? NEXUS_KEEPER.actions.pray.title : NEXUS_KEEPER.actions.pray.titleIdle,
       }, [
-        el("span", { class: "nexus-card__action-name", text: "Pray" }),
+        el("span", { class: "nexus-card__action-name", text: NEXUS_KEEPER.actions.pray.name }),
         el("span", { class: "nexus-card__action-note", text: `Tend the temples • ${rupees(NEXUS_PRAY_COST)}` }),
       ]),
       el("button", {
@@ -100,10 +92,10 @@ function nexusCard({ drawable = false } = {}) {
         "data-action": "draw",
         disabled: !drawable,
         "aria-disabled": String(!drawable),
-        title: drawable ? "Draw one of thirty cards" : "Only when you land here",
+        title: drawable ? NEXUS_KEEPER.actions.draw.title : NEXUS_KEEPER.actions.draw.titleIdle,
       }, [
-        el("span", { class: "nexus-card__action-name", text: "Take My Chances" }),
-        el("span", { class: "nexus-card__action-note", text: "Draw a card" }),
+        el("span", { class: "nexus-card__action-name", text: NEXUS_KEEPER.actions.draw.name }),
+        el("span", { class: "nexus-card__action-note", text: NEXUS_KEEPER.actions.draw.note }),
       ]),
     ]),
 
@@ -160,6 +152,15 @@ export async function showNexus(
   const holder = board.querySelector(".board__card");
   if (!holder) return null;
 
+  /* THE HOLDER IS PUT RIGHT BEFORE THE CARD IS DRAWN.
+
+     The holder is one box for every card, and the card that slid away before
+     this one left it at `opacity: 0`. A Nexus card drawn inside that is a card
+     that is in the page, has a rectangle, and paints nothing - a keeper nobody
+     can see, and two buttons nobody can press. The board looks frozen, because
+     it is: the player is being asked a question that has no visible answer. */
+  resetHolder(holder);
+
   board.dataset.property = "nexus";
   holder.replaceChildren(nexusCard({ drawable }));
   holder.hidden = false;
@@ -187,6 +188,17 @@ export async function showNexus(
   const prayBtn = card.querySelector('[data-action="pray"]');
   const drawBtn = card.querySelector('[data-action="draw"]');
 
+  /* A REFUSAL IS NOT AN ANSWER.
+
+     When the server refuses the offering - the turn has moved on, the visit was
+     already made, the network answered with a refusal - nothing happened. The
+     card used to close anyway, which left the board in DECISION with no card
+     and no die: a game that could only be restarted by reloading the page.
+
+     So a refusal keeps the card up and puts the buttons back. The player is
+     still at the Nexus and still has something to press. The board's own
+     announcement says why, in the middle, exactly as it does for a refused
+     purchase. */
   const outcome = await new Promise((resolve) => {
     let done = false;
     const finish = (value) => {
@@ -208,22 +220,39 @@ export async function showNexus(
       try {
         await flyOffering(board, { from: chip });
         const event = typeof pray === "function" ? await pray() : null;
+        if (!event) {
+          // Nothing happened. The card stays, the buttons come back.
+          prayBtn.disabled = false;
+          drawBtn.disabled = false;
+          result.hidden = true;
+          return;
+        }
         finish({ kind: "pray", event });
       } catch {
-        finish({ kind: "pray", event: null });
+        prayBtn.disabled = false;
+        drawBtn.disabled = false;
+        result.hidden = true;
       }
-    }, { once: true });
+    });
 
     drawBtn.addEventListener("click", async () => {
       prayBtn.disabled = true;
       drawBtn.disabled = true;
       try {
         const event = typeof draw === "function" ? await draw() : null;
+        if (!event) {
+          drawBtn.disabled = false;
+          prayBtn.disabled = false;
+          result.hidden = true;
+          return;
+        }
         finish({ kind: "draw", event });
       } catch {
-        finish({ kind: "draw", event: null });
+        drawBtn.disabled = false;
+        prayBtn.disabled = false;
+        result.hidden = true;
       }
-    }, { once: true });
+    });
   });
 
   // Show the result before closing: what the offering bought, or what the
@@ -235,13 +264,13 @@ export async function showNexus(
     result.replaceChildren(
       el("p", {
         class: "nexus-card__result-name",
-        text: took ? "Your offering is received" : "The offering was not accepted",
+        text: took ? "Your offering is received" : NEXUS_KEEPER.refusal.name,
       }),
       el("p", {
         class: "nexus-card__result-text",
         text: took
           ? "The temples are tended, the lamps are lit, and the silence holds."
-          : "Nothing was taken and nothing was given. The turn has moved on.",
+          : NEXUS_KEEPER.refusal.text,
       }),
       took
         ? el("p", {
@@ -254,10 +283,10 @@ export async function showNexus(
     const cardData = outcome.event?.card || null;
     if (!cardData) {
       result.replaceChildren(
-        el("p", { class: "nexus-card__result-name", text: "No card was drawn" }),
+        el("p", { class: "nexus-card__result-name", text: NEXUS_KEEPER.noCard.name }),
         el("p", {
           class: "nexus-card__result-text",
-          text: "The keeper did not turn a card. The turn has moved on.",
+          text: NEXUS_KEEPER.noCard.text,
         }),
         el("p", { class: "nexus-card__result-amount", text: "" }),
       );

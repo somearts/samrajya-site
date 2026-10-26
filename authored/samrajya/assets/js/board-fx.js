@@ -278,24 +278,64 @@ export async function shake(node) {
   );
 }
 
+/**
+ * The holder is one element for every card, and an animation that ends with
+ * `fill: "forwards"` stays applied to it for good.
+ *
+ * That is the whole trouble: a card that slides away leaves the holder at
+ * `opacity: 0`, and every card that arrives afterwards is drawn inside a
+ * transparent box - so it is in the DOM, it has a rectangle, and it paints
+ * nothing. The property card hid this by starting an animation of its own
+ * (`fill: "both"`, ending at opacity 1), but the chest and the Nexus start no
+ * animation at all, so they inherited the invisible holder.
+ *
+ * A player who answered one property decision and then landed on the Nexus saw
+ * an empty middle, a die that would not come back, and a game they could only
+ * restart by reloading the page.
+ *
+ * So the holder is put back the way it was found. `cardAway` cancels its own
+ * animation when it is done, and every card that opens clears whatever is left
+ * before it draws itself.
+ */
+export function resetHolder(holder) {
+  if (!holder) return;
+  if (typeof holder.getAnimations === "function") {
+    for (const animation of holder.getAnimations()) {
+      try {
+        animation.cancel();
+      } catch {
+        /* An animation that refuses to be cancelled is already gone. */
+      }
+    }
+  }
+  // The stylesheet's own values are the truth: no animation, no inline paint.
+  holder.style.opacity = "";
+  holder.style.transform = "";
+}
+
 /** Slide a card away. Resolves after the card has gone. */
 export async function cardAway(holder) {
   if (!holder || holder.hidden) return;
   if (prefersStill()) {
-    holder.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: "forwards" });
+    const animation = holder.animate([{ opacity: 1 }, { opacity: 0 }], {
+      duration: 200,
+      fill: "forwards",
+    });
     await wait(210);
+    // The fill is undone, so the next card is not drawn inside a ghost.
+    animation.cancel();
+    resetHolder(holder);
     return;
   }
-  await settled(
-    holder
-      .animate(
-        [
-          { transform: "translateY(0) scale(1)", opacity: 1 },
-          { transform: "translateY(14px) scale(.985)", opacity: 0 },
-        ],
-        { duration: 240, easing: "ease-in", fill: "forwards" },
-      )
-      .finished,
-    320,
+  const animation = holder.animate(
+    [
+      { transform: "translateY(0) scale(1)", opacity: 1 },
+      { transform: "translateY(14px) scale(.985)", opacity: 0 },
+    ],
+    { duration: 240, easing: "ease-in", fill: "forwards" },
   );
+  await settled(animation.finished, 320);
+  // The card has gone; the holder goes back to being an empty, ordinary box.
+  animation.cancel();
+  resetHolder(holder);
 }

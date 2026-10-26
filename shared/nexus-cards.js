@@ -203,6 +203,58 @@ export const NEXUS_CARDS = Object.freeze([
   },
 ]);
 
+/* ------------------------------------------------------------------ the card
+
+   THE KEEPER'S OWN WORDS.
+
+   The Nexus card's title and its mythology used to be written into the
+   browser module that draws the card, which meant there were two places to
+   look for the Nexus's words and only one of them was ever edited. The words
+   live here now, next to the thirty cards they belong to, and the card draws
+   whatever is written here.
+
+   This is the whole of the Nexus's own copy: a name for the keeper, the line
+   under it, and the sentences the card says about him. */
+export const NEXUS_KEEPER = Object.freeze({
+  title: "He Who Must Not Be Named",
+  tagline: "The keeper of the thread every turn is hung upon.",
+  mythology: Object.freeze([
+    "He is not named in any scripture, yet every scripture owes him its silence.",
+    "They call him the Unnamed Keeper, the one who holds the thread from which every colony, every empire, and every roll of the dice is suspended.",
+    "Before the first board was carved, he was already watching.",
+    "He does not play, but without his stillness the game would scatter like dust.",
+    "Kings have offered him temples; priests have swept his floors for a thousand years.",
+    "He asks nothing, yet everything given to his upkeep returns to the balance of the board.",
+    "Some say he is the silence between turns, the breath before the die is thrown.",
+    "Approach him with reverence, or do not approach him at all.",
+  ]),
+  /** What the two buttons say, and what they say underneath. */
+  actions: Object.freeze({
+    pray: Object.freeze({
+      name: "Pray",
+      note: `Tend the temples • ${"₹"}${NEXUS_PRAY_COST}`,
+      title: "Contribute to the upkeep of the sacred places",
+      titleIdle: "Only when you land here",
+    }),
+    draw: Object.freeze({
+      name: "Take My Chances",
+      note: "Draw a card",
+      title: "Draw one of thirty cards",
+      titleIdle: "Only when you land here",
+    }),
+  }),
+  /** What the card says when the offering was not taken. */
+  refusal: Object.freeze({
+    name: "The offering was not accepted",
+    text: "Nothing was taken and nothing was given. The turn has moved on.",
+  }),
+  /** What the card says when no card was turned. */
+  noCard: Object.freeze({
+    name: "No card was drawn",
+    text: "The keeper did not turn a card. The turn has moved on.",
+  }),
+});
+
 /** Draw one card uniformly from the thirty. */
 export function drawNexusCard(rng = Math.random) {
   const roll = Number(rng());

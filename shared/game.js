@@ -394,6 +394,8 @@ export function applyAction(state, action, rng = Math.random) {
         prayed: false,
         nexusDrawn: false,
         nexusCard: null,
+        /* The player left the Nexus without praying or drawing. */
+        declined: false,
       };
       next.phase = PHASE.MOVING;
 
@@ -733,8 +735,21 @@ export function applyAction(state, action, rng = Math.random) {
               return refused(state, action, "Collect the weapon first.");
             }
           } else if (state.landing?.id === NEXUS.id) {
+            /* THE NEXUS VISIT CAN ALWAYS BE LEFT.
+
+               A refusal here used to be the end of the road, and it stranded the
+               game: the client closed the card, asked to continue, was told to
+               choose, and had nothing left to choose with. The phase stayed
+               DECISION, the card was gone, the die would not come back, and the
+               only way out was to reload the page.
+
+               So the visit is never refused. If neither offering nor a draw has
+               been made, the player is leaving the Nexus without approaching
+               it: no money moves, and the turn carries on. If the client still
+               has the card up, it is told the visit is over and takes it down. */
             if (!state.visit?.prayed && !state.visit?.nexusDrawn) {
-              return refused(state, action, "Choose how to approach the Nexus.");
+              next.visit.declined = true;
+              ok("nexusDeclined", { seat: active });
             }
           }
         }

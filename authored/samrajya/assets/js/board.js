@@ -69,6 +69,7 @@ import {
   flyCoins,
   flyRent,
   pipPulse,
+  resetHolder,
   ringDraw,
   shake,
 } from "./board-fx.js";
@@ -505,6 +506,42 @@ export function board({
       : "hidden";
   };
 
+  /* A BOARD WITH NOTHING TO PRESS IS A BROKEN BOARD.
+
+     The turn has stopped for a decision, and the card that decision belongs to
+     is not on the screen. There is no die either - a decision has no die - and
+     so the middle is empty and the board cannot be played. The player is left
+     with a board that answers nothing, and the only way out is to reload the
+     page.
+
+     That is exactly what happened when the Nexus card closed itself after a
+     refused offering: the game stayed in DECISION, the card went, and the
+     server refused the next step as well, so nothing ever moved again.
+
+     So the board watches for it and puts it right: if the turn is waiting for a
+     decision and there is no card to answer it with, the board asks the server
+     to move the turn on. The server decides whether it may; the board only
+     makes the asking.
+
+     It is checked where the board has come to rest - after the walk, and
+     after a snapshot - and never in the middle of a move, when a decision that
+     has just been reached is on its way to being opened. */
+  let recovering = false;
+  async function recoverStranded() {
+    if (recovering || busy) return;
+    if (!game || game.phase !== PHASE.DECISION) return;
+    if (holder() && !holder().hidden) return;
+    recovering = true;
+    try {
+      await run({ type: "continue" });
+    } catch {
+      /* The server refused, which means the turn is not where this board
+         thinks it is. The next snapshot puts the board right. */
+    } finally {
+      recovering = false;
+    }
+  }
+
   /* --------------------------------------------------------------- the ctx */
 
   /**
@@ -568,6 +605,11 @@ export function board({
         const snapshot = pendingSnapshot;
         pendingSnapshot = null;
         frame.applySnapshot(snapshot);
+      } else {
+        /* The action is over and the board is free. If it has come to rest
+           waiting for a decision that has no card, the board asks the server
+           to move it on rather than sitting there with nothing to press. */
+        void recoverStranded();
       }
     }
   }
@@ -720,6 +762,11 @@ export function board({
       } finally {
         busy = false;
         paintPhase();
+        /* The snapshot has been applied and the board has come to rest. If it
+           came to rest waiting for a decision that has no card, the board asks
+           the server to move it on rather than sitting there with nothing to
+           press. */
+        if (!pendingSnapshot) void recoverStranded();
         if (pendingSnapshot) {
           const next = pendingSnapshot;
           pendingSnapshot = null;
@@ -935,6 +982,9 @@ export function board({
       }
       return;
     }
+    /* The walk ran out of steps and the turn is still waiting for a decision.
+       The board checks for a stranded turn once the action is over and the
+       board is free - see `recoverStranded`. */
   }
 
   /** Open the card the decision belongs to. */
@@ -1142,6 +1192,9 @@ export function board({
       closeRead();
       return;
     }
+    /* The holder is put right before the card is drawn, so that no card is ever
+       drawn inside a box the last one left transparent. See `resetHolder`. */
+    resetHolder(holder);
     holder.replaceChildren(squareCard(cell, { onClose: () => closeRead() }));
     holder.hidden = false;
     holder.dataset.property = cell.id;

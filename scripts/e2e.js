@@ -5319,6 +5319,168 @@ try {
     chestSizes.every((c) => !/30%|10%/.test(c.text) && c.holderScroll <= c.holderClient + 1),
     chestSizes.map((c) => c.size.join("x") + ":" + c.holderScroll + "/" + c.holderClient).join(" | "));
 
+  /* --------------------------------------------------- THE HOLDER, AND THE
+     CARDS THAT FOLLOW IT.
+
+     The middle of the board has ONE box, and every card is drawn inside it.
+     A card that slides away animates that box with `fill: "forwards"`, which
+     leaves the box at `opacity: 0` for good. The property card hid this by
+     starting an animation of its own; the chest and the Nexus start none, so
+     they inherited the transparent box.
+
+     The result was a Nexus card that was in the page, had a rectangle, and
+     painted nothing: the keeper nobody could see, and two buttons nobody could
+     press. The board looked frozen, and only a reload brought it back. */
+  heading("THE HOLDER, AND THE CARDS THAT FOLLOW IT");
+
+  await host.setViewport(390, 850, DSF);
+  await sleep(500);
+
+  const holderOpacity = async () => host.json(`
+    const b = document.querySelector(".board");
+    const h = b.querySelector(".board__card");
+    return {
+      opacity: getComputedStyle(h).opacity,
+      hidden: h.hidden,
+      child: h.firstElementChild ? h.firstElementChild.className : null,
+      childOpacity: h.firstElementChild ? getComputedStyle(h.firstElementChild).opacity : null,
+      phase: b.game ? b.game.phase : "",
+    };
+  `);
+
+  /* Answer a property decision, so the card slides away. */
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    for (let i = 0; i < 200; i++) {
+      if (b.dataset.busy !== "true" && b.game?.phase === "AWAITING_ROLL") break;
+      await wait(50);
+    }
+    await b.play({ type: "debug", active: 0 });
+    await b.play({ type: "debug", position: 1 });
+    return true;
+  })()`);
+  await sleep(1200);
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await b.play({ type: "roll", rng: 0.3 });
+    return true;
+  })()`);
+  await sleep(3000);
+  const onProperty = await host.json(`
+    const b = document.querySelector(".board");
+    return { landing: b.game && b.game.landing ? b.game.landing.id + "/" + b.game.landing.kind : "",
+             phase: b.game ? b.game.phase : "" };
+  `);
+  note("the host landed on a property to buy", onProperty.landing.endsWith("/buy"), onProperty.landing);
+
+  await host.eval(`document.querySelector(".property-card__buy")?.click(); true;`);
+  await sleep(3500);
+  const afterSlide = await holderOpacity();
+  note("the card slid away and the holder is not left transparent",
+    afterSlide.opacity === "1",
+    `holder opacity ${afterSlide.opacity}`);
+  note("and nothing is left in it", afterSlide.hidden === true || afterSlide.child === null,
+    `hidden ${afterSlide.hidden}, child ${afterSlide.child}`);
+
+  /* Now the two cards that used to inherit the ghost. */
+  for (const [id, what] of [["nexus", "the Nexus"], ["ragnarok", "Ragnarok"]]) {
+    await host.eval(`document.querySelector('.board__cell[data-id="${id}"]')?.click(); true;`);
+    await sleep(1400);
+    const h = await holderOpacity();
+    note(`${what}'s card is VISIBLE after a card has slid away`,
+      h.opacity === "1" && h.hidden === false,
+      `holder opacity ${h.opacity}, hidden ${h.hidden}`);
+    note(`and ${what}'s card is really drawn`,
+      (h.childOpacity === "1" || h.childOpacity === null) && Boolean(h.child),
+      `child ${h.child}, opacity ${h.childOpacity}`);
+    await host.eval(`document.querySelector('.board__card [data-action="close"]')?.click(); true;`);
+    await sleep(1200);
+  }
+
+  /* And the corner, the third kind of card. */
+  await host.eval(`document.querySelector('.board__cell[data-id="start"]')?.click(); true;`);
+  await sleep(1400);
+  const corner = await holderOpacity();
+  note("a corner's card is VISIBLE after a card has slid away",
+    corner.opacity === "1" && corner.hidden === false,
+    `holder opacity ${corner.opacity}, hidden ${corner.hidden}`);
+  await host.eval(`document.querySelector('.board__card [data-action="close"]')?.click(); true;`);
+  await sleep(1200);
+
+  /* ------------------------------------------------- the Nexus, landed on */
+
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await b.play({ type: "debug", active: 0 });
+    await b.play({ type: "debug", position: 5 });
+    return true;
+  })()`);
+  await sleep(1400);
+  await host.eval(`(async () => {
+    const b = document.querySelector(".board");
+    await b.play({ type: "roll", rng: 5.5 / 6 });
+    return true;
+  })()`);
+  await sleep(3500);
+
+  const onNexus = await host.json(`
+    const b = document.querySelector(".board");
+    const h = b.querySelector(".board__card");
+    const c = h.querySelector(".nexus-card");
+    const R = (e) => { if (!e) return null; const r = e.getBoundingClientRect();
+      return { top: Math.round(r.top), bottom: Math.round(r.bottom) }; };
+    const pray = c?.querySelector('[data-action="pray"]');
+    const draw = c?.querySelector('[data-action="draw"]');
+    return {
+      landing: b.game && b.game.landing ? b.game.landing.id + "/" + b.game.landing.kind : "",
+      phase: b.game ? b.game.phase : "",
+      holderOpacity: getComputedStyle(h).opacity,
+      up: Boolean(c),
+      prayDisabled: pray ? pray.disabled : null,
+      drawDisabled: draw ? draw.disabled : null,
+      prayRect: R(pray),
+      drawRect: R(draw),
+      viewportH: innerHeight,
+      title: c?.querySelector(".nexus-card__title")?.textContent?.trim() || "",
+      tagline: c?.querySelector(".nexus-card__tagline")?.textContent?.trim() || "",
+      first: c?.querySelector(".nexus-card__mythology span")?.textContent?.trim() || "",
+      prayName: pray?.querySelector(".nexus-card__action-name")?.textContent?.trim() || "",
+      drawName: draw?.querySelector(".nexus-card__action-name")?.textContent?.trim() || "",
+    };
+  `);
+  note("the host landed on the Nexus", onNexus.landing === "nexus/chest", onNexus.landing);
+  note("and the Nexus card is up", onNexus.up === true, `up ${onNexus.up}`);
+  note("AND IT IS VISIBLE", onNexus.holderOpacity === "1",
+    `holder opacity ${onNexus.holderOpacity}`);
+  note("both actions are live", onNexus.prayDisabled === false && onNexus.drawDisabled === false,
+    `pray ${onNexus.prayDisabled}, draw ${onNexus.drawDisabled}`);
+  note("and both are on the screen, where a finger can reach them",
+    onNexus.prayRect && onNexus.drawRect &&
+      onNexus.prayRect.bottom > 0 && onNexus.drawRect.bottom <= onNexus.viewportH,
+    `pray ${JSON.stringify(onNexus.prayRect)} draw ${JSON.stringify(onNexus.drawRect)} of ${onNexus.viewportH}`);
+  note("the keeper's name is on the card", onNexus.title === "He Who Must Not Be Named", onNexus.title);
+  note("the card says what the place is", Boolean(onNexus.tagline), onNexus.tagline);
+  note("the two actions are named Pray and Take My Chances",
+    onNexus.prayName === "Pray" && onNexus.drawName === "Take My Chances",
+    `${onNexus.prayName} / ${onNexus.drawName}`);
+
+  /* Press it, and the turn has to carry on. */
+  await host.eval(`document.querySelector('.nexus-card [data-action="draw"]')?.click(); true;`);
+  let carried = false;
+  for (let i = 0; i < 80; i += 1) {
+    await sleep(250);
+    const st = await host.json(`const b = document.querySelector(".board"); return { phase: b.game ? b.game.phase : "", busy: b.dataset.busy, cardUp: !b.querySelector(".board__card").hidden, die: b.dataset.die };`);
+    if (st.phase === "AWAITING_ROLL" && st.busy !== "true") {
+      carried = true;
+      note("the turn carried on, and the die came back", st.die === "shown", `die ${st.die}`);
+      note("and the card is gone", st.cardUp === false, `cardUp ${st.cardUp}`);
+      break;
+    }
+  }
+  note("pressing the Nexus does not freeze the game", carried,
+    carried ? "" : "the turn never came back to a throw");
+
   /* ------------------------------------------- twenty squares, four states */
 
   heading("TWENTY SQUARES, FOUR STATES, TWO PHONES");

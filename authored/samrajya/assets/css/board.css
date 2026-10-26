@@ -1669,6 +1669,20 @@
   color: var(--ink);
 }
 
+/* The line under the keeper's name. It says what the place is, in one short
+   sentence, before the long mythology. It is the card's own second line: the
+   title says who he is, and this says what he does. */
+.nexus-card__tagline {
+  flex: 0 0 auto;
+  margin: 0;
+  max-width: 30ch;
+  text-align: center;
+  font-size: max(10px, calc(var(--cell) * 0.135));
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
 /* The mythology takes what is left of the card and scrolls inside itself. It
    is the only part of the card that may move, and it never moves the two
    actions out of the player's reach. */
@@ -3107,7 +3121,21 @@ button.board__cell--corner:focus-visible {
   grid-area: 1 / 1;
   place-self: stretch;
   position: relative;
-  z-index: 40;
+  /* THE NOTIFICATION IS BELOW THE THINGS IT MUST NOT COVER.
+
+     The middle of the board holds three things that can be on screen at once:
+     a card (z-index 50, a child of the board), a player's record (z-index 20,
+     a child of the middle) and the notification (this one).
+
+     The record used to sit BELOW the notification, so a notification that was
+     on screen when the record opened was painted over it - the record's sheet
+     with a notice on top of it. The layer is now the lowest of the three, so a
+     mistake in the telling shows the record on top rather than a notice painted
+     over a record somebody is reading.
+
+     The card is above the middle and the middle is not a stacking context, so
+     the card still wins against the notification in the board's own order. */
+  z-index: 10;
   display: grid;
   align-content: center;
   justify-items: center;
@@ -3122,6 +3150,15 @@ button.board__cell--corner:focus-visible {
      too. The layer takes no taps while it is only holding the status, so it
      can never be the thing that swallows a press meant for a card. */
   pointer-events: none;
+
+  /* THE LAYER IS CONTAINED BY THE MIDDLE.
+
+     A notification that runs past the edge of the middle is a notification
+     painted over the board's ring - over a square, over a name, over a coin.
+     Nothing inside the layer may leave it: the words wrap inside the width
+     they are given, and the layer itself clips whatever would rather not. */
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .board__announce--announce {
@@ -3242,7 +3279,11 @@ button.board__cell--corner:focus-visible {
   max-width: 100%;
   font-size: 44px;
   font-weight: 300;
-  line-height: 1.05;
+  /* A line that is exactly as tall as the type is a line whose descenders are
+     cut off, and a word long enough to wrap is two lines whose second line is
+     cut in half. The line box is given room to breathe, and the line wraps
+     inside the width of the middle rather than running past it. */
+  line-height: 1.15;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;

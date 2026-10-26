@@ -59,6 +59,7 @@
 
 import { el } from "./dom.js";
 import { settled } from "./motion.js";
+import { resetHolder } from "./board-fx.js";
 import { RAGNAROK, WEAPONS, drawWeapon, weaponById } from "./shared/weapons.js";
 import { SETS } from "./shared/spaces.js";
 import { propertyFor } from "./shared/properties.js";
@@ -326,6 +327,14 @@ export async function showChest(
 ) {
   const holder = board.querySelector(".board__card");
   if (!holder) return null;
+
+  /* THE HOLDER IS PUT RIGHT BEFORE THE CARD IS DRAWN.
+
+     The holder is one box for every card, and the card that slid away before
+     this one left it at `opacity: 0`. A chest drawn inside that is a chest that
+     is in the page, has a rectangle, and paints nothing - three slots nobody
+     can see and a draw button nobody can press. */
+  resetHolder(holder);
 
   board.dataset.property = "ragnarok";
   holder.replaceChildren(chestCard({ drawable }));

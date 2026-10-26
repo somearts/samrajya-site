@@ -154,6 +154,11 @@ const CARDS = Object.freeze({
   }),
   "nexus": Object.freeze({
     type: "chest",
+    /* The board's own name for the place. The keeper's name - the words the
+       Nexus card is headed with - are written once, in shared/nexus-cards.js,
+       and the card draws them from there. This is the drawn card face for a
+       board slot, and it says the tile's name, not a second copy of the
+       keeper's. */
     name: "Nexus",
     group: null,
     w: 190,
