@@ -70,9 +70,21 @@ async function route(request, url, env) {
     }
   }
 
+  /* --- GET /samrajya/api/version  ->  which build this is ------------------ */
+  if (rest === "version") {
+    if (request.method !== "GET") return json({ error: "Use GET." }, 405);
+    const asset = await env.ASSETS.fetch(new Request(new URL("/samrajya/version.json", url), request));
+    if (!asset.ok) return json({ version: "" }, 200);
+    try {
+      const body = await asset.json();
+      return json({ version: body?.version || "" });
+    } catch {
+      return json({ version: "" });
+    }
+  }
+
   /* --- POST /samrajya/api/rooms  ->  a brand new room --------------------- */
-  if (rest === "rooms") {
-    if (request.method !== "POST") return json({ error: "Use POST." }, 405);
+  if (rest === "rooms") {    if (request.method !== "POST") return json({ error: "Use POST." }, 405);
 
     const identity = request.headers.get("x-samrajya-player") || "";
     if (!isIdentity(identity)) {
@@ -171,13 +183,47 @@ async function serveAsset(request, env) {
       : request;
 
   try {
-    return await env.ASSETS.fetch(target);
+    const response = await env.ASSETS.fetch(target);
+    return withCacheHeaders(response, url);
   } catch {
     return new Response("Not found", {
       status: 404,
       headers: { "content-type": "text/plain; charset=utf-8" },
     });
   }
+}
+
+/**
+ * The cache headers.
+ *
+ * THE PAGE IS NEVER CACHED. The page is the thing that decides which version
+ * of the game this browser is playing, and a cached page is a page that
+ * decides it wrongly: it names an old version, and every asset it then asks
+ * for is an old asset. So the page, and the small files that describe the
+ * build, are always re-fetched.
+ *
+ * THE ASSETS ARE CACHED FOR EVER. Their names carry a hash of their
+ * contents, so a name that is asked for twice is the same file, and a file
+ * that has changed has a different name and is simply not asked for again.
+ */
+function withCacheHeaders(response, url) {
+  const headers = new Headers(response.headers);
+  const path = url.pathname;
+
+  const isPage = path === "/samrajya/" || path === "/samrajya" || path.endsWith("/");
+  const isBuildInfo = path.endsWith("/version.json") || path.endsWith("/manifest.json");
+
+  if (isPage || isBuildInfo) {
+    headers.set("cache-control", "no-store, no-cache, must-revalidate");
+    headers.set("pragma", "no-cache");
+    headers.set("expires", "0");
+  } else if (/\.[0-9a-f]{8,}\.(js|css|svg|png|jpg|jpeg|webp|woff2?)$/i.test(path)) {
+    /* A hashed name: this file will never change. */
+    headers.set("cache-control", "public, max-age=31536000, immutable");
+  } else {
+    headers.set("cache-control", "public, max-age=300");
+  }
+  return new Response(response.body, { status: response.status, headers });
 }
 
 function json(body, status = 200) {

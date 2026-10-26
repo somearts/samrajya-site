@@ -14,8 +14,9 @@
    Usage:  node scripts/build.js
    ========================================================================== */
 
-import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -33,12 +34,118 @@ async function main() {
   await cp(AUTHORED, OUT, { recursive: true });
   await generateWeapons();
   await publishShared();
+  await stampVersion();
+  await hashAssets();
 
   const files = await walk(OUT);
   const bytes = files.reduce((sum, f) => sum + f.size, 0);
   console.log(
     `built  ${files.length} files  ${(bytes / 1024).toFixed(0)} kB  ->  public/samrajya`,
   );
+}
+
+/**
+ * Write the build's own number into the page.
+ *
+ * The page reads it and compares it with the number it was served with. When
+ * they differ, the browser is holding a version of the game that is not the
+ * one on the server, and the client reloads itself - on the landing page or in
+ * the lobby, and never in the middle of a game, because a game in progress is
+ * the one thing a reload would spoil.
+ */
+async function stampVersion() {
+  const version = process.env.SAMRAJYA_VERSION || new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+  const file = join(OUT, "version.json");
+  await writeFile(file, JSON.stringify({ version }), "utf8");
+
+  /* The page is told the same number, so it can compare without a request. */
+  const html = join(OUT, "index.html");
+  const source = await readFile(html, "utf8");
+  const stamped = source.replace(
+    /(<\/head>)/i,
+    `  <meta name="samrajya-version" content="${version}">\n$1`,
+  );
+  await writeFile(html, stamped, "utf8");
+  console.log(`version  ${version}`);
+}
+
+/**
+ * Hash the asset names, so a new build is a new URL.
+ *
+ * A browser that has cached `/assets/js/app.js` would keep serving the old
+ * file after a deploy, and the page would be half old and half new - which is
+ * how a shared screen that works on one phone and not on another happens.
+ * With the hash in the name, a new build is a new file, and the old one is
+ * simply not asked for again.
+ *
+ * The names are rewritten in the HTML and in every module that imports
+ * another module, so the whole graph moves together.
+ */
+async function hashAssets() {
+  const files = await walk(OUT);
+  const hashes = new Map();
+
+  /* The shared rules modules are NOT hashed.
+
+     They are copied from `shared/` and the check compares the copy with the
+     original, byte for byte. A hash in the name would not break that - but
+     rewriting the imports inside them would, and the imports inside them are
+     the very thing the hash is for.
+
+     So the shared modules keep their names, and the page that loads them is
+     served with no-cache: a new build is a new page, and the page asks for
+     the modules by the names they have always had. */
+  const isShared = (path) => /(^|\/)assets\/js\/shared\//.test(path.replace(/\\/g, "/"));
+
+  for (const file of files) {
+    if (!/\.(js|css|svg|png|jpg|jpeg|webp|woff2?)$/i.test(file.path)) continue;
+    if (isShared(file.path.slice(OUT.length + 1))) continue;
+    const body = await readFile(file.path);
+    const hash = createHash("sha256").update(body).digest("hex").slice(0, 10);
+    const ext = extname(file.path);
+    const base = basename(file.path, ext);
+    const dir = dirname(file.path);
+    const next = join(dir, `${base}.${hash}${ext}`);
+    await rename(file.path, next);
+    hashes.set(
+      file.path.slice(OUT.length + 1).split(/[\\/]/).join("/"),
+      next.slice(OUT.length + 1).split(/[\\/]/).join("/"),
+    );
+  }
+
+  /* Rewrite every reference to a hashed file. The shared modules are rewritten
+     too - they import the authored ones - and their own names are left alone.
+
+     A reference is replaced WHOLE. The bare name of a file is not enough:
+     `cards.js` is a substring of `nexus-cards.js`, and replacing the name
+     alone would turn one import into another file's name. So the reference
+     is matched with the quote that ends it, which is where a name stops. */
+  const text = await walk(OUT);
+  for (const file of text) {
+    if (!/\.(js|html|css)$/i.test(file.path)) continue;
+    let body = await readFile(file.path, "utf8");
+    let changed = false;
+    for (const [from, to] of hashes) {
+      const needle = from.split("/").pop();
+      const replacement = to.split("/").pop();
+      if (!body.includes(needle)) continue;
+      /* Only a whole name: the character before it is not a letter, a digit,
+         a dot or a dash, and the character after it is the end of the name. */
+      const pattern = new RegExp(`(?<![A-Za-z0-9._-])${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9])`, "g");
+      const before = body;
+      body = body.replace(pattern, replacement);
+      if (body !== before) changed = true;
+    }
+    if (changed) await writeFile(file.path, body, "utf8");
+  }
+
+  /* The manifest, so the server and the client agree on what exists. */
+  await writeFile(
+    join(OUT, "manifest.json"),
+    JSON.stringify({ files: Object.fromEntries(hashes) }, null, 2),
+    "utf8",
+  );
+  console.log(`hashed  ${hashes.size} assets`);
 }
 
 /**

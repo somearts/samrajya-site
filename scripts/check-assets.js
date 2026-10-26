@@ -31,7 +31,7 @@
 
 import { readFile, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 
@@ -72,7 +72,7 @@ async function main() {
   const files = await walk(OUT);
   const shipped = new Set(files.map((f) => f.relative.replace(/\\/g, "/")));
 
-  section("The page");
+    section("The page");
 
   const html = await readFile(join(OUT, "index.html"), "utf8");
   check("it is the Samrajya page", html.includes("Samrajya"));
@@ -131,14 +131,34 @@ async function main() {
   const roots = [...shipped].filter((f) => f.endsWith(".js"));
   const seen = new Set();
   const queue = [...roots];
+
+  /* A HASHED NAME, RESOLVED.
+
+     The build puts a hash in every asset's name - `board.74b6d3a1b4.js` - so
+     that a new build is a new URL and a browser can never serve a stale
+     file. An import names the file without the hash, because the hash is not
+     known until the file is written. So an import is resolved by its stem:
+     `"./board.js"` is the file whose name starts `board.` and ends `.js`. */
+  const resolveImport = (from, spec) => {
+    const exact = relative(OUT, resolve(dirname(join(OUT, from)), spec)).replace(/\\/g, "/");
+    if (shipped.has(exact)) return exact;
+    const wanted = exact.replace(/(\.[^./]+)$/, "");
+    const stem = wanted.split("/").pop();
+    const candidates = [...shipped].filter((f) => {
+      if (!f.endsWith(".js")) return false;
+      const name = f.split("/").pop().replace(/\.[^./]+$/, "");
+      return name === stem && f.slice(0, f.length - name.length - 4) === wanted.slice(0, wanted.length - stem.length);
+    });
+    return candidates.length === 1 ? candidates[0] : exact;
+  };
+
   while (queue.length) {
     const file = queue.pop();
     if (seen.has(file) || !shipped.has(file)) continue;
     seen.add(file);
     const body = await readFile(join(OUT, file), "utf8");
     for (const m of body.matchAll(/from\s+"(\.[^"]+)"/g)) {
-      const resolved = relative(OUT, resolve(dirname(join(OUT, file)), m[1]))
-        .replace(/\\/g, "/");
+      const resolved = resolveImport(file, m[1]);
       check(`import resolves: ${m[1]}`, shipped.has(resolved), resolved);
       queue.push(resolved);
     }
@@ -158,8 +178,17 @@ async function main() {
 
   section("The rules, in one place");
 
+  /* The shared modules are hashed too, so they are found by their stem. */
+  const sharedClient = async (name) => {
+    const dir = join(OUT, "assets", "js", "shared");
+    const entries = await readdir(dir);
+    const stem = name.replace(/\.js$/, "");
+    const found = entries.filter((f) => f.startsWith(`${stem}.`) && f.endsWith(".js"));
+    return found.length === 1 ? join(dir, found[0]) : join(dir, name);
+  };
+
   for (const name of ["civilizations.js", "identity.js", "spaces.js", "properties.js"]) {
-    const client = join(OUT, "assets", "js", "shared", name);
+    const client = await sharedClient(name);
     if (!(await exists(client))) {
       check(`shared/${name} reached the browser`, false);
       continue;
@@ -323,13 +352,36 @@ async function main() {
   /* ------------------------------------------------------------- the way in */
   section("The way in");
 
-  const appCode = await readFile(join(OUT, "assets", "js", "app.js"), "utf8");
-  const sessionCode = await readFile(join(OUT, "assets", "js", "session.js"), "utf8");
-  const identityCode = await readFile(join(OUT, "assets", "js", "shared", "identity.js"), "utf8");
-  const viewsCode = await readFile(join(OUT, "assets", "js", "views.js"), "utf8");
+  /* A HASHED NAME, FOUND.
+
+     The build puts a hash in every asset's name, so a file is found by its
+     stem: `app.js` is the file whose name starts `app.` and ends `.js`. The
+     shared modules keep their own names, so they are found exactly. */
+  const readShipped = async (relativePath) => {
+    const direct = join(OUT, relativePath);
+    if (await exists(direct)) return readFile(direct, "utf8");
+    const dir = join(OUT, dirname(relativePath));
+    const base = basename(relativePath);
+    const ext = extname(base);
+    const stem = base.slice(0, base.length - ext.length);
+    let entries = [];
+    try {
+      entries = await readdir(dir);
+    } catch {
+      return "";
+    }
+    const found = entries.filter((f) => f.startsWith(`${stem}.`) && f.endsWith(ext));
+    if (found.length !== 1) return "";
+    return readFile(join(dir, found[0]), "utf8");
+  };
+
+  const appCode = await readShipped(join("assets", "js", "app.js"));
+  const sessionCode = await readShipped(join("assets", "js", "session.js"));
+  const identityCode = await readShipped(join("assets", "js", "shared", "identity.js"));
+  const viewsCode = await readShipped(join("assets", "js", "views.js"));
   const workerCode = await readFile(join(PROJECT, "src", "index.js"), "utf8");
   const roomSource = await readFile(join(PROJECT, "src", "room.js"), "utf8");
-  const screenCss = await readFile(join(OUT, "assets", "css", "kalchakra.css"), "utf8");
+  const screenCss = await readShipped(join("assets", "css", "kalchakra.css"));
 
   check(
     "the create form asks for one player only",
@@ -432,14 +484,14 @@ async function main() {
   /* ---------------------------------------------------------------- geometry */
   section("The board's geometry");
 
-  const boardJs = await readFile(join(OUT, "assets", "js", "board.js"), "utf8");
-  const boardCss = await readFile(join(OUT, "assets", "css", "board.css"), "utf8");
-  const diceCode = await readFile(join(OUT, "assets", "js", "dice.js"), "utf8");
+  const boardJs = await readShipped(join("assets", "js", "board.js"));
+  const boardCss = await readShipped(join("assets", "css", "board.css"));
+  const diceCode = await readShipped(join("assets", "js", "dice.js"));
   const announcementsCode = await readFile(
     join(OUT, "assets", "js", "shared", "announcements.js"),
     "utf8",
   );
-const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "utf8");
+const cardJs = await readShipped(join("assets", "js", "property-card.js"));
 
   check(
     "six columns of one cell size",
@@ -502,7 +554,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
   );
   check(
     "the four corners keep the project's own marks",
-    boardJs.includes('from "./corner-art.js"') && boardJs.includes("cornerMark("),
+    /from "\.\/corner-art(\.[0-9a-f]+)?\.js"/.test(boardJs) && boardJs.includes("cornerMark("),
     "not redrawn at the new size, only laid out again at it",
   );
   check(
@@ -727,7 +779,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
     literals.length ? [...new Set(literals)].join(" ") : "every colour goes through a token",
   );
 
-  const cornerArt = await readFile(join(OUT, "assets", "js", "corner-art.js"), "utf8");
+  const cornerArt = await readShipped(join("assets", "js", "corner-art.js"));
   check(
     "all four corner marks are drawn",
     ["space", "hole", "start", "fight"].every((m) =>
@@ -744,7 +796,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
     "keyed by the same word the corner is called",
   );
 
-  const wordmark = await readFile(join(OUT, "assets", "js", "wordmark.js"), "utf8");
+  const wordmark = await readShipped(join("assets", "js", "wordmark.js"));
   check("the wordmark draws SAMRAJYA", wordmark.includes("SAMRAJYA"));
   check("the wordmark draws KALCHAKRA", wordmark.includes("KALCHAKRA"));
   check("the wordmark has an ornament", wordmark.includes("ornament"));
@@ -755,7 +807,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
     new RegExp(`\\b${l}:\\s*\\{`).test(wordmark),
   ));
 
-  const css = await readFile(join(OUT, "assets", "css", "kalchakra.css"), "utf8");
+  const css = await readShipped(join("assets", "css", "kalchakra.css"));
   check("the paper is a warm off-white", /--paper:\s*#f7f4ef/i.test(css));
   check("there are no gradients", !/linear-gradient|radial-gradient/i.test(css));
   check("there are no box-shadows", !/box-shadow/i.test(css));
@@ -778,7 +830,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
      colours, the same two canvases, the same flat-only treatment, and a drawing
      of their own for every one of the ten. */
 
-  const artCode = await readFile(join(OUT, "assets", "js", "property-art.js"), "utf8");
+  const artCode = await readShipped(join("assets", "js", "property-art.js"));
   const wanted = [
     "earth-137", "orions-belt", "wow-signal", "dyson-sphere", "wormhole",
     "milky-way", "rama", "quasar", "supernova", "sagittarius-a-star",
@@ -840,7 +892,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
     "weapons.json is the source; weapons.js is written from it on every build",
   );
 
-  const chestCode = await readFile(join(OUT, "assets", "js", "chest-card.js"), "utf8");
+  const chestCode = await readShipped(join("assets", "js", "chest-card.js"));
   // Comments are stripped before looking for copy. Three of the card's strings
   // are quoted in the comments that explain why they are not in the card, and a
   // check that cannot tell a sentence from a sentence about a sentence is a
@@ -864,7 +916,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
 
   section("The cards");
 
-  const cardsCode = (await readFile(join(OUT, "assets", "js", "cards.js"), "utf8"))
+  const cardsCode = (await readShipped(join("assets", "js", "cards.js")))
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 
@@ -905,7 +957,7 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
     cardsCode.includes("function artmoon(id)") &&
       cardsCode.includes("function arteventHorizon(id)") &&
       /CARDS\[key\]/.test(cardsCode) &&
-      /from "\.\/cards\.js"/.test(cardJs) &&
+      /from "\.\/cards(\.[0-9a-f]+)?\.js"/.test(cardJs) &&
       /cardArt\(key\)/.test(cardJs),
     "the twelve finished cards are untouched, and the ten borrowed from them still are",
   );
@@ -1039,9 +1091,9 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
 
   section("The middle");
 
-  const announceJs = await readFile(join(OUT, "assets", "js", "announcement.js"), "utf8");
-  const profileJs = await readFile(join(OUT, "assets", "js", "profile.js"), "utf8");
-  const diceJs = await readFile(join(OUT, "assets", "js", "dice.js"), "utf8");
+  const announceJs = await readShipped(join("assets", "js", "announcement.js"));
+  const profileJs = await readShipped(join("assets", "js", "profile.js"));
+  const diceJs = await readShipped(join("assets", "js", "dice.js"));
   const ledgerJs = await readFile(join(SHARED, "ledger.js"), "utf8");
 
   check(
@@ -1091,10 +1143,10 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
      left at `opacity: 0` is a card that is in the page and paints nothing -
      which is how the Nexus and Ragnarok cards vanished and the board looked
      frozen. */
-  const boardFxJs = await readFile(join(OUT, "assets", "js", "board-fx.js"), "utf8");
-  const chestStageJs = await readFile(join(OUT, "assets", "js", "chest-stage.js"), "utf8");
-  const chestCardJs = await readFile(join(OUT, "assets", "js", "chest-card.js"), "utf8");
-  const propertyCardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "utf8");
+  const boardFxJs = await readShipped(join("assets", "js", "board-fx.js"));
+  const chestStageJs = await readShipped(join("assets", "js", "chest-stage.js"));
+  const chestCardJs = await readShipped(join("assets", "js", "chest-card.js"));
+  const propertyCardJs = await readShipped(join("assets", "js", "property-card.js"));
   const gameJs = await readFile(join(SHARED, "game.js"), "utf8");
   const nexusCardsJs = await readFile(join(SHARED, "nexus-cards.js"), "utf8");
 
@@ -1189,6 +1241,56 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
     "the rent is paid during the walk and said in the middle, so the notice " +
       "has to stay inside the middle and be clipped rather than run over a " +
       "square, a name or a card",
+  );
+
+  /* --------------------------------------------------- fresh sessions
+
+     Every key says which game it is, leaving takes the whole game with it,
+     and a stored session is checked with the server before it is believed. */
+  check(
+    "every stored key says which game it belongs to",
+    /samrajya\.game\.\$\{gameId\}/.test(sessionCode) &&
+      /samrajya\.game\.current/.test(sessionCode) &&
+      !/"samrajya\.room"/.test(sessionCode),
+    "a flat key is a key that one game can read as another's - a purse, a " +
+      "position, a set of weapons, a queue of announcements",
+  );
+  check(
+    "leaving a game takes every trace of it with us",
+    /clearGameKeys\(/.test(sessionCode) &&
+      /session\.leave\(code\)/.test(appCode) &&
+      /state\.game = null;/.test(appCode),
+    "a new game must start from nothing",
+  );
+  check(
+    "a stored session is checked with the server before it is believed",
+    /async validate\(code\)/.test(sessionCode) &&
+      /NOT_SEATED/.test(sessionCode) &&
+      /session\.validate\(remembered\)/.test(appCode),
+    "a room that is gone, or a game that has ended, must never put a player " +
+      "back into it",
+  );
+  check(
+    "the page is never cached, and the assets always are",
+    /no-store, no-cache, must-revalidate/.test(workerCode) &&
+      /immutable/.test(workerCode),
+    "a cached page names an old build, and every asset it then asks for is " +
+      "an old asset",
+  );
+  check(
+    "a new deploy is seen, but never in the middle of a game",
+    /samrajya-version/.test(sessionCode) &&
+      /location\.reload\(\)/.test(appCode) &&
+      /if \(state\.screen !== "board"\)/.test(appCode),
+    "a player watching a chest being drawn must not have it taken away by a " +
+      "deploy",
+  );
+  check(
+    "a message about another game is thrown away",
+    /message\?\.gameId && code && message\.gameId !== code/.test(sessionCode) &&
+      /gameId: this\.room\.roomId/.test(roomSource),
+    "a snapshot from a game this tab has left must never be painted into the " +
+      "middle of another one",
   );
   check(
     "the notification's own words are not cut off",

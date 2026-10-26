@@ -21,8 +21,6 @@ import { cleanName, parseRoomCode } from "./shared/identity.js";
 import { isCiv } from "./shared/civilizations.js";
 import { restoreGame } from "./shared/game.js";
 
-const REMEMBERED_ROOM = "samrajya.room";
-
 const state = {
   screen: "welcome",
   step: 0,
@@ -279,13 +277,57 @@ function buildActions() {
      *
      * Going back to the lobby rather than to the welcome screen, because the
      * room is still there and the other player may still be in it.
+     *
+     * The board node is about to be thrown away; nothing should keep painting
+     * into it when a snapshot arrives. The in-memory stores are emptied too -
+     * the game, the ledger, the chest - so that nothing of that game can be
+     * shown while this tab is in another one.
      */
     leaveBoard: () => {
+      const code = state.room?.roomId || session.currentRoom();
       state.screen = "lobby";
       state.error = null;
       // The board node is about to be thrown away; nothing should keep painting
       // into it when a snapshot arrives.
       state.applySnapshot = null;
+      // The game's state goes with it. A purse, a position, a set of weapons and
+      // a chest are facts about THAT game, and they must not be on the screen
+      // while this tab is in the lobby of a different one.
+      state.game = null;
+      state.room = state.room ? { ...state.room, board: null } : null;
+      /* And every key that game left behind goes with it, so that joining
+         another game cannot read them. */
+      session.clearGameKeys(code);
+      render();
+    },
+
+    /**
+     * Leave the game, and take every trace of it with us.
+     *
+     * The socket is closed, every stored key that belonged to this game is
+     * deleted, the in-memory stores are emptied, and the tab goes back to the
+     * landing page. What is left is a browser that has never been in a game,
+     * which is what a new game must start from.
+     */
+    leaveGame: async () => {
+      const code = state.room?.roomId || session.currentRoom();
+      state.busy = true;
+      render();
+      /* The live channel first: a socket that is still open would push a
+         snapshot at a screen that has left. */
+      stopWatching();
+      state.applySnapshot = null;
+      state.game = null;
+      state.room = null;
+      state.screen = "welcome";
+      state.step = 0;
+      state.error = null;
+      state.errors = {};
+      state.draft = { name: "", civ: "", rawCode: "", code: "" };
+      state.inviteLink = "";
+      await session.leave(code);
+      state.busy = false;
+      dropUrlCode();
       render();
     },
 
@@ -383,7 +425,20 @@ function toBoard(room) {
   render();
 }
 
+/**
+ * Back to the landing page, with nothing of the game left behind.
+ *
+ * This is the way out of a game, and it is a clean one. The live channel is
+ * closed, every stored key that belonged to that game is deleted, the
+ * in-memory stores are emptied - the game, the ledger, the chest - and the
+ * tab goes back to a landing page that has never been in a game.
+ *
+ * A new game must start from nothing. A purse, a position, a set of weapons
+ * and a queue of announcements that survived the leaving are a new game that
+ * begins with somebody else's game still in it.
+ */
 function toWelcome() {
+  const code = state.room?.roomId || session.currentRoom();
   state.screen = "welcome";
   state.step = 0;
   state.room = null;
@@ -392,11 +447,16 @@ function toWelcome() {
   state.errors = {};
   state.draft = { name: "", civ: "", rawCode: "", code: "" };
   state.inviteLink = "";
+  // The board node is about to be thrown away; nothing should keep painting
+  // into it when a snapshot arrives.
+  state.applySnapshot = null;
   forgetRoom();
   // The session remembers the last room it opened so a call with no code can
   // mean "the one we are in". Leaving means there is no such room, and a stale
   // one here is exactly how a player ends up back in the game they left.
   session.forget();
+  /* And every key that game left behind goes with it. */
+  session.leave(code);
   stopWatching();
   dropUrlCode();
   render();
@@ -476,6 +536,13 @@ function startWatching() {
 
       if (room.board) state.game = restoreGame(room.board);
       if (state.screen === "lobby" && before !== fingerprint(state.room)) render();
+      /* A NEW BUILD, ON THE LANDING PAGE OR IN THE LOBBY.
+
+         The check is made here because the lobby is a quiet screen and a
+         reload there costs nothing. It is NOT made in the middle of a game:
+         a player watching a chest being drawn must not have it taken away by
+         a deploy. */
+      if (state.screen !== "board") void checkVersion();
     },
     onSnapshot: (snapshot) => {
       if (!snapshot?.state) return;
@@ -543,30 +610,18 @@ async function catchUp() {
   render();
 }
 
-/* ------------------------------------------------------------------ helpers */
+/* ------------------------------------------------------------------ helpers
+
+   The room this tab is in is kept by the session, under a key that says
+   which game it is, so that a note for one game is never read as a note for
+   another. */
 
 function rememberRoom(code) {
-  try {
-    sessionStorage.setItem(REMEMBERED_ROOM, code);
-  } catch {
-    /* nothing to do */
-  }
+  session.setRoom(code);
 }
 
 function forgetRoom() {
-  try {
-    sessionStorage.removeItem(REMEMBERED_ROOM);
-  } catch {
-    /* nothing to do */
-  }
-}
-
-function rememberedRoom() {
-  try {
-    return sessionStorage.getItem(REMEMBERED_ROOM);
-  } catch {
-    return null;
-  }
+  session.setRoom(null);
 }
 
 async function copyText(text, message) {
@@ -605,6 +660,14 @@ async function boot() {
   const fromPath = parseRoomCode(location.pathname);
   const wanted = fromQuery || fromPath;
 
+  /* THE VERSION IS CHECKED FIRST.
+
+     A browser that is holding an old build must be told so before it does
+     anything else, because everything it does afterwards is against the old
+     rules. The reload happens here, on the landing page, where nothing is at
+     stake. */
+  await checkVersion();
+
   if (wanted) {
     state.draft.rawCode = wanted;
     state.screen = "join";
@@ -617,7 +680,7 @@ async function boot() {
     return;
   }
 
-  const remembered = rememberedRoom();
+  const remembered = session.currentRoom();
   if (remembered) {
     /* THE GAME IS BEING FOUND, AND THE SCREEN SAYS SO.
 
@@ -627,17 +690,58 @@ async function boot() {
        they reach for is another refresh, which looks exactly the same. */
     state.screen = "restoring";
     render();
-    const result = await session.room(remembered);
-    if (result.ok && result.data.seat !== null && result.data.seat !== undefined) {
+
+    /* A STORED GAME IS CHECKED BEFORE IT IS BELIEVED.
+
+       The room may be gone, the game may have ended, or the seat may no
+       longer be this browser's. Any of those makes the stored note stale,
+       and a stale note is discarded silently: the landing page, and no
+       explanation, because there is nothing for the player to do about a
+       game that is over. */
+    const result = await session.validate(remembered);
+    if (result.ok) {
       adoptRoom(result.data);
       return;
     }
-    // The room is gone, or this browser never had a seat in it. Either way the
-    // note is stale, and leaving it would send the next refresh after it again.
-    forgetRoom();
+    /* The room is gone, or this browser never had a seat in it. Either way the
+       note is stale, and leaving it would send the next refresh after it again. */
+    await session.leave(remembered);
+    /* And the screen goes back to the landing page: the note said there was a
+       game here, and there is not one. */
+    state.screen = "welcome";
+    state.step = 0;
   }
 
   render();
+}
+
+/**
+ * Has a new build been deployed?
+ *
+ * The page says which build it is; the server says which build it has. When
+ * they differ, this browser is holding the old one, and it reloads itself.
+ *
+ * It reloads on the landing page and in the lobby, and NOT in the middle of a
+ * game: a player watching a chest being drawn must not have it taken away
+ * by a deploy. So the check waits, and the game is never interrupted.
+ */
+async function checkVersion() {
+  const result = await session.checkVersion();
+  if (!result.same) {
+    /* A reload on the landing page or in the lobby costs nothing. */
+    location.reload();
+    return;
+  }
+  /* In a game, the check is made again when the room changes - often enough
+     to be soon, and never in the middle of a turn. */
+  if (state.screen === "board" || state.screen === "lobby") {
+    setTimeout(() => {
+      if (state.screen === "board") return;
+      session.checkVersion().then((again) => {
+        if (!again.same) location.reload();
+      });
+    }, 4000);
+  }
 }
 
 boot();

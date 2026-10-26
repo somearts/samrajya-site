@@ -452,7 +452,15 @@ export class GameRoom {
     }
     for (const socket of sockets) {
       try {
-        socket.send(JSON.stringify({ type: "state", room: this.#view(SOCKET) }));
+        socket.send(
+          JSON.stringify({
+            type: "state",
+            /* The game this message is about, so a browser that is watching
+               more than one game can tell them apart. */
+            gameId: this.room.roomId,
+            room: this.#view(SOCKET),
+          }),
+        );
       } catch {
         // A socket that closed between the list and the send. Nothing to do:
         // it is already gone, which is all that matters.
@@ -482,6 +490,10 @@ export class GameRoom {
         socket.send(
           JSON.stringify({
             type: "snapshot",
+            /* The game this message is about. A browser that is watching more
+               than one game - or that is watching a game it has left - reads
+               the id and throws away anything that is not its game. */
+            gameId: this.room.roomId,
             seq: this.room.game?.seq ?? 0,
             state: this.room.game ? serializeGame(this.room.game) : null,
             events,
