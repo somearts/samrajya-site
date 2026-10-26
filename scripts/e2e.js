@@ -5348,7 +5348,41 @@ try {
     };
   `);
 
-  /* Answer a property decision, so the card slides away. */
+  /* Answer a property decision, so the card slides away.
+
+     The square has to be one nobody owns: an owned square offers an upgrade
+     rather than a purchase, and the purchase is what slides the card away. */
+  const buyTarget = await host.json(`
+    const b = document.querySelector(".board");
+    const cells = [...b.querySelectorAll(".board__cell[data-id]")];
+    /* The ledger's properties are a Map, and only the squares somebody holds
+       have a sheet at all. */
+    const sheets = b.game?.ledger?.properties;
+    const owned = new Set();
+    if (sheets && typeof sheets.forEach === "function") {
+      sheets.forEach((sheet, id) => {
+        if (sheet && sheet.owner !== null && sheet.owner !== undefined) owned.add(id);
+      });
+    }
+    const free = cells
+      .map((c) => c.dataset.id)
+      .filter((id) => !owned.has(id) &&
+        !["start", "outer-space", "black-hole", "fight", "ragnarok", "nexus"].includes(id));
+    return { free, owned: [...owned] };
+  `);
+  note("there is a square nobody owns", buyTarget.free.length > 0,
+    `${buyTarget.free.length} free, owned: ${buyTarget.owned.join(",")}`);
+
+  const targetIndex = await host.json(`
+    const b = document.querySelector(".board");
+    const cells = [...b.querySelectorAll(".board__cell[data-id]")];
+    const id = ${JSON.stringify(buyTarget.free[0] || "moon")};
+    const cell = cells.find((c) => c.dataset.id === id);
+    return cell ? [...cells].indexOf(cell) : 0;
+  `);
+  /* One before the square, so a throw of one lands exactly on it. */
+  const startIndex = targetIndex === 0 ? 0 : targetIndex - 1;
+
   await host.eval(`(async () => {
     const b = document.querySelector(".board");
     const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -5357,31 +5391,39 @@ try {
       await wait(50);
     }
     await b.play({ type: "debug", active: 0 });
-    await b.play({ type: "debug", position: 1 });
+    await b.play({ type: "debug", position: ${startIndex} });
     return true;
   })()`);
   await sleep(1200);
   await host.eval(`(async () => {
     const b = document.querySelector(".board");
-    await b.play({ type: "roll", rng: 0.3 });
+    await b.play({ type: "roll", rng: 0.05 });
     return true;
   })()`);
-  await sleep(3000);
+  /* The walk takes a moment, and the decision opens after it. */
+  for (let i = 0; i < 60; i += 1) {
+    await sleep(150);
+    const st = await host.json(`const b = document.querySelector(".board"); return { phase: b.game ? b.game.phase : "", busy: b.dataset.busy };`);
+    if (st.phase === "DECISION" && st.busy !== "true") break;
+  }
   const onProperty = await host.json(`
     const b = document.querySelector(".board");
     return { landing: b.game && b.game.landing ? b.game.landing.id + "/" + b.game.landing.kind : "",
-             phase: b.game ? b.game.phase : "" };
+             phase: b.game ? b.game.phase : "",
+             position: b.game ? b.game.pieces.map((p) => p.position) : [] };
   `);
-  note("the host landed on a property to buy", onProperty.landing.endsWith("/buy"), onProperty.landing);
+  note("the host landed on a property to buy", onProperty.landing.endsWith("/buy"),
+    `${onProperty.landing} phase ${onProperty.phase} at ${onProperty.position.join(",")} (wanted ${buyTarget.free[0]} at ${targetIndex})`);
 
   await host.eval(`document.querySelector(".property-card__buy")?.click(); true;`);
-  await sleep(3500);
+  await sleep(4000);
   const afterSlide = await holderOpacity();
   note("the card slid away and the holder is not left transparent",
     afterSlide.opacity === "1",
     `holder opacity ${afterSlide.opacity}`);
-  note("and nothing is left in it", afterSlide.hidden === true || afterSlide.child === null,
-    `hidden ${afterSlide.hidden}, child ${afterSlide.child}`);
+  note("and the holder is empty again",
+    afterSlide.hidden === true || afterSlide.child === null,
+    `hidden ${afterSlide.hidden}, child ${afterSlide.child}, phase ${afterSlide.phase}`);
 
   /* Now the two cards that used to inherit the ghost. */
   for (const [id, what] of [["nexus", "the Nexus"], ["ragnarok", "Ragnarok"]]) {
