@@ -38,7 +38,7 @@
 
 import { el } from "./dom.js";
 import { settled } from "./motion.js";
-import { resetHolder } from "./board-fx.js";
+import { flyCoins, resetHolder } from "./board-fx.js";
 import { prefersStill } from "./dice.js";
 import { NEXUS_KEEPER, NEXUS_PRAY_COST } from "./shared/nexus-cards.js";
 import { RAGNAROK, WEAPONS, weaponById } from "./shared/weapons.js";
@@ -302,13 +302,19 @@ function nexusFace(card, { name, text, amount }) {
   const tone = Number(amount) < 0 ? "spend" : "earn";
   const face = card.querySelector(".nexus-card__deck-top-face");
   if (!face) return;
+  const amountEl = el("p", {
+    class: `nexus-card__face-amount nexus-card__face-amount--${tone}`,
+    text: `${Number(amount) < 0 ? "−" : "+"}${rupees(Math.abs(Number(amount) || 0))}`,
+  });
+  /* The tone and the amount are written on the amount itself as well as on
+     the face, so that anything reading the card can tell a gain from a loss
+     without having to guess from the colour. */
+  amountEl.dataset.tone = tone;
+  amountEl.dataset.amount = String(Number(amount) || 0);
   face.replaceChildren(
     el("p", { class: "nexus-card__face-name", text: name }),
     el("p", { class: "nexus-card__face-text", text }),
-    el("p", {
-      class: `nexus-card__face-amount nexus-card__face-amount--${tone}`,
-      text: `${Number(amount) < 0 ? "−" : "+"}${rupees(Math.abs(Number(amount) || 0))}`,
-    }),
+    amountEl,
   );
   face.dataset.tone = tone;
   face.dataset.amount = String(Number(amount) || 0);
@@ -333,19 +339,39 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
   board.dataset.property = holder.dataset.property;
 
   const name = playerName || "Your opponent";
-  const card = chest.kind === "nexus"
-    ? nexusCard({
-        drawable: mine,
-        phase: chest.phase,
-        caption: mine ? null : chestCaption(name, `is at the Nexus`),
-      })
-    : ragnarokCard({
-        drawable: mine,
-        phase: chest.phase,
-        caption: mine ? null : chestCaption(name, `is at Ragnarok`),
-      });
 
-  holder.replaceChildren(card);
+  /* THE CARD IS BUILT ONCE, AND THE STAGE UPDATES IT.
+
+     A card that is rebuilt every time the stage changes is a card whose
+     animation is thrown away: the deck that is halfway through its shuffle
+     is wiped and started again, and the face that has just been turned over
+     is replaced by an empty one.
+
+     So the card that is already up is kept, and only its stage is written
+     into it. A different chest, or no chest at all, draws a new one. */
+  const existing = holder.querySelector(".nexus-card, .chest-card");
+  const sameKind = existing && (
+    (chest.kind === "nexus" && existing.classList.contains("nexus-card")) ||
+    (chest.kind === "ragnarok" && existing.classList.contains("chest-card"))
+  );
+
+  let card = existing;
+  if (!sameKind) {
+    card = chest.kind === "nexus"
+      ? nexusCard({
+          drawable: mine,
+          phase: chest.phase,
+          caption: mine ? null : chestCaption(name, `is at the Nexus`),
+        })
+      : ragnarokCard({
+          drawable: mine,
+          phase: chest.phase,
+          caption: mine ? null : chestCaption(name, `is at Ragnarok`),
+        });
+    holder.replaceChildren(card);
+  } else {
+    card.dataset.phase = chest.phase;
+  }
   holder.hidden = false;
 
   /* The buttons. They are wired to the actions, and the server decides what
@@ -354,8 +380,16 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
     for (const [selector, handler] of Object.entries(handlers)) {
       const button = card.querySelector(selector);
       if (button && typeof handler === "function") {
-        button.addEventListener("click", handler, { once: true });
+        button.replaceWith(button.cloneNode(true));
+        const live = card.querySelector(selector);
+        live.addEventListener("click", handler, { once: true });
       }
+    }
+  } else {
+    /* The other player's buttons are shown, but they are not live. */
+    for (const button of card.querySelectorAll('[data-action="pray"], [data-action="draw"]')) {
+      button.disabled = true;
+      button.setAttribute("aria-disabled", "true");
     }
   }
 
@@ -409,7 +443,7 @@ export function drawChestPeek(board, kind, { onClose = null } = {}) {
  * says the chest has moved to "shuffling". A device that arrives late finds
  * the shuffle already part-way through and joins it where it is.
  */
-export async function playNexusStage(board, chest) {
+export async function playNexusStage(board, chest, { chip = null, elapsed = 0 } = {}) {
   const holder = board.querySelector(".board__card");
   const card = holder?.querySelector(".nexus-card");
   if (!card || !chest) return null;
@@ -421,7 +455,7 @@ export async function playNexusStage(board, chest) {
       const result = card.querySelector(".nexus-card__result");
       card.insertBefore(wrap, result || null);
     }
-    await shuffleDeck(card, { duration: SHUFFLE_MS });
+    await shuffleDeck(card, { duration: Math.max(0, SHUFFLE_MS - elapsed) });
     if (chest.phase !== "shuffling") return card;
   }
 
@@ -432,7 +466,16 @@ export async function playNexusStage(board, chest) {
       const result = card.querySelector(".nexus-card__result");
       card.insertBefore(wrap, result || null);
     }
-    nexusFace(card, chest.result);
+    /* The face is written BEFORE the flip, so the card turns over onto its
+       face rather than onto an empty card.
+
+       The card's own name and line are inside the result's card; the amount
+       is beside them. */
+    nexusFace(card, {
+      name: chest.result.card.name,
+      text: chest.result.card.text,
+      amount: chest.result.amount ?? chest.result.card.amount,
+    });
     await flipTop(card);
     const result = card.querySelector(".nexus-card__result");
     if (result) {
@@ -445,6 +488,24 @@ export async function playNexusStage(board, chest) {
           text: `${chest.result.card.amount < 0 ? "−" : "+"}${rupees(Math.abs(chest.result.card.amount))}`,
         }),
       );
+    }
+
+    /* THE MONEY MOVES, AND IT IS SHOWN MOVING.
+
+       A gain flies from the middle of the board to the player's chip; a loss
+       flies from the chip to the middle. The balance on the chip is already
+       the new one - the server applied it when the card was turned over -
+       and the coins are the saying of it.
+
+       Both devices fly the same coins, because both are told the same amount
+       by the same state. */
+    const amount = Number(chest.result.card.amount) || 0;
+    if (amount !== 0 && chip) {
+      await flyCoins(board, {
+        from: amount > 0 ? card : chip,
+        to: amount > 0 ? chip : card,
+        amount: Math.abs(amount),
+      });
     }
   }
 
@@ -464,6 +525,10 @@ export async function playNexusStage(board, chest) {
           text: `−${rupees(NEXUS_PRAY_COST)}`,
         }),
       );
+    }
+    /* The offering flies from the player's chip to the middle of the board. */
+    if (chip) {
+      await flyCoins(board, { from: chip, to: card, amount: NEXUS_PRAY_COST });
     }
   }
 

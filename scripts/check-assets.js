@@ -1157,6 +1157,29 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
       "event, and a press on the tile could seem to do nothing at all",
   );
   check(
+    "the deck is a stack, and it shuffles for about three and a half seconds",
+    /export const SHUFFLE_MS = 3500;/.test(chestStageJs) &&
+      /export const STACK_LAYERS = 12;/.test(chestStageJs) &&
+      /nexus-card__deck-half/.test(chestStageJs) &&
+      /translate\(-38%/.test(chestStageJs),
+    "the shuffle splits the deck into two halves and riffles it back, and " +
+      "the stack is a picture of thirty cards rather than thirty cards",
+  );
+  check(
+    "the card that is turned over keeps its face",
+    /nexusFace\(card, \{/.test(chestStageJs) &&
+      /await flipTop\(card\);/.test(chestStageJs) &&
+      /nexus-card__deck-top-face/.test(chestStageJs),
+    "a face that is written after the flip is a face nobody ever sees, and " +
+      "a card that is rebuilt wipes the one that was just turned over",
+  );
+  check(
+    "the offering is a temple offering, and it flies to the middle",
+    /text: "Temple offering"/.test(gameJs) &&
+      /from: chip, to: card, amount: NEXUS_PRAY_COST/.test(chestStageJs),
+    "the ledger says what the offering was, and the coins say it too",
+  );
+  check(
     "the notification's own words are not cut off",
     /\.announce__big\s*\{[^}]*?font-size:\s*44px;[^}]*?line-height:\s*1\.45;/.test(boardCss) &&
       /\.announce__label\s*\{[^}]*?font-size:\s*15px;[^}]*?line-height:\s*1\.45;/.test(boardCss),

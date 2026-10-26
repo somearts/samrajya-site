@@ -1045,6 +1045,10 @@ export function board({
 
   /* The stage that has been played, so an animation is not played twice. */
   let chestStage = null;
+  /* When this board first saw the current stage, in this board's own clock.
+     The shuffle is measured from here, because the server's clock is not this
+     browser's clock and the two cannot be subtracted. */
+  let chestStageAt = 0;
 
   /* The name of the player at the chest, for the caption. */
   const chestName = (seat) =>
@@ -1077,6 +1081,7 @@ export function board({
     const stageKey = `${chest.kind}:${chest.phase}:${chest.startedAt || 0}`;
     const changed = chestStage !== stageKey;
     chestStage = stageKey;
+    if (changed) chestStageAt = Date.now();
 
     let card = holder()?.querySelector(".nexus-card, .chest-card") || null;
 
@@ -1105,7 +1110,7 @@ export function board({
 
       /* The closing. The acting player presses Done and the chest goes; the
          other player watches it go. */
-      if (chest.phase === "revealed" || chest.phase === "done") {
+      if (chest.phase === "revealed" || chest.phase === "done" || chest.phase === "praying") {
         if (mine) {
           if (!card.querySelector('[data-action="done"]')) {
             card.append(chestDoneButton(() => {
@@ -1124,7 +1129,10 @@ export function board({
 
     /* The animation, once per stage. */
     const playing = chest.kind === "nexus"
-      ? playNexusStage(frame, chest)
+      ? playNexusStage(frame, chest, {
+          chip: chip(chest.playerId),
+          elapsed: Date.now() - chestStageAt,
+        })
       : playRagnarokStage(frame, chest);
     Promise.resolve(playing)
       .then(() => {

@@ -893,7 +893,9 @@ export function applyAction(state, action, rng = Math.random) {
 
     /* -------------------------------------------------------------- continue */
     case "continue": {
-      if (actor !== active) return refused(state, action, "It is not your turn.");      if (state.phase === PHASE.DECISION) {
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+
+      if (state.phase === PHASE.DECISION) {
         const kind = state.landing?.kind;
         if (kind === "buy" || kind === "own") {
           return refused(state, action, "Choose, then the turn can end.");
