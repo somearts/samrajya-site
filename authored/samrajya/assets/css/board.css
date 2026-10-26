@@ -100,6 +100,12 @@
      are made of one paper. */
   --card-inset: #fbf9f5;
 
+  /* The paper of a card that has been DEALT - the Nexus card that comes out of
+     the deck. It is the brightest paper on the board, because it is the one
+     thing the player is being asked to look at, and it sits on the Nexus
+     card's own ground. */
+  --dealt-paper: #ffffff;
+
   /* The die's size, and half of it. Written once here so that the turn pill
      below the die can be placed from the die's own edge rather than from a
      second, independently drifting, copy of how big the die is. */
@@ -2034,6 +2040,34 @@
   display: none;
 }
 
+/* AND THE CARD IS A CARD.
+
+   The face is a card the way the rest of the cards are: ivory, a hairline
+   and a soft shadow, and big enough to be read at a glance. A face that is
+   only words on the middle's ground is a sentence, and the thing that was
+   dealt should look like a thing that was dealt.
+
+   It is also BIGGER than the card it came out of - a card that is lifted out
+   and turned over comes towards the reader. The size is set here and the
+   turn is done by the animation, so the two never fight. */
+.nexus-card[data-phase="revealed"] .nexus-card__deck-top {
+  width: calc(var(--cell) * 2.1);
+  height: calc(var(--cell) * 2.9);
+}
+
+.nexus-card[data-phase="revealed"] .nexus-card__deck-top-face {
+  /* The card that was dealt is the brightest paper on the board, so it reads
+     as a card in the hand rather than as words on the board. */
+  background: var(--dealt-paper);
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  box-shadow: 0 3px 16px rgb(18 17 16 / 0.2);
+}
+
+/* The face is not there until the card is turned over. */
+.nexus-card:not([data-phase="revealed"]) .nexus-card__deck-top-face {
+  opacity: 0;
+}
+
 /* The two halves the deck splits into. */
 .nexus-card__deck-halves {
   position: absolute;
@@ -2086,10 +2120,19 @@
   width: 100%;
   height: 100%;
   border-radius: 6px;
-  backface-visibility: hidden;
   overflow: hidden;
 }
 
+/* THE TURN IS DONE WITH A FADE, NOT WITH A 3D FLIP.
+
+   A card that turns over in three dimensions is a card whose two faces the
+   browser sorts into an order of its own, and which of them is painted is
+   not an order anybody should have to reason about to see a card. The card
+   turns by its own rotation, and the face REPLACES the back: the back is
+   hidden the moment the card is turned over, and the face is there.
+
+   It reads as a card being turned, it works in every browser, and there is
+   no moment where the player sees the wrong side of it. */
 .nexus-card__deck-top-back {
   background:
     repeating-linear-gradient(
@@ -2101,7 +2144,6 @@
 }
 
 .nexus-card__deck-top-face {
-  transform: rotateY(180deg);
   display: grid;
   align-content: center;
   justify-items: center;

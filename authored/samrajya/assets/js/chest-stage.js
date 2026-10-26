@@ -282,22 +282,35 @@ async function shuffleDeck(card, { duration }) {
 async function flipTop(card) {
   const top = card.querySelector(".nexus-card__deck-top");
   if (!top) return;
+  const face = top.querySelector(".nexus-card__deck-top-face");
+
   if (still()) {
     top.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, fill: "both" });
+    if (face) face.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200, fill: "both" });
     await wait(200);
     return;
   }
+
+  /* The card lifts out of the deck and turns. The face REPLACES the back as
+     the turn finishes: the back is not there afterwards, and the face is.
+     Which of two faces a browser paints is its own business, and it is not
+     a business that should decide whether a player can see the card they
+     were dealt. */
   await settled(
     top.animate(
       [
         { transform: "translate(-50%, calc(-50% - 4px)) scale(1) rotateY(0deg)", opacity: 1 },
-        { transform: "translate(-50%, calc(-50% - 4px)) scale(1.25) rotateY(0deg)", offset: 0.4 },
-        { transform: "translate(-50%, calc(-50% - 4px)) scale(1.25) rotateY(180deg)", offset: 1 },
+        { transform: "translate(-50%, calc(-50% - 4px)) scale(1.14) rotateY(84deg)", offset: 0.5 },
+        { transform: "translate(-50%, calc(-50% - 4px)) scale(1.14) rotateY(0deg)", offset: 1 },
       ],
       { duration: FLIP_MS, easing: "cubic-bezier(.3,.7,.3,1)", fill: "both" },
     ).finished,
     FLIP_MS + 200,
   );
+
+  if (face) {
+    face.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, fill: "both" });
+  }
 }
 
 /* ---------------------------------------------------------------- the deck */
@@ -512,17 +525,13 @@ export async function playNexusStage(board, chest, { chip = null, elapsed = 0 } 
       amount: chest.result.amount ?? chest.result.card.amount,
     });
     await flipTop(card);
+    /* The card's face carries the heading, the line and the amount. The
+       result underneath is the same three things said again, which is a card
+       saying two things at once - so it is left empty. */
     const result = card.querySelector(".nexus-card__result");
     if (result) {
-      result.hidden = false;
-      result.replaceChildren(
-        el("p", { class: "nexus-card__result-name", text: chest.result.card.name }),
-        el("p", { class: "nexus-card__result-text", text: chest.result.card.text }),
-        el("p", {
-          class: `nexus-card__result-amount nexus-card__result-amount--${chest.result.card.amount < 0 ? "spend" : "earn"}`,
-          text: `${chest.result.card.amount < 0 ? "−" : "+"}${rupees(Math.abs(chest.result.card.amount))}`,
-        }),
-      );
+      result.hidden = true;
+      result.replaceChildren();
     }
 
     /* THE MONEY MOVES, AND IT IS SHOWN MOVING.
