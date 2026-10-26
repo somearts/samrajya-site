@@ -1164,6 +1164,56 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
     "the line under the figure is a third piece of copy, and it has to be " +
       "readable from outside the page as well as on it",
   );
+
+  /* ------------------------------------------------------- the shared chest
+
+     Ragnarok and Nexus are shared screens. The screen is drawn from the
+     state's chest, so both players see the same thing and a device that
+     missed a message still shows it. */
+  const chestStageJs = await readFile(join(OUT, "assets", "js", "chest-stage.js"), "utf8");
+
+  check(
+    "the chest is a fact in the state, not an event",
+    /chest:\s*null,/.test(gameJs) &&
+      /next\.chest = \{/.test(gameJs) &&
+      /kind: cell\.id === RAGNAROK\.id \? "ragnarok" : "nexus"/.test(gameJs),
+    "a shared screen that is built by one player and sent to the other is a " +
+      "screen that can be missed, and the player who missed it has to refresh",
+  );
+  check(
+    "the middle is drawn from the chest, on both screens",
+    /export function drawChestStage/.test(chestStageJs) &&
+      /drawChestStage\(frame, chest/.test(boardJs) &&
+      /openChestStage\(\);/.test(boardJs),
+    "both devices draw the same screen from the same state",
+  );
+  check(
+    "the buttons are the acting player's alone",
+    /const mine = isMyTurn\(\);/.test(boardJs) &&
+      /if \(mine\) \{/.test(boardJs),
+    "a live button on the other player's screen is a button that does nothing",
+  );
+  check(
+    "the other player is told who is at the chest",
+    /export function chestCaption/.test(chestStageJs) &&
+      /chestWaiting/.test(chestStageJs) &&
+      /Waiting for/.test(chestStageJs),
+    "the waiting player has to know the screen is not waiting for them",
+  );
+  check(
+    "the chest is closed by the acting player, and only then",
+    /case "done": \{/.test(gameJs) &&
+      /next\.chest = null;/.test(gameJs) &&
+      /chestDoneButton/.test(chestStageJs),
+    "the turn ends when the actor taps Done, and the chest goes with it",
+  );
+  check(
+    "the Nexus card's money moves when it is turned over, and once",
+    /case "revealNexus": \{/.test(gameJs) &&
+      /next\.chest\.result = \{[\s\S]{0,200}?revealed: true/.test(gameJs),
+    "the card is chosen first and the money moves at the reveal, so the " +
+      "balance changes once and at the moment the player sees the number",
+  );
   check(
     "and Escape closes the record wherever the focus is",
     /document\.addEventListener\("keydown", onEscape, true\)/.test(boardJs) &&

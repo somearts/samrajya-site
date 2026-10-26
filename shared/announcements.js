@@ -101,9 +101,15 @@ export function announcementFor(event, { viewer = null, ledger = null } = {}) {
         tone: "spend",
       };
 
-    case "nexusDrawn": {
+    /* The card has been CHOSEN. Nothing has moved yet: the money moves when
+       the card is turned over, so the middle does not say a number twice. */
+    case "nexusDrawn":
+      return null;
+
+    /* The card is turned over, and this is where the money moves. */
+    case "nexusRevealed": {
       const card = event.card || {};
-      const amount = Number(card.amount) || 0;
+      const amount = Number(event.amount ?? card.amount) || 0;
       return {
         label: card.name || "Nexus",
         big: signed(amount),

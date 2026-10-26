@@ -144,6 +144,22 @@ export function createGame(players = [], { opening = STARTING_MONEY } = {}) {
     visit: null,
     lastRoll: null,
     turn: 0,
+    /* The chest that is open, or null.
+
+       Ragnarok and Nexus are SHARED screens: they are a fact about the game,
+       not a thing one player's browser invented. So the chest lives in the
+       state, and every client draws the middle from it. A client that missed a
+       message, or that joined late, or that reconnected, reads the same chest
+       out of the same state and shows the same screen.
+
+       kind      "ragnarok" or "nexus"
+       playerId  the seat that is at the chest
+       phase     where the chest is in its own little story
+       startedAt when it began, so both devices can start their animation at
+                 the same moment
+       choice    what the player chose ("pray" | "draw")
+       result    what the chest produced */
+    chest: null,
     /* Accepted actions, in order. Phase 2 numbers actions with this so a
        duplicate arriving over a socket can be ignored rather than replayed. */
     seq: 0,
@@ -209,6 +225,7 @@ function cloneGame(state) {
     landing: state.landing ? { ...state.landing } : null,
     visit: state.visit ? { ...state.visit } : null,
     lastRoll: state.lastRoll ? { ...state.lastRoll } : null,
+    chest: state.chest ? { ...state.chest } : null,
   };
 }
 
@@ -306,6 +323,15 @@ const refused = (state, action, why) => ({
 
 const event = (seq, type, data = {}) => ({ type, seq, ...data });
 
+/**
+ * The clock the shared screens agree on.
+ *
+ * A chest is opened at a moment, and both devices have to start their
+ * animation at the same moment - so the moment is a fact in the state, not
+ * something each browser decides for itself. The server is the clock.
+ */
+const now = () => Date.now();
+
 /* ----------------------------------------------------------------- the rules */
 
 /**
@@ -379,6 +405,7 @@ export function applyAction(state, action, rng = Math.random) {
         id: cell?.id || "",
         kind: "none",
       };
+      next.chest = null;
       next.visit = {
         seat: active,
         bought: false,
@@ -482,6 +509,30 @@ export function applyAction(state, action, rng = Math.random) {
         }
       } else if (cell?.id === RAGNAROK.id || cell?.id === NEXUS.id) {
         next.landing.kind = "chest";
+        /* THE CHEST IS OPENED HERE, IN THE STATE.
+
+           The chest is a shared screen, so it is a fact about the game and not
+           a thing one browser invented. It is opened when the coin stops on
+           the square, and every client draws the middle from it - so a client
+           that missed a message, or that joined late, or that reconnected,
+           reads the same chest out of the same state and shows the same
+           screen. Nothing about it has to be announced to be seen.
+
+           The phase starts at "open": the chest is there, the acting player
+           may press, and the other player is watching. */
+        next.chest = {
+          kind: cell.id === RAGNAROK.id ? "ragnarok" : "nexus",
+          playerId: active,
+          phase: "open",
+          startedAt: now(),
+          choice: null,
+          result: null,
+        };
+        ok("chestOpened", {
+          kind: next.chest.kind,
+          seat: active,
+          startedAt: next.chest.startedAt,
+        });
       } else {
         next.landing.kind = "none";
       }
@@ -614,14 +665,30 @@ export function applyAction(state, action, rng = Math.random) {
       if (next.visit.drawn !== null) {
         return refused(state, action, "This chest has already been drawn from.");
       }
+      if (!state.chest) return refused(state, action, "There is no chest to draw from.");
+      if (state.chest.phase !== "open") {
+        return refused(state, action, "The draw is already under way.");
+      }
 
+      /* THE DRAW IS DECIDED HERE AND STORED.
+
+         The weapon is chosen by the server the moment the button is pressed,
+         and it is written into the chest straight away. The clients do not
+         draw: they show what the state says, once the animation has run.
+         So a client that arrives late sees the same weapon, and a client
+         that never saw the press still sees the answer. */
       const outcome = drawWeapon(rng);
       next.visit.drawn = outcome;
       next.phase = PHASE.DECISION;
+      next.chest.phase = "drawing";
+      next.chest.startedAt = now();
+      next.chest.choice = "draw";
+      next.chest.result = outcome === BAD_LUCK ? { badLuck: true } : { weapon: outcome };
       ok("weaponDrawn", {
         seat: active,
         weapon: outcome === BAD_LUCK ? null : outcome,
         badLuck: outcome === BAD_LUCK,
+        startedAt: next.chest.startedAt,
       });
       return { state: next, events };
     }
@@ -647,6 +714,7 @@ export function applyAction(state, action, rng = Math.random) {
       piece.weapons.push(weapon);
       next.visit.collected = true;
       next.phase = PHASE.RESOLVING;
+      if (next.chest) next.chest.phase = "revealed";
       recordEntry(next.ledger, {
         turn: state.turn,
         seat: active,
@@ -674,18 +742,36 @@ export function applyAction(state, action, rng = Math.random) {
       if (state.phase !== PHASE.DECISION) {
         return refused(state, action, "There is nothing to pray for here.");
       }
+      if (!state.chest) return refused(state, action, "There is nothing to pray for here.");
+      if (state.chest.phase !== "open") {
+        return refused(state, action, "The Nexus has already been answered.");
+      }
 
+      /* THE OFFERING IS TAKEN HERE, AND THE CHEST SAYS SO.
+
+         The ledger entry is the one the profile shows, and the chest's own
+         result is the same fact written for the middle of the board. Both
+         devices read the same chest. */
       const verdict = adjustMoney(next.ledger, active, -NEXUS_PRAY_COST, {
         turn: state.turn,
         seat: active,
         kind: "nexus",
-        text: "Offered at the Nexus",
+        text: "Temple offering",
       });
       if (!verdict.ok) return refused(state, action, verdict.why);
 
       next.visit.prayed = true;
-      next.phase = PHASE.RESOLVING;
-      ok("prayed", { seat: active, amount: NEXUS_PRAY_COST, money: verdict.money });
+      next.phase = PHASE.DECISION;
+      next.chest.phase = "praying";
+      next.chest.choice = "pray";
+      next.chest.startedAt = now();
+      next.chest.result = { amount: -NEXUS_PRAY_COST, money: verdict.money };
+      ok("prayed", {
+        seat: active,
+        amount: NEXUS_PRAY_COST,
+        money: verdict.money,
+        startedAt: next.chest.startedAt,
+      });
       return { state: next, events };
     }
 
@@ -700,8 +786,53 @@ export function applyAction(state, action, rng = Math.random) {
       if (state.phase !== PHASE.DECISION) {
         return refused(state, action, "There is no card to draw here.");
       }
+      if (!state.chest) return refused(state, action, "There is no card to draw here.");
+      if (state.chest.phase !== "open") {
+        return refused(state, action, "The Nexus has already been answered.");
+      }
 
+      /* THE CARD IS CHOSEN HERE AND STORED AT ONCE.
+
+         The server picks the card the moment the button is pressed and writes
+         it into the chest. The clients do not draw: they show what the state
+         says, once the shuffle has run. So the money can be applied at the
+         moment the card is REVEALED - which is a later action - and both
+         balances still move once. */
       const card = drawNexusCard(rng);
+      next.visit.nexusDrawn = true;
+      next.visit.nexusCard = card;
+      next.phase = PHASE.DECISION;
+      next.chest.phase = "shuffling";
+      next.chest.choice = "draw";
+      next.chest.startedAt = now();
+      next.chest.result = { card, amount: card.amount, revealed: false };
+      ok("nexusDrawn", {
+        seat: active,
+        card,
+        startedAt: next.chest.startedAt,
+      });
+      return { state: next, events };
+    }
+
+    /* THE NEXUS CARD IS TURNED OVER, AND THE MONEY MOVES.
+
+       This is the moment the card is revealed: the server takes the amount
+       out of (or into) the purse, writes the ledger entry, and the chest
+       records that it has been revealed. Both devices then show the card and
+       the new balance. */
+    case "revealNexus": {
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.landing?.id !== NEXUS.id || state.landing?.kind !== "chest") {
+        return refused(state, action, "There is no card to turn over here.");
+      }
+      if (!state.chest || state.chest.choice !== "draw" || !state.chest.result?.card) {
+        return refused(state, action, "There is no card to turn over.");
+      }
+      if (state.chest.result.revealed) {
+        return refused(state, action, "That card has already been turned over.");
+      }
+
+      const card = state.chest.result.card;
       const verdict = adjustMoney(next.ledger, active, card.amount, {
         turn: state.turn,
         seat: active,
@@ -710,18 +841,59 @@ export function applyAction(state, action, rng = Math.random) {
       });
       if (!verdict.ok) return refused(state, action, verdict.why);
 
-      next.visit.nexusDrawn = true;
-      next.visit.nexusCard = card;
-      next.phase = PHASE.RESOLVING;
-      ok("nexusDrawn", { seat: active, card, money: verdict.money });
+      next.chest.phase = "revealed";
+      next.chest.result = {
+        ...state.chest.result,
+        revealed: true,
+        money: verdict.money,
+      };
+      next.phase = PHASE.DECISION;
+      ok("nexusRevealed", {
+        seat: active,
+        card,
+        amount: card.amount,
+        money: verdict.money,
+      });
+      return { state: next, events };
+    }
+
+    /* ------------------------------------------------------------ the chest is
+       DONE. The acting player has finished with it - the weapon is collected,
+       the card is turned over - and the visit is over. This is the only thing
+       that closes a shared chest, and it is pressed by the acting player.
+
+       Both devices close together: the chest goes to null in the state, and
+       every client draws the middle from the state, so there is nothing left
+       to show. */
+    case "done": {
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (!state.chest) return refused(state, action, "There is nothing to finish.");
+
+      if (state.chest.kind === "ragnarok") {
+        if (state.visit?.drawn === null) {
+          return refused(state, action, "Draw from the chest first.");
+        }
+        if (state.visit?.drawn !== BAD_LUCK && !state.visit?.collected) {
+          return refused(state, action, "Collect the weapon first.");
+        }
+      } else if (state.chest.kind === "nexus") {
+        /* A Nexus card that has been chosen but not turned over is turned over
+           first, so the money moves exactly once and at the moment the card
+           is seen. */
+        if (state.chest.choice === "draw" && !state.chest.result?.revealed) {
+          return refused(state, action, "Turn the card over first.");
+        }
+      }
+
+      next.chest = null;
+      next.phase = PHASE.TURN_END;
+      ok("chestClosed", { kind: state.chest.kind, seat: active });
       return { state: next, events };
     }
 
     /* -------------------------------------------------------------- continue */
     case "continue": {
-      if (actor !== active) return refused(state, action, "It is not your turn.");
-
-      if (state.phase === PHASE.DECISION) {
+      if (actor !== active) return refused(state, action, "It is not your turn.");      if (state.phase === PHASE.DECISION) {
         const kind = state.landing?.kind;
         if (kind === "buy" || kind === "own") {
           return refused(state, action, "Choose, then the turn can end.");
@@ -751,6 +923,14 @@ export function applyAction(state, action, rng = Math.random) {
               next.visit.declined = true;
               ok("nexusDeclined", { seat: active });
             }
+          }
+          /* A chest that has been answered is closed by the acting player
+             pressing Done. `continue` is still accepted - it is what the
+             client sends when the chest has nothing left to answer - and it
+             closes the chest on its way out. */
+          if (state.chest) {
+            next.chest = null;
+            ok("chestClosed", { kind: state.chest.kind, seat: active });
           }
         }
         next.phase = PHASE.TURN_END;
@@ -799,6 +979,9 @@ export function applyAction(state, action, rng = Math.random) {
       next.landing = null;
       next.visit = null;
       next.lastRoll = null;
+      /* The chest is gone with the turn. Both devices read this and both close
+         the middle at the same moment. */
+      next.chest = null;
       ok("turnChanged", {
         from,
         to,

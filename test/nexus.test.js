@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { applyAction, createGame, PHASE } from "../shared/game.js";
 import { moneyOf } from "../shared/ledger.js";
 import { NEXUS, NEXUS_CARDS, NEXUS_PRAY_COST, drawNexusCard } from "../shared/nexus-cards.js";
+import { RAGNAROK } from "../shared/weapons.js";
 
 const PLAYERS = [
   { name: "Sam", civ: "indus-valley" },
@@ -40,6 +41,15 @@ function standOn(state, index, id, kind = "none") {
     nexusCard: null,
     declined: false,
   };
+  /* A chest is open whenever the square is one, and it is a fact about the
+     state - so a test that stands on the Nexus stands on it with the chest
+     open, exactly as the server would leave it. */
+  state.chest =
+    id === NEXUS.id
+      ? { kind: "nexus", playerId: state.active, phase: "open", startedAt: 1, choice: null, result: null }
+      : id === RAGNAROK.id
+        ? { kind: "ragnarok", playerId: state.active, phase: "open", startedAt: 1, choice: null, result: null }
+        : null;
   state.phase = PHASE.DECISION;
   return state;
 }
@@ -67,7 +77,7 @@ test("landing on Nexus sets the decision kind to chest", () => {
   assert.equal(after.landing.kind, "chest");
 });
 
-test("pray costs the fixed amount and resolves the visit", () => {
+test("pray costs the fixed amount and says so in the chest", () => {
   const state = createGame(PLAYERS);
   standOn(state, 11, NEXUS.id, "chest");
   const before = moneyOf(state.ledger, 0);
@@ -75,11 +85,29 @@ test("pray costs the fixed amount and resolves the visit", () => {
   assert.equal(events[0].type, "prayed");
   assert.equal(events[0].amount, NEXUS_PRAY_COST);
   assert.equal(moneyOf(after.ledger, 0), before - NEXUS_PRAY_COST);
-  assert.equal(after.phase, PHASE.RESOLVING);
   assert.equal(after.visit.prayed, true);
+  /* The chest is a shared screen, and it says what has happened. */
+  assert.equal(after.chest.phase, "praying");
+  assert.equal(after.chest.choice, "pray");
+  assert.equal(after.chest.result.amount, -NEXUS_PRAY_COST);
 });
 
-test("drawNexus picks a card and changes money", () => {
+test("the ledger says the offering was a temple offering", () => {
+  const state = createGame(PLAYERS);
+  standOn(state, 11, NEXUS.id, "chest");
+  const { state: after } = take(state, { type: "pray" });
+  const entry = after.ledger.history.find((h) => h.kind === "nexus");
+  assert.ok(entry, "the offering is written into the ledger");
+  assert.equal(entry.text, "Temple offering");
+});
+
+test("drawNexus picks a card and stores it, and the money waits for the reveal", () => {
+  /* THE CARD IS CHOSEN FIRST, AND THE MONEY MOVES AT THE REVEAL.
+
+     The server picks the card the moment the button is pressed and writes it
+     into the chest. The clients show it once the shuffle has run, and the
+     money moves when it is turned over - so the balance changes once, and at
+     the moment the player sees the number. */
   const state = createGame(PLAYERS);
   standOn(state, 11, NEXUS.id, "chest");
   const before = moneyOf(state.ledger, 0);
@@ -87,9 +115,19 @@ test("drawNexus picks a card and changes money", () => {
   assert.equal(events[0].type, "nexusDrawn");
   const card = events[0].card;
   assert.ok(NEXUS_CARDS.includes(card), "drawn card is one of the thirty");
-  assert.equal(moneyOf(after.ledger, 0), before + card.amount);
-  assert.equal(after.phase, PHASE.RESOLVING);
+  assert.equal(moneyOf(after.ledger, 0), before, "no money has moved yet");
   assert.equal(after.visit.nexusDrawn, true);
+  assert.equal(after.chest.phase, "shuffling");
+  assert.equal(after.chest.choice, "draw");
+  assert.equal(after.chest.result.card.id, card.id);
+  assert.equal(after.chest.result.revealed, false);
+
+  /* And now the card is turned over, and the money moves. */
+  const { state: revealed, events: shown } = take(after, { type: "revealNexus" });
+  assert.equal(shown[0].type, "nexusRevealed");
+  assert.equal(moneyOf(revealed.ledger, 0), before + card.amount);
+  assert.equal(revealed.chest.phase, "revealed");
+  assert.equal(revealed.chest.result.revealed, true);
 });
 
 test("the second Nexus action is refused", () => {

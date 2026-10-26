@@ -73,6 +73,13 @@ import {
   ringDraw,
   shake,
 } from "./board-fx.js";
+import {
+  chestDoneButton,
+  chestWaiting,
+  drawChestStage,
+  playNexusStage,
+  playRagnarokStage,
+} from "./chest-stage.js";
 
 /**
  * The four corners, and the mark each one carries.
@@ -706,6 +713,22 @@ export function board({
     // card is there - otherwise the die sits behind it.
     paintPhase();
 
+    /* THE CHEST IS REDRAWN FROM THE STATE, EVERY TIME IT MOVES.
+
+       The chest is a shared screen, so both devices redraw it the moment the
+       state says it has moved - whether this board pressed the button or the
+       other one did. The redraw is a pure function of `game.chest`, so it
+       cannot show one device something the other does not. */
+    if (game.chest) {
+      openChestStage();
+    } else if (chestStage) {
+      /* The chest is gone: the middle is the board's again. */
+      chestStage = null;
+      if (holder()?.dataset.cardKind === "chest") {
+        await dismissCard();
+      }
+    }
+
     // A property decision that has just been answered takes its card away. A
     // chest card closes itself, because it has a reveal to finish first.
     if (
@@ -758,6 +781,21 @@ export function board({
           // the card goes the same way the answering player's own card goes.
           // The next player starts with a clear middle and a die they can see.
           await dismissCard();
+        }
+
+        /* THE CHEST, ON THE WATCHING SCREEN.
+
+           The other player sees the same chest the acting player sees - the
+           same draw, the same weapon, the same card, the same amount - because
+           it is drawn from the state and the state is the same. The only
+           difference is that the buttons are not theirs to press. */
+        if (game.chest) {
+          openChestStage();
+        } else if (chestStage) {
+          chestStage = null;
+          if (holder()?.dataset.cardKind === "chest") {
+            await dismissCard();
+          }
         }
       } finally {
         busy = false;
@@ -987,6 +1025,150 @@ export function board({
        board is free - see `recoverStranded`. */
   }
 
+  /* ------------------------------------------------------------ the chest
+
+     The chest is a SHARED screen, and it is drawn from the state.
+
+     `game.chest` is the whole truth about it: which chest it is, who is at
+     it, and how far along its own little story it is. Both players draw the
+     middle from that, so the two screens are the same screen - the same
+     draw, the same weapon, the same card, the same amount - and the only
+     difference is that the acting player has the buttons.
+
+     Because it is drawn from the state and not from an event, a device that
+     missed a message, that reconnected, or that joined late shows exactly
+     the same thing. Nobody has to refresh.
+
+     The stage is re-read whenever the state moves, and the animation runs
+     once per stage: a device that arrives late joins the animation where it
+     is rather than starting it over. */
+
+  /* The stage that has been played, so an animation is not played twice. */
+  let chestStage = null;
+
+  /* The name of the player at the chest, for the caption. */
+  const chestName = (seat) =>
+    game?.ledger?.players?.find((p) => p.seat === Number(seat))?.name || "Your opponent";
+
+  /**
+   * Draw the chest, from the state, and play whatever its stage has to play.
+   */
+  function openChestStage() {
+    const chest = game?.chest;
+    if (!chest) return;
+
+    cardMode = isMyTurn() ? "decision" : "read";
+    reading = false;
+    cardKey = `chest:${chest.kind}:${chest.phase}:${chest.startedAt || 0}`;
+
+    const mine = isMyTurn();
+    const name = chestName(chest.playerId);
+
+    /* THE STAGE KEY.
+
+       The chest is a stage, and the stage is what the middle is drawn from.
+       The key says which stage this is: which chest, which phase, and which
+       moment it began. While the key is the same, the screen on the board is
+       already right and is NOT drawn again - because drawing it again would
+       wipe the deck that is halfway through its shuffle.
+
+       When the key changes, the screen is drawn again from the new state and
+       the new stage's animation is played. */
+    const stageKey = `${chest.kind}:${chest.phase}:${chest.startedAt || 0}`;
+    const changed = chestStage !== stageKey;
+    chestStage = stageKey;
+
+    let card = holder()?.querySelector(".nexus-card, .chest-card") || null;
+
+    if (changed || !card || holder()?.hidden) {
+      /* The handlers. Only the acting player gets them: the server refuses
+         anything from anybody else, and a live button that does nothing is a
+         worse thing than a disabled one. */
+      const handlers = {};
+      if (mine) {
+        if (chest.kind === "nexus") {
+          handlers['[data-action="pray"]'] = () => {
+            void run({ type: "pray" });
+          };
+          handlers['[data-action="draw"]'] = () => {
+            void run({ type: "drawNexus" });
+          };
+        } else {
+          handlers['[data-action="draw"]'] = () => {
+            void run({ type: "drawWeapon" });
+          };
+        }
+      }
+
+      card = drawChestStage(frame, chest, { mine, handlers, playerName: name });
+      if (!card) return;
+
+      /* The closing. The acting player presses Done and the chest goes; the
+         other player watches it go. */
+      if (chest.phase === "revealed" || chest.phase === "done") {
+        if (mine) {
+          if (!card.querySelector('[data-action="done"]')) {
+            card.append(chestDoneButton(() => {
+              void run({ type: "done" });
+            }));
+          }
+        } else if (!card.querySelector('[data-role="waiting"]')) {
+          card.append(chestWaiting(name));
+        }
+      }
+
+      paintPhase();
+    }
+
+    if (!changed) return;
+
+    /* The animation, once per stage. */
+    const playing = chest.kind === "nexus"
+      ? playNexusStage(frame, chest)
+      : playRagnarokStage(frame, chest);
+    Promise.resolve(playing)
+      .then(() => {
+        /* The Nexus card's money moves when it is turned over, so the reveal
+           asks the server to do it.
+
+           The board's lock is released first: a request sent into a busy
+           board is dropped, and a dropped request is a card that is never
+           turned over. */
+        if (
+          chest.kind === "nexus" &&
+          chest.phase === "shuffling" &&
+          chest.choice === "draw" &&
+          !chest.result?.revealed
+        ) {
+          revealNexusWhenFree();
+        }
+      })
+      .catch(() => {});
+  }
+
+  /* Ask the server to turn the Nexus card over, once the board is free.
+
+     The board's lock is held while an action is running, and a request sent
+     into a busy board is dropped - so the request waits its turn rather than
+     being lost. */
+  let revealing = false;
+  async function revealNexusWhenFree() {
+    if (revealing) return;
+    revealing = true;
+    try {
+      for (let i = 0; i < 200; i += 1) {
+        if (!busy) break;
+        await wait(50);
+      }
+      if (busy) return;
+      await run({ type: "revealNexus" });
+    } catch {
+      /* The server refused, which means the chest has moved on. */
+    } finally {
+      revealing = false;
+    }
+  }
+
   /** Open the card the decision belongs to. */
   async function openDecision() {
     const landing = game.landing;
@@ -1007,74 +1189,18 @@ export function board({
     cardKey = key;
 
     if (landing.kind === "chest") {
-      cardMode = mine ? "decision" : "read";
-      reading = false;
+      /* THE CHEST IS DRAWN FROM THE STATE, ON BOTH SCREENS.
 
-      /* THE CHEST CARD DOES NOT HOLD THE BOARD'S LOCK.
+         The chest is a shared screen: it is a fact about the game, and the
+         fact is in `game.chest`. So the middle is drawn from that fact, and
+         the acting player and the waiting player get the SAME screen - the
+         same draw, the same weapon, the same card, the same amount - with
+         the buttons only on the acting player's side.
 
-         The card asks a question - draw, or pray - and the player answers it
-         in their own time. Waiting for that answer INSIDE the turn's own lock
-         meant the whole board was locked while the card was up: the die would
-         not roll, no square could be read, and a card whose buttons could not
-         be reached was a game that looked frozen.
-
-         So the card is opened and the turn's lock is released. The card's own
-         close hands the turn on. */
-      const closed = () => {
-        closeRead();
-        void afterChest();
-      };
-
-      if (landing.id === NEXUS.id) {
-        const showing = mine
-          ? showNexus(frame, {
-              drawable: true,
-              chip: chip(game.active),
-              pray: async () => {
-                const result = await step({ type: "pray" });
-                return result?.events?.find((event) => event.type === "prayed") || null;
-              },
-              draw: async () => {
-                const result = await step({ type: "drawNexus" });
-                return result?.events?.find((event) => event.type === "nexusDrawn") || null;
-              },
-              onClose: closed,
-            })
-          : showNexus(frame, { drawable: false, onClose: closed });
-        // The card is in the holder already; the die and status step aside now,
-        // before the player is asked, rather than after their answer.
-        paintPhase();
-        showing.catch(() => {});
-        return;
-      }
-
-      const showing = mine
-        ? showChest(frame, {
-            drawable: true,
-            // The draw is an action. The card shuffles and reveals; the game
-            // chooses. There is no second random generator behind the glass.
-            draw: async () => {
-              // The e2e may force the draw (for bad luck) by setting
-              // window.__drawRng; the server honours it only in the preview.
-              const rng = window.__drawRng;
-              const result = await step(
-                rng !== undefined ? { type: "drawWeapon", rng } : { type: "drawWeapon" },
-              );
-              const drawn = result?.events.find((event) => event.type === "weaponDrawn");
-              return drawn?.weapon || BAD_LUCK;
-            },
-            collect: async () => {
-              await step({ type: "collectWeapon" });
-            },
-            // The chest closes itself when the visit is over, and the board has
-            // to be told, so the die comes back to the middle.
-            onClose: closed,
-            onWeapon: () => paint({ animate: false }),
-          })
-        : showChest(frame, { drawable: false, onClose: closed });
-      // The card is in the middle now, so the die gives way to it.
-      paintPhase();
-      showing.catch(() => {});
+         Nothing here is an event that might be missed. A device that
+         reconnects, or that joined late, reads the same chest out of the
+         same state and shows the same screen. Nobody has to refresh. */
+      openChestStage();
       return;
     }
 
@@ -1112,11 +1238,9 @@ export function board({
    * when the decision is answered - not by anything it does itself.
    */
   async function afterChest() {
+    /* The chest is a shared screen now: it is closed by the acting player
+       pressing Done, which is the `done` action. Nothing here closes it. */
     if (!isMyTurn()) return;
-    if (game.phase === PHASE.DECISION && game.landing?.kind === "chest") {
-      await run({ type: "continue" });
-      return;
-    }
     await settle();
   }
 
@@ -1297,6 +1421,10 @@ export function board({
 
   paint({ animate: false });
   if (game.phase === PHASE.DECISION) openDecision();
+  /* A board that loads while a chest is open shows that chest. This is what
+     makes a late join and a reconnect work: the chest is in the state, and
+     the state is what the board is built from. */
+  else if (game.chest) openChestStage();
 
   return frame;
 }

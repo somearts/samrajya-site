@@ -1819,6 +1819,232 @@
   pointer-events: none;
 }
 
+/* ======================================================== the shared chest
+
+   Ragnarok and Nexus are shared screens, so they are drawn from the state on
+   both devices. These are the pieces that make that true on the page: the
+   deck that shuffles, the card that turns over, and the two quiet lines that
+   say who the screen belongs to. */
+
+/* The quiet line that says who is at the chest. It is the ONLY thing that is
+   different between the acting player's screen and the waiting player's
+   screen, and it is there so the waiting player knows the screen is not
+   waiting for them. */
+.chest-card__caption {
+  margin: calc(var(--cell) * 0.08) 0 0;
+  text-align: center;
+  font-size: max(10px, calc(var(--cell) * 0.135));
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--ink) 52%, transparent);
+}
+
+.chest-card__caption-name {
+  font-weight: 500;
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+}
+
+.chest-card__caption-text::before {
+  content: " ";
+}
+
+/* The waiting line, for the player who is not acting. */
+.chest-card__waiting {
+  margin: calc(var(--cell) * 0.08) 0 0;
+  text-align: center;
+  font-size: max(10px, calc(var(--cell) * 0.135));
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--ink) 48%, transparent);
+}
+
+/* The Done pill. It is the acting player's, and it is the only thing that
+   closes the chest. */
+.chest-card__done {
+  display: block;
+  width: 100%;
+  margin: calc(var(--cell) * 0.1) 0 0;
+  padding: 0.62em 1em;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: 999px;
+  background: var(--cell-ground);
+  font: inherit;
+  font-size: max(12px, calc(var(--cell) * 0.165));
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 160ms ease-out, border-color 160ms ease-out;
+}
+
+.chest-card__done:hover {
+  background: color-mix(in srgb, var(--ink) 5%, var(--cell-ground));
+  border-color: color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
+/* ------------------------------------------------------------- the deck
+
+   A stack of card backs. At most twelve of them: the stack is a picture of
+   thirty cards, not thirty cards, and a phone should not be asked to draw
+   thirty. */
+.nexus-card__deck-wrap {
+  position: relative;
+  flex: 0 1 auto;
+  min-height: calc(var(--cell) * 3.4);
+  display: grid;
+  place-items: center;
+  perspective: 800px;
+}
+
+.nexus-card__deck {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--cell) * 1.5);
+  height: calc(var(--cell) * 2.1);
+  transform: translate(-50%, -50%);
+}
+
+.nexus-card__deck-back {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--ink) 7%, var(--card-inset)) 0 3px,
+      color-mix(in srgb, var(--ink) 11%, var(--card-inset)) 3px 6px
+    );
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+/* The layers of the stack. Each one is a little further down the pile, so the
+   stack has depth without thirty of anything. */
+.nexus-card__deck-back:nth-child(1) { transform: translate(0, 0); }
+.nexus-card__deck-back:nth-child(2) { transform: translate(0, 1px); }
+.nexus-card__deck-back:nth-child(3) { transform: translate(0, 2px); }
+.nexus-card__deck-back:nth-child(4) { transform: translate(0, 3px); }
+.nexus-card__deck-back:nth-child(5) { transform: translate(0, 4px); }
+.nexus-card__deck-back:nth-child(6) { transform: translate(0, 5px); }
+.nexus-card__deck-back:nth-child(7) { transform: translate(0, 6px); }
+.nexus-card__deck-back:nth-child(8) { transform: translate(0, 7px); }
+.nexus-card__deck-back:nth-child(9) { transform: translate(0, 8px); }
+.nexus-card__deck-back:nth-child(10) { transform: translate(0, 9px); }
+.nexus-card__deck-back:nth-child(11) { transform: translate(0, 10px); }
+.nexus-card__deck-back:nth-child(12) { transform: translate(0, 11px); }
+
+/* The two halves the deck splits into. */
+.nexus-card__deck-halves {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.nexus-card__deck-half {
+  position: relative;
+  width: calc(var(--cell) * 0.7);
+  height: calc(var(--cell) * 2.05);
+  will-change: transform;
+}
+
+.nexus-card__deck-half .nexus-card__deck-back {
+  width: 100%;
+  height: 100%;
+}
+
+/* The top card: the one that lifts out and turns over. */
+.nexus-card__deck-top {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--cell) * 1.5);
+  height: calc(var(--cell) * 2.1);
+  transform: translate(-50%, 0);
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+.nexus-card__deck-top-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+
+.nexus-card__deck-top-back,
+.nexus-card__deck-top-face {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  backface-visibility: hidden;
+  overflow: hidden;
+}
+
+.nexus-card__deck-top-back {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      color-mix(in srgb, var(--ink) 7%, var(--card-inset)) 0 3px,
+      color-mix(in srgb, var(--ink) 11%, var(--card-inset)) 3px 6px
+    );
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+}
+
+.nexus-card__deck-top-face {
+  transform: rotateY(180deg);
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: calc(var(--cell) * 0.05);
+  padding: calc(var(--cell) * 0.12);
+  text-align: center;
+  background: var(--cell-ground);
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  box-shadow: 0 2px 10px rgb(18 17 16 / 0.13);
+}
+
+/* The face of the card: its heading, its one line, and the amount in large
+   type, marked as a gain or a loss. */
+.nexus-card__face-name {
+  margin: 0;
+  font-size: max(11px, calc(var(--cell) * 0.15));
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.nexus-card__face-text {
+  margin: 0;
+  font-size: max(9px, calc(var(--cell) * 0.115));
+  line-height: 1.3;
+  color: var(--ink-soft);
+}
+
+.nexus-card__face-amount {
+  margin: calc(var(--cell) * 0.04) 0 0;
+  font-size: max(17px, calc(var(--cell) * 0.235));
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.nexus-card__face-amount--spend {
+  color: var(--sell);
+}
+
+.nexus-card__face-amount--earn {
+  color: color-mix(in srgb, var(--ink) 55%, var(--accent, var(--ink)));
+}
+
 /* The dot in flight, on its way to the name at the top. */
 .chest-card__flying {
   position: fixed;
