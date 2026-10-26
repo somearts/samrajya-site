@@ -1151,6 +1151,13 @@ const cardJs = await readFile(join(OUT, "assets", "js", "property-card.js"), "ut
       "draws the card, so there were two places to look and only one was edited",
   );
   check(
+    "the notification's own words are not cut off",
+    /\.announce__big\s*\{[^}]*?font-size:\s*44px;[^}]*?line-height:\s*1\.45;/.test(boardCss) &&
+      /\.announce__label\s*\{[^}]*?font-size:\s*15px;[^}]*?line-height:\s*1\.45;/.test(boardCss),
+    "a line-height smaller than the font's own line box clips the ink: the " +
+      "tops and the bottoms of a big figure were cut off",
+  );
+  check(
     "and Escape closes the record wherever the focus is",
     /document\.addEventListener\("keydown", onEscape, true\)/.test(boardJs) &&
       /document\.removeEventListener\("keydown", onEscape, true\)/.test(boardJs),

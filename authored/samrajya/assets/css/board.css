@@ -3268,7 +3268,10 @@ button.board__cell--corner:focus-visible {
   font-size: 15px;
   font-weight: 500;
   letter-spacing: 0.08em;
-  line-height: 1.2;
+  /* The line box is as tall as the type needs: a tracked capital at 15px
+     asks for about 22px, and a line-height of 1.2 gives it 18 and cuts the
+     tops of the letters off. */
+  line-height: 1.45;
   text-transform: uppercase;
   color: var(--ink-soft);
 }
@@ -3279,11 +3282,15 @@ button.board__cell--corner:focus-visible {
   max-width: 100%;
   font-size: 44px;
   font-weight: 300;
-  /* A line that is exactly as tall as the type is a line whose descenders are
-     cut off, and a word long enough to wrap is two lines whose second line is
-     cut in half. The line box is given room to breathe, and the line wraps
-     inside the width of the middle rather than running past it. */
-  line-height: 1.15;
+  /* THE LINE BOX IS AS TALL AS THE TYPE NEEDS.
+
+     A line-height smaller than the font's own line box clips the ink: the
+     ascenders and descenders of a big figure do not fit in the box they are
+     given, and the top and the bottom of the figure are cut off. The line box
+     is 1.45 of the type here, which is the height the face asks for, so the
+     whole figure is inside it - and a word long enough to wrap is two whole
+     lines, not one and a half. */
+  line-height: 1.45;
   letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
