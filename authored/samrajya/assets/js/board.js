@@ -1046,6 +1046,10 @@ export function board({
 
   /* The stage that has been played, so an animation is not played twice. */
   let chestStage = null;
+  /* Whether the current stage's animation has played to the end. The reveal
+     is asked for only after it has: the card turns over at the end of the
+     shuffle, not before it. */
+  let chestAnimationDone = false;
   /* When this board first saw the current stage, in this board's own clock.
      The shuffle is measured from here, because the server's clock is not this
      browser's clock and the two cannot be subtracted. */
@@ -1082,7 +1086,10 @@ export function board({
     const stageKey = `${chest.kind}:${chest.phase}:${chest.startedAt || 0}`;
     const changed = chestStage !== stageKey;
     chestStage = stageKey;
-    if (changed) chestStageAt = Date.now();
+    if (changed) {
+      chestStageAt = Date.now();
+      chestAnimationDone = false;
+    }
 
     let card = holder()?.querySelector(".nexus-card, .chest-card") || null;
 
@@ -1155,9 +1162,39 @@ export function board({
       paintPhase();
     }
 
-    if (!changed) return;
+    if (!changed) {
+      /* THE STAGE HAS NOT MOVED, BUT IT MAY WANT SOMETHING DONE.
+
+         The reveal is not an event - it is a stage that has to be left. So
+         every time the board looks at the chest, it asks: is this stage
+         waiting for something to be asked of the server?
+
+         It is asked for only once the ANIMATION has played, because the card
+         is turned over at the end of the shuffle: a request sent before the
+         shuffle is over would turn the card over before the player has seen
+         it shuffled. */
+      if (chestAnimationDone) {
+        if (
+          chest.kind === "nexus" &&
+          chest.phase === "shuffling" &&
+          chest.choice === "draw" &&
+          !chest.result?.revealed
+        ) {
+          revealNexusWhenFree();
+        }
+        if (
+          chest.kind === "ragnarok" &&
+          chest.phase === "drawing" &&
+          chest.choice === "draw"
+        ) {
+          revealWeaponWhenFree();
+        }
+      }
+      return;
+    }
 
     /* The animation, once per stage. */
+    chestAnimationDone = false;
     const playing = chest.kind === "nexus"
       ? playNexusStage(frame, chest, {
           chip: chip(chest.playerId),
@@ -1166,6 +1203,9 @@ export function board({
       : playRagnarokStage(frame, chest);
     Promise.resolve(playing)
       .then(() => {
+        /* The animation has played to the end. The card may now be turned
+           over, and the money may move with it. */
+        chestAnimationDone = true;
         /* The card is turned over, and the money moves with it.
 
            The board's lock is released first: a request sent into a busy
@@ -1195,13 +1235,29 @@ export function board({
      The board's lock is held while an action is running, and a request sent
      into a busy board is dropped - so the request waits its turn rather than
      being lost. */
+  /* THE REVEAL IS ASKED FOR UNTIL IT IS ANSWERED.
+
+     The card has to be turned over, and the request is dropped when the board
+     is busy - so the request is asked for again, and again, until the server
+     answers. It stops when the chest has moved on, which is what an answer
+     looks like from here.
+
+     It is stopped when the board is torn down, so a player who leaves does
+     not leave a request running. */
   let revealing = false;
   async function revealNexusWhenFree() {
     if (revealing) return;
     revealing = true;
     try {
-      if (!await waitForFree()) return;
-      await run({ type: "revealNexus" });
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        if (!await waitForFree()) {
+          await wait(250);
+          continue;
+        }
+        const result = await run({ type: "revealNexus" });
+        if (result) return;
+        await wait(250);
+      }
     } catch {
       /* The server refused, which means the chest has moved on. */
     } finally {
@@ -1215,8 +1271,19 @@ export function board({
     if (revealingWeapon) return;
     revealingWeapon = true;
     try {
-      if (!await waitForFree()) return;
-      await run({ type: "revealWeapon" });
+      /* The request is not lost if the board is busy for a while: it waits, and
+         if it is still busy it waits again. A reveal that gave up would leave
+         the chest on "drawing" for ever - a weapon that was drawn and never
+         turned over, and a visit that could not be ended. */
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        if (!await waitForFree()) {
+          await wait(250);
+          continue;
+        }
+        const result = await run({ type: "revealWeapon" });
+        if (result) return;
+        await wait(250);
+      }
     } catch {
       /* The server refused, which means the chest has moved on. */
     } finally {
