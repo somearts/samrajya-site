@@ -43,6 +43,11 @@ import { prefersStill } from "./dice.js";
 import { NEXUS_KEEPER, NEXUS_PRAY_COST } from "./shared/nexus-cards.js";
 import { RAGNAROK, WEAPONS, weaponById } from "./shared/weapons.js";
 import { rupees } from "./shared/economy.js";
+/* The chest card's face. The emblem and the colour a weapon is drawn in are
+   exported there because the profile and the name chip draw them too, and
+   they must all draw the same thing: one place knows what a weapon looks
+   like and every screen that shows one asks it. */
+import { emblem, weaponColor } from "./chest-card.js";
 
 /** How long the deck shuffles for, in milliseconds. */
 export const SHUFFLE_MS = 3500;
@@ -140,41 +145,80 @@ function nexusCard({ drawable, phase, caption }) {
   return card;
 }
 
-/** The chest of weapons: three slots and a draw. */
+/** The chest of weapons: three faces, one per weapon, and a draw. */
 function ragnarokCard({ drawable, phase, caption }) {
   /* THE THREE FACES.
 
    Ragnarok offers three card faces and the player touches one of them to
-   draw. They are the same three in every state - the same width, the same
-   shape, the same label area - so that the screen does not change size when
-   the card is turned over. */
-  const slots = el("div", { class: "chest-card__slots" },
-    [0, 1, 2].map((n) => el("button", {
-      type: "button",
-      class: "chest-card__slot",
-      "data-action": "draw",
-      "data-slot": String(n),
-      disabled: !drawable || phase !== "open",
-      "aria-label": "Draw a weapon",
-    }, [
-      el("span", { class: "chest-card__slot-back", "aria-hidden": "true" }),
-      el("span", { class: "chest-card__slot-name" }, [el("span", { text: "?" })]),
-      el("span", { class: "chest-card__pill" }),
-    ])),
-  );
+   draw. Each is labelled with the weapon it belongs to - the same three in
+   every state, the same width, the same shape, the same label area - so the
+   screen does not change size when the card is turned over, and the emblem
+   waits on the face for the back to get out of its way. */
+  const slot = (weapon, index) => el("button", {
+    type: "button",
+    class: "chest-card__slot",
+    "data-weapon": weapon.id,
+    "data-slot": String(index),
+    style: { "--weapon": weaponColor(weapon.id) },
+    "aria-label": "Draw a weapon",
+    disabled: !drawable || phase !== "open",
+  }, [
+    el("span", { class: "chest-card__back", "aria-hidden": "true" }, [
+      el("span", { class: "chest-card__mark", text: "?" }),
+    ]),
+    el("span", { class: "chest-card__face", "aria-hidden": "true", html: emblem(weapon) }),
+    el("span", { class: "chest-card__pill", "aria-hidden": "true" }),
+    el("span", { class: "chest-card__slot-name", text: weapon.name }),
+  ]);
 
   const card = el("article", {
     class: "property-card chest-card",
     "data-property": "ragnarok",
     "data-chest": "ragnarok",
     "data-phase": phase,
+    /* The shape never changes on this card: the three faces are the whole of
+       it from open to done, and a card whose shape does not change is a card
+       whose stage is written into it rather than rebuilt over it. */
+    "data-shape": "chest",
+    // A chest belongs to no set, so the edge is the board's own ink rather than
+    // a set colour that would say it belongs to one.
+    style: { "--accent": "var(--ink)" },
     "aria-live": "polite",
   }, [
-    el("div", { class: "chest-card__head" }, [
-      el("h3", { class: "chest-card__title", text: "Welcome to Ragnarok" }),
-      el("p", { class: "chest-card__tagline", text: RAGNAROK.tagline }),
+    /* The head is the property card's head - the pill beside a two-line
+       title - because the chest is the same object wearing the same shell as
+       every other place on the board. Ragnarok is too long for one line at a
+       phone's cell size, and the break lives in the data rather than being
+       guessed here. */
+    el("div", { class: "property-card__head" }, [
+      el("div", { class: "property-card__title" }, [
+        el("span", { class: "property-card__pill", "aria-hidden": "true" }),
+        el("h3", {
+          class: "property-card__name",
+          html: RAGNAROK.titleLines.map((line) => `<span>${line}</span>`).join(""),
+        }),
+      ]),
     ]),
-    slots,
+    el("p", { class: "chest-card__tagline", text: RAGNAROK.tagline }),
+    el("p", { class: "chest-card__body", text: RAGNAROK.body }),
+    el("div", { class: "chest-card__slots" },
+      /* The faces are enumerated rather than derived, so a weapons list with
+         one weapon too few is a bug here and not a card that quietly offers
+         fewer choices. */
+      [0, 1, 2].map((n) => slot(WEAPONS[n], n)),
+    ),
+    /* THE DRAW PILL. Touching a face draws from that face, and the pill is
+       the same draw said once more for the player who reads buttons before
+       they read cards. It takes the middle face, which is what a straight
+       read of the row takes too. */
+    el("button", {
+      type: "button",
+      class: "chest-card__draw",
+      "data-action": "draw",
+      disabled: !drawable || phase !== "open",
+      "aria-disabled": String(!drawable || phase !== "open"),
+      text: "Draw",
+    }),
     el("div", { class: "chest-card__result", hidden: true }),
     /* The Collect pill. The weapon is drawn, and the player takes it: that is
        a second press, and it is the press that ends the visit. */
@@ -399,8 +443,14 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
     (chest.kind === "nexus" && existing.classList.contains("nexus-card")) ||
     (chest.kind === "ragnarok" && existing.classList.contains("chest-card"))
   );
-  /* The shape of the card: does it have the options, or the deck? */
-  const shape = (phase) => (phase === "open" ? "options" : "deck");
+  /* The shape of the card: does it have the options, or the deck? The Nexus
+     card carries both and so it changes shape; the Ragnarok card is the same
+     three faces from open to done, so it never does - and a card whose shape
+     has not changed is a card that keeps its stage rather than being rebuilt
+     over it. */
+  const shape = chest.kind === "nexus"
+    ? (phase) => (phase === "open" ? "options" : "deck")
+    : () => "chest";
   const sameShape = sameKind && existing.dataset.shape === shape(chest.phase);
 
   let card = existing;
@@ -604,12 +654,20 @@ export async function playRagnarokStage(board, chest) {
     for (const [index, slot] of slots.entries()) {
       slot.dataset.phase = chest.phase;
       if (!bad && weapon && slot === chosen) {
+        /* The face that turns over shows the weapon that was drawn, which is
+           not always the weapon the face was labelled with. The colour and
+           the emblem both follow the weapon, and they are both named at the
+           slot so the pill and the border read the same var. */
+        const colour = weaponColor(chest.result.weapon);
         slot.dataset.weapon = chest.result.weapon;
+        slot.style.setProperty("--weapon", colour);
         slot.classList.add("is-drawn");
+        const face = slot.querySelector(".chest-card__face");
+        if (face) face.innerHTML = emblem(weapon);
         const name = slot.querySelector(".chest-card__slot-name");
         if (name) name.replaceChildren(el("span", { text: weapon.name }));
         const pill = slot.querySelector(".chest-card__pill");
-        if (pill) pill.style.setProperty("--weapon", weapon.color || "var(--ink)");
+        if (pill) pill.style.removeProperty("background");
       } else if (chest.phase === "revealed") {
         slot.hidden = true;
       }

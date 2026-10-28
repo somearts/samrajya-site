@@ -82,8 +82,7 @@ async function stampVersion() {
  * another module, so the whole graph moves together.
  */
 async function hashAssets() {
-  const files = await walk(OUT);
-  const hashes = new Map();
+  let files = await walk(OUT);
 
   /* The shared rules modules are NOT hashed.
 
@@ -97,49 +96,143 @@ async function hashAssets() {
      the modules by the names they have always had. */
   const isShared = (path) => /(^|\/)assets\/js\/shared\//.test(path.replace(/\\/g, "/"));
 
-  for (const file of files) {
-    if (!/\.(js|css|svg|png|jpg|jpeg|webp|woff2?)$/i.test(file.path)) continue;
-    if (isShared(file.path.slice(OUT.length + 1))) continue;
-    const body = await readFile(file.path);
-    const hash = createHash("sha256").update(body).digest("hex").slice(0, 10);
-    const ext = extname(file.path);
-    const base = basename(file.path, ext);
-    const dir = dirname(file.path);
-    const next = join(dir, `${base}.${hash}${ext}`);
-    await rename(file.path, next);
-    hashes.set(
-      file.path.slice(OUT.length + 1).split(/[\\/]/).join("/"),
-      next.slice(OUT.length + 1).split(/[\\/]/).join("/"),
-    );
-  }
+  /* THE HASH MUST BE THE NAME OF WHAT THE FILE IS AFTER THE REWRITE.
 
-  /* Rewrite every reference to a hashed file. The shared modules are rewritten
-     too - they import the authored ones - and their own names are left alone.
+     Hashing a module and THEN rewriting the imports inside it names a file
+     by content it no longer has. A browser that cached the old name for ever
+     - which is the point of the hash - would go on importing a dependency
+     by a name that no longer exists, and the module graph would 404 in the
+     middle.
+
+     So the settling goes pass by pass. A pass first renames a file whose
+     content its name no longer describes, then rewrote every reference to
+     the names retired in THAT pass. When a rewrite changes a module's
+     imports, its own hash goes stale, and the next pass renames it - and
+     retires the name the previous pass wrote, which the pass after that
+     rewrites in its importers. In a graph with no cycles every reference
+     reaches its last name after as many passes as the graph is deep, and
+     the build ends on the first pass that retires nothing.
 
      A reference is replaced WHOLE. The bare name of a file is not enough:
-     `cards.js` is a substring of `nexus-cards.js`, and replacing the name
-     alone would turn one import into another file's name. So the reference
-     is matched with the quote that ends it, which is where a name stops. */
-  const text = await walk(OUT);
-  for (const file of text) {
-    if (!/\.(js|html|css)$/i.test(file.path)) continue;
-    let body = await readFile(file.path, "utf8");
-    let changed = false;
-    for (const [from, to] of hashes) {
-      const needle = from.split("/").pop();
-      const replacement = to.split("/").pop();
-      if (!body.includes(needle)) continue;
-      /* Only a whole name: the character before it is not a letter, a digit,
-         a dot or a dash, and the character after it is the end of the name. */
-      const pattern = new RegExp(`(?<![A-Za-z0-9._-])${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![A-Za-z0-9])`, "g");
-      const before = body;
-      body = body.replace(pattern, replacement);
-      if (body !== before) changed = true;
+     `cards.js` is a substring of `nexus-cards.js`, so the reference is
+     matched with the characters that end a name, and nothing else. */
+
+  /* Where every file came from, by its current path. The manifest speaks of
+     the names the site was authored with, so a file that moves several
+     times while the graph settles still answers for itself. */
+  const origin = new Map();
+
+  for (let pass = 0; ; pass++) {
+    if (pass > 40) {
+      fail(`the hashed names never settled (${pass} passes) - the import graph has a cycle the build cannot name`);
     }
-    if (changed) await writeFile(file.path, body, "utf8");
+
+    /* The names retired and minted in THIS pass, and nothing older. */
+    const moves = new Map();
+    for (const file of files) {
+      if (!/\.(js|css|svg|png|jpg|jpeg|webp|woff2?)$/i.test(file.path)) continue;
+      if (isShared(file.path.slice(OUT.length + 1))) continue;
+      const body = await readFile(file.path);
+      const hash = createHash("sha256").update(body).digest("hex").slice(0, 10);
+      const ext = extname(file.path);
+      /* A file that has been named already carries its old hash segment;
+         it comes off, so this pass names the file for its content now. */
+      const base = basename(file.path, ext).replace(/\.[0-9a-f]{10}$/, "");
+      const dir = dirname(file.path);
+      const next = join(dir, `${base}.${hash}${ext}`);
+      if (next === file.path) continue; /* already named for this content */
+      await rename(file.path, next);
+      const from = file.path.slice(OUT.length + 1).split(/[\\/]/).join("/");
+      const to = next.slice(OUT.length + 1).split(/[\\/]/).join("/");
+      moves.set(basename(from), basename(to));
+      origin.set(next, origin.get(file.path) ?? from);
+      origin.delete(file.path);
+    }
+
+    /* Nothing retires: the graph is settled, and every file's name is the
+       name of its content. */
+    if (moves.size === 0) break;
+
+    /* Rewrite every reference to the names retired this pass. Only real
+       references are rewritten: a module specifier after `from` or in
+       `import()`, a stylesheet's `url()`, and an HTML `src` or `href`. A
+       bare file name in prose is the name of a thing the prose is about,
+       not a reference, and rewriting it would change a module's content
+       forever, since the prose retells the graph.
+
+       The shared modules are rewritten too - they import the authored ones
+       - and their own names are left alone. */
+    const text = await walk(OUT);
+    for (const file of text) {
+      if (!/\.(js|html|css)$/i.test(file.path)) continue;
+      let body = await readFile(file.path, "utf8");
+      let changed = false;
+
+      /* The retired name is the last segment of any specifier that holds
+         it, so the directories inside the specifier come along untouched. */
+      const swapover = (spec) => {
+        const cut = spec.lastIndexOf("/");
+        const to = moves.get(spec.slice(cut + 1));
+        return to === undefined ? null : spec.slice(0, cut + 1) + to;
+      };
+
+      if (!/\.css$/i.test(file.path)) {
+        /* A module specifier: `from "./x.js"` or `import("./x.js")`. */
+        const written = body.replace(
+          /(\bfrom\s*|\bimport\s*\(\s*)(["'])([^"'\n]+)\2/g,
+          (whole, pre, quote, spec) => {
+            const next = swapover(spec);
+            return next === null ? whole : pre + quote + next + quote;
+          },
+        );
+        if (written !== body) {
+          body = written;
+          changed = true;
+        }
+      }
+
+      if (/\.css$/i.test(file.path) || /\.html$/i.test(file.path)) {
+        /* A stylesheet reference, and its quoted or bare `url()`. */
+        const written = body.replace(
+          /(\burl\(\s*)(["']?)([^"')]+?)\2(\s*\))/g,
+          (whole, pre, quote, spec, post) => {
+            const next = swapover(spec);
+            return next === null ? whole : pre + quote + next + quote + post;
+          },
+        );
+        if (written !== body) {
+          body = written;
+          changed = true;
+        }
+      }
+
+      if (/\.html$/i.test(file.path)) {
+        /* A page reference: `src="assets/js/app.js"`, `href="assets/css/board.css"`. */
+        const written = body.replace(
+          /(\b(?:src|href)\s*=\s*)(["'])([^"'\n]+)\2/g,
+          (whole, pre, quote, spec) => {
+            const next = swapover(spec);
+            return next === null ? whole : pre + quote + next + quote;
+          },
+        );
+        if (written !== body) {
+          body = written;
+          changed = true;
+        }
+      }
+
+      if (changed) await writeFile(file.path, body, "utf8");
+    }
+
+    files = await walk(OUT);
   }
 
   /* The manifest, so the server and the client agree on what exists. */
+  const hashes = new Map();
+  for (const [current, start] of origin) {
+    hashes.set(start, current.slice(OUT.length + 1).split(/[\\/]/).join("/"));
+  }
+
   await writeFile(
     join(OUT, "manifest.json"),
     JSON.stringify({ files: Object.fromEntries(hashes) }, null, 2),

@@ -297,6 +297,7 @@ export function board({
   // to mean something a player asked for.
   const die = centreArea.querySelector(".board__dice");
 
+
   // The big middle layer. It says whose turn it is while the board is waiting,
   // and takes the whole middle for one sentence when something has happened.
   // Both players read the same layer; the waiting player is never left with an
@@ -500,7 +501,13 @@ export function board({
       announce.status(null);
     } else if (!busy) {
       const status = statusFor(game, { viewer: mySeat });
-      announce.status(status ? { ...status, color: seatColour(status.seat) } : null);
+      let statusSpec = status ? { ...status, color: seatColour(status.seat) } : null;
+      if (statusSpec) {
+        const isActive = statusSpec.seat === mySeat;
+        statusSpec.label = isActive ? "Your Turn" : "Opponent's Turn";
+        statusSpec.big = isActive ? "Your Turn" : "Opponent's Turn";
+      }
+      announce.status(statusSpec);
     }
 
     frame.dataset.die = dieVisible(game, {
@@ -1109,12 +1116,17 @@ export function board({
         } else {
           /* Ragnarok offers three faces, and the player touches one of them.
              The face that was touched is the one that turns over, on both
-             phones. */
+             phones. The Draw pill is the same draw said once more: it takes
+             the middle face, which is what a straight read of the row takes
+             too. */
           for (const slot of [0, 1, 2]) {
             handlers[`.chest-card__slot[data-slot="${slot}"]`] = () => {
               void run({ type: "drawWeapon", slot });
             };
           }
+          handlers['[data-action="draw"]'] = () => {
+            void run({ type: "drawWeapon", slot: 1 });
+          };
           handlers['[data-action="collect"]'] = () => {
             void run({ type: "collectWeapon" });
           };

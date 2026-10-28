@@ -3,45 +3,53 @@
 
    One surface, one voice. Everything the board has to say is said here: whose
    turn it is while the board is waiting, and one sentence at a time when
-   something has actually happened. There is no second bar, no toast and no
+   something has happened. There is no second bar, no toast and no
    banner; a player never has to decide which of two messages to read.
+
+   A SINGLE PILL, TWO MODES
+
+   The single notification pill in the middle of the board has two modes:
+
+   1. TURN MODE - shows whose turn it is.
+      "Your Turn" in green when it is this player's turn.
+      "Opponent's Turn" in red when it is the other player's turn.
+      This is the default: the pill always returns to turn mode after any
+      event message finishes.
+
+   2. EVENT MODE - shows a one-sentence game event.
+      Rent received, rent paid, property acquired, etc.
+      The pill takes on a neutral background for ordinary events.
+      Reserve red for the opponent's turn and green for the current
+      player's turn. Event messages must not leave the pill permanently
+      red or green simply because the previous message was a turn
+      notification.
+
+   Only one message may be displayed at any moment. If a game event occurs,
+   its message is shown in the pill rather than creating a new notification.
+   When an event message finishes, the pill returns to the correct turn
+   status. Duplicate notifications caused by repeated rendering, network
+   updates, or multiplayer state synchronization are prevented.
 
    TWO MODES, ONE LAYER
 
-   `status(spec)` is the resting state: a compact line in the upper middle that
-   says whose turn it is and stays there until the game changes. It leaves the
-   die alone below it, and it takes no taps.
+   The pill's `mode` property is either "turn" or "event". In turn mode it
+   displays whose turn it is. In event mode it displays a single game sentence.
 
-   `show(spec)` is a fact that has just happened: a full-middle announcement
-   that enters, holds long enough to be read, and leaves. While it is up the
-   status steps aside; when it goes, the status comes back.
-
-   A tap skips the announcement on screen. A reader who has asked for less
-   motion gets the same words in a plain fade, and nothing travels.
+   A tap skips the current message. A reader who has asked for less motion
+   gets the same words in a plain fade, and nothing travels.
 
    ONE OWNER OF THE MIDDLE
    -----------------------
-   The middle is one place, and only one thing can own it at a time: an
-   announcement, a card, or a player's record. A card is a thing the player is
-   reading, and a notification painted over it is a notification the player
-   cannot read and a card they cannot read either.
-
-   So the layer is told when something else has taken the middle - `block` and
-   `unblock` - and while it is blocked the announcement waits: it is said when
-   the card goes, not over the top of it. The same is true of the resting
-   status, which is not painted at all while a card is up.
+   The middle is one place, and only one thing can own it at a time: the pill
+   (in turn or event mode), a card, or a player's record. While the pill is
+   in event mode, a card or record can own the middle above it; when the
+   card goes, the pill returns to turn mode.
 
    THE QUEUE
    ---------
-   Two things want the middle at once: an announcement and a player's record.
-   The record wins for as long as it is open; announcements wait - queued, never
-   dropped - and are said in the order things happened the moment it closes.
-
-   The queue is an explicit list rather than a chain of promises, because three
-   things have to be true at once and a chain makes them hard to see: an
-   announcement is said exactly once, in the order it was queued, and an
-   announcement that arrives while the queue is being said joins the end of it
-   rather than the middle of it.
+   Two things want the middle at once: the pill and a player's record.
+   The record wins for as long as it is open; the pill waits - queued, never
+   dropped - and is said in the order things happened the moment it closes.
 
    Nothing waits on a queued announcement. The action that caused it has
    already happened, and the game does not stand still for the middle.
@@ -83,15 +91,28 @@ function held(ms) {
 /**
  * Mount the one middle layer and hand back its two ways of speaking.
  *
- * `show(spec)` takes `{ label, big, sub, color, tone, hold }` and resolves when
- * the announcement has left the screen. `status(spec)` takes the same shape and
- * holds it until it is replaced. A null spec resolves at once, which is how an
- * event with nothing to announce stays quiet.
+ * The pill has two modes: "turn" and "event".
  *
- * `onChange` is called whenever the middle changes hands - an announcement
- * comes on, an announcement goes, the status comes back. The board keeps the
- * die's visibility in step with the middle, and the middle changes without the
- * board being told unless it is.
+ * In "turn" mode the pill shows whose turn it is:
+ *   - the active player: green "Your Turn"
+ *   - the waiting player: red "Opponent's Turn"
+ *
+ * In "event" mode the pill shows one game sentence:
+ *   - Rent received: ₹100
+ *   - Rent paid: ₹100
+ *   - Property acquired: Pluto
+ * etc. The pill returns to turn mode when the event finishes.
+ *
+ * `show(spec)` displays an event message if mode is "event", or sets the turn
+ * status if mode is "turn". It resolves when the message has left the screen.
+ *
+ * `status(spec)` sets the turn status and holds it until replaced.
+ * The spec should have the shape returned by statusFor(): { label, big, sub, seat, tone }.
+ *
+ * `onChange` is called whenever the middle changes hands - the pill mode changes,
+ * a card goes, a record closes, etc. The board keeps the die's visibility in
+ * step with the middle, and the middle changes without the board being told
+ * unless it is.
  */
 export function announcementLayer(centre, { onChange = null } = {}) {
   const node = el("div", {
@@ -102,6 +123,8 @@ export function announcementLayer(centre, { onChange = null } = {}) {
   });
   centre.append(node);
 
+  /* The pill's current mode: "turn" or "event". */
+  let mode = "turn";
   /* The things to say, in the order they happened. Each one remembers whether
      anybody is waiting for it to finish - a queued announcement has nobody
      waiting, because the game does not wait for the middle. */
@@ -109,19 +132,13 @@ export function announcementLayer(centre, { onChange = null } = {}) {
   let pumping = false;
   /* The announcement on screen right now, and the handle that can stop it. */
   let current = null;
-  /* What the middle says when nothing is being announced. */
-  let resting = null;
-  let restingKey = null;
-  /* What has the middle instead of the announcement: a card, a record, or both.
-     A Set rather than a count, because the two can be open at once and either
-     one of them can be let go on its own. */
+  /* What the middle says when nothing is being announced (turn mode). */
+  let restingTurn = null;
+  let restingTurnKey = null;
+  /* What has the middle instead of the pill: a card, a record, or both. */
   const blockers = new Set();
 
-  /* The shape of the layer as it was last seen. The board keeps the die's
-     visibility in step with the middle, and the middle changes hands on its
-     own - an announcement ends and the status comes back - so the board has to
-     be told that it happened. Only a real change is worth telling it about:
-     a repaint that changes nothing must not start a loop of repaints. */
+  /* The shape of the layer as it was last seen. */
   let lastShape = "true|";
   const changed = () => {
     const shape = `${node.hidden}|${node.dataset.mode || ""}`;
@@ -133,21 +150,75 @@ export function announcementLayer(centre, { onChange = null } = {}) {
   /** Is the middle somebody else's right now? */
   const taken = () => blockers.size > 0;
 
+  /** End whatever event is on screen and hand the middle back.
+   *
+   * One exit for every way an event ends - finished, skipped, or stopped by a
+   * card taking the middle. The animations it leaves behind are held by
+   * `fill: both` at their final frame, so a pill repainted underneath one is
+   * a pill nobody can see: they are cancelled here, and the turn status is
+   * painted fresh. Called after an event finishes, and by the wake-up repair
+   * below. It is the ONE place that turns an event back into a turn, so the
+   * pill can never be left speaking yesterday's words.
+   */
+  function handBack() {
+    node.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+    mode = "turn";
+    paintTurn();
+  }
+
+  /** The repair for a page that was frozen in the background.
+   *
+   * A browser parks a tab it cannot see: every timer stops, and an
+   * announcement caught between its stages stays there for ever, with last
+   * morning's copy on the screen and nothing that can replace it. When the
+   * page is looked at again the machine may still be dead: a promise waiting
+   * on a timer that fired while nothing was running to receive it.
+   *
+   * So the layer watches for the page coming back, and if it finds the pill
+   * mid-event with nothing playing - the frozen shape - it hands the middle
+   * straight back. The turn status is a fact about the game, not a memory of
+   * what the pill was saying, so restoring it needs no bookkeeping about what
+   * came before.
+   */
+  const wake = () => {
+    /* Animations from the frozen run are parked mid-frame and hide anything
+       painted under them, event or turn: clear them whatever the mode. */
+    const stuck = mode === "event" && !pumping;
+    node.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+    if (!stuck) return;
+    if (current) {
+      current.token.stopped = true;
+      current.token.skip?.();
+      current = null;
+    }
+    handBack();
+    if (queue.length) pump();
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) wake();
+  });
+  window.addEventListener("focus", wake);
+  window.addEventListener("pageshow", wake);
+
   node.addEventListener("pointerdown", (event) => {
-    // The status is not a control; only an announcement can be skipped.
-    if (node.dataset.mode !== "announce") return;
-    event.preventDefault();
-    // The handle is the one on screen: the skip belongs to the announcement
-    // being read, not to the queue.
-    current?.token?.skip?.();
+    // Skip the current message (turn or event).
+    if (mode === "turn") {
+      // Tap on turn pill: no-op, turn stays.
+      return;
+    }
+    if (mode === "event") {
+      event.preventDefault();
+      current?.token?.skip?.();
+    }
   });
 
-  /** Write one spec into the layer, in whichever mode it is. */
-  function paint(spec, mode) {
+  /** Write one spec into the layer, in either mode. */
+  function paint(spec, modeName) {
+    mode = modeName;
     node.className =
-      `board__announce board__announce--${mode} ` +
+      `board__announce board__announce--${modeName} ` +
       `board__announce--${spec.tone || "plain"}`;
-    node.dataset.mode = mode;
+    node.dataset.mode = modeName;
     node.dataset.label = spec.label || "";
     node.dataset.big = spec.big || "";
     /* The line under the figure is a third piece of copy, and it is written
@@ -163,7 +234,12 @@ export function announcementLayer(centre, { onChange = null } = {}) {
     }
     node.replaceChildren(
       el("span", { class: "announce__motif", "aria-hidden": "true" }),
-      el("p", { class: "announce__label", text: spec.label || "" }),
+      /* In turn mode the pill says ONE thing - "Your Turn" or "Opponent's
+         Turn". The event label ("RENT RECEIVED" ...) is suppressed here, so
+         the resting pill never reads the same words twice. */
+      ...(modeName === "event" && spec.label
+        ? [el("p", { class: "announce__label", text: spec.label })]
+        : []),
       el("p", { class: "announce__big", text: spec.big || "" }),
       el("p", { class: "announce__sub", text: spec.sub || "" }),
     );
@@ -171,7 +247,7 @@ export function announcementLayer(centre, { onChange = null } = {}) {
     changed();
   }
 
-  /** Take the middle down, leaving no text behind. */
+  /** Clear the layer, resetting to turn mode. */
   function clear() {
     node.hidden = true;
     node.replaceChildren();
@@ -180,38 +256,53 @@ export function announcementLayer(centre, { onChange = null } = {}) {
     delete node.dataset.big;
     delete node.dataset.sub;
     delete node.dataset.turn;
+    mode = "turn";
     changed();
   }
 
-  /** Put the resting status back, if there is one and the middle is free. */
-  function paintStatus() {
-    if (current || pumping || taken()) return;
-    if (!resting) {
-      restingKey = null;
+  /** Show the turn status in the pill.
+   *  Called by status() and restored after every event.
+   *  The spec should have the shape from statusFor(): { label, big, sub, seat, tone }.
+   *  Or from show(mode: "turn"): same shape.
+   */
+  function paintTurn() {
+    if (mode === "event") {
+      // An event is on screen; the turn will be restored when it ends.
+      // But remember the turn state so we can restore it exactly.
+      return;
+    }
+    if (taken()) {
+      // The middle is blocked; the pill yields until it frees. The turn spec
+      // itself is KEPT - nulling it here is what left the middle empty for
+      // good after a card had closed.
       clear();
       return;
     }
-    const key = [resting.label, resting.big, resting.sub, resting.seat, resting.tone].join("|");
-    if (!node.hidden && node.dataset.mode === "status" && key === restingKey) return;
-    restingKey = key;
-    paint(resting, "status");
-    node.dataset.state = "rest";
-    if (prefersStill()) {
-      node.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, fill: "both" });
-      return;
+    // If we have a stored turn spec, use it.
+    if (restingTurn) {
+      paint(restingTurn, "turn");
+      /* The event's exit is still on this layer, held by `fill: both` at its
+         final opacity of zero: a pill repainted under that cloak is a pill
+         nobody can see. The old animations are cancelled and the turn text
+         comes back with a small fade of its own. */
+      node.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+      node.dataset.state = "rest";
+      if (!prefersStill()) {
+        node.animate([{ opacity: 0 }, { opacity: 1 }], {
+          duration: 200,
+          easing: "ease-out",
+          fill: "both",
+        });
+      }
+    } else {
+      // No turn spec: clear the pill. The board will set it again when needed.
+      clear();
     }
-    node.animate(
-      [
-        { opacity: 0, transform: "translateY(4px)" },
-        { opacity: 1, transform: "translateY(0)" },
-      ],
-      { duration: 160, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
-    );
   }
 
   /** Put one announcement on the screen and take it off again. */
   async function playNow(spec, token) {
-    paint(spec, "announce");
+    paint(spec, "event");
     node.dataset.state = "in";
 
     const quiet = prefersStill();
@@ -223,16 +314,23 @@ export function announcementLayer(centre, { onChange = null } = {}) {
         ];
     node.animate(enter, { duration: ENTER_MS, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" });
     await wait(ENTER_MS);
-    // Something else took the middle while this was coming in: it is taken off
-    // the screen and said again afterwards, rather than being read over.
-    if (token.stopped) return;
+    if (token.stopped) {
+      /* A card took the middle while the entrance was still playing. The
+         stopper has its own plans for the screen; leaving the stalled
+         entrance animation behind under it would dim whatever it paints. */
+      node.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+      return;
+    }
 
     node.dataset.state = "hold";
     const pause = held(Math.max(1200, Number(spec.hold) || HOLD_MS));
     token.skip = pause.skip;
     await pause.promise;
     token.skip = null;
-    if (token.stopped) return;
+    if (token.stopped) {
+      node.getAnimations({ subtree: true }).forEach((a) => a.cancel());
+      return;
+    }
 
     node.dataset.state = "out";
     const exit = quiet
@@ -243,7 +341,18 @@ export function announcementLayer(centre, { onChange = null } = {}) {
         ];
     node.animate(exit, { duration: EXIT_MS, easing: "ease-in", fill: "both" });
     await wait(EXIT_MS);
-    clear();
+
+    /* THE EVENT IS OVER, AND THE MIDDLE GOES BACK - whatever happened before
+       it, and whoever is waiting after it. The turn status is the resting
+       fact about the game; re-reading it here is what keeps the pill from
+       ever having to remember what it was saying. */
+    handBack();
+
+    /* Process any queued events now that the pill is free.
+       Nothing is cleared here: the hand-back above - or pump's own hand-back
+       when the queue empties - is the last word. An unconditional clear at
+       this point is what wiped a freshly restored turn status. */
+    if (queue.length) pump();
   }
 
   /** Say everything queued, one after another, until there is nothing left. */
@@ -259,8 +368,6 @@ export function announcementLayer(centre, { onChange = null } = {}) {
         current = { item, token };
         await playNow(item.spec, token);
         if (current?.token === token) current = null;
-        // An announcement that was taken off the screen to make room for a card
-        // is said again by the queue, so it is not resolved here.
         if (!token.stopped) item.resolve?.();
       }
     } finally {
@@ -268,22 +375,36 @@ export function announcementLayer(centre, { onChange = null } = {}) {
       // The last fact has been said: the middle goes back to saying whose turn
       // it is. This is the only hand-back, so the queue and the status cannot
       // both claim the middle.
-      paintStatus();
+      paintTurn();
     }
   }
 
   return {
     node,
     /**
-     * Say this, now if the middle is free and after everything already said
-     * if it is not.
+     * Display an event message or set the turn status.
      *
-     * The promise resolves when the announcement has left the screen. A queued
-     * announcement resolves at once: the game has already moved on, and it does
-     * not wait for the middle.
+     * If spec.mode is "event" (or unspecified), shows a game sentence and
+     * returns to turn mode when done.
+     * If spec.mode is "turn", sets the turn status and holds it until replaced.
+     *
+     * The promise resolves when the message has left the screen.
      */
     show(spec) {
       if (!spec) return Promise.resolve();
+      // Determine mode from the spec.
+      const mode = spec.mode || "event";
+      if (mode === "turn") {
+        // Set turn status and hold it.
+        const promise = new Promise((resolve) => {
+          restingTurn = spec;
+          restingTurnKey = [String(spec.seat), String(spec.big)].join("|");
+          paintTurn();
+          resolve();
+        });
+        return promise;
+      }
+      // Event mode: show the event message.
       if (taken()) {
         queue.push({ spec, resolve: null });
         return Promise.resolve();
@@ -297,21 +418,27 @@ export function announcementLayer(centre, { onChange = null } = {}) {
     /**
      * Say this until it is replaced.
      *
-     * A status arriving while an announcement is on screen is remembered, not
-     * painted: the fact being read has the middle until it is finished, and
-     * the status takes over afterwards.
+     * A turn status arriving while an event is on screen is remembered, not
+     * painted: the turn takes over when the event finishes.
+     * A turn status arriving while no event is on screen is painted immediately.
+     * The spec should have the shape from statusFor(): { label, big, sub, seat, tone }.
      */
     status(spec) {
-      resting = spec || null;
-      if (!pumping && !current) paintStatus();
+      if (spec) {
+        restingTurn = spec;
+        restingTurnKey = [String(spec.seat), String(spec.big)].join("|");
+      }
+      if (!pumping && !current && mode !== "event") {
+        paintTurn();
+      }
     },
     /**
      * Something else has taken the middle: a card, or a player's record.
      *
-     * The announcement on screen is taken off it and goes back to the front of
-     * the queue, so it is said again when the middle is free - never read over
-     * a card, and never lost. The resting status is not painted at all while
-     * the middle is somebody else's.
+     * The pill on screen is taken off it and goes back to the front of the
+     * queue, so it is said again when the middle is free - never read over
+     * a card, and never lost. The resting turn status is not painted at all
+     * while the middle is somebody else's.
      */
     block(reason = "card") {
       const first = blockers.size === 0;
@@ -328,7 +455,12 @@ export function announcementLayer(centre, { onChange = null } = {}) {
         item.resolve?.();
         queue.unshift(item);
       }
-      clear();
+      // If we were in event mode, switching to a card means the event stops.
+      if (mode === "event") {
+        // The event is interrupted; it will be said again when the middle frees.
+        // For now, just clear and let the queue handle it.
+        clear();
+      }
     },
     /**
      * The card is gone, or the record is closed: the middle is free again.
@@ -340,11 +472,11 @@ export function announcementLayer(centre, { onChange = null } = {}) {
         pump();
         return;
       }
-      paintStatus();
+      paintTurn();
     },
     /** Is a transient announcement covering the middle right now? */
     covering() {
-      return !node.hidden && node.dataset.mode === "announce";
+      return !node.hidden && mode === "event";
     },
     /** Take the layer away with the board, without leaving a timer behind. */
     hide() {
@@ -358,8 +490,9 @@ export function announcementLayer(centre, { onChange = null } = {}) {
          ever is a board that never finishes an action. */
       for (const item of queue) item.resolve?.();
       queue.length = 0;
-      resting = null;
-      restingKey = null;
+      restingTurn = null;
+      restingTurnKey = null;
+      mode = "turn";
       blockers.clear();
       clear();
     },
