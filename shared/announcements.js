@@ -75,6 +75,18 @@ export function announcementFor(event, { viewer = null, ledger = null } = {}) {
       };
 
     case "passed":
+      /* DONE ON YOUR OWN SQUARE. Nothing was offered to pass on: the player
+         stood on a square that was already theirs, and PASSED would tell them
+         they had declined something. The confirmation is that it is theirs. */
+      if (event.kind === "own") {
+        return {
+          label: "ALREADY YOURS",
+          big: squareName(event.id),
+          sub: "It is already yours",
+          seat: event.seat,
+          tone: "plain",
+        };
+      }
       return {
         label: "PASSED",
         big: squareName(event.id),

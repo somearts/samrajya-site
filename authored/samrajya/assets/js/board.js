@@ -564,10 +564,16 @@ export function board({
        while the game is waiting for a throw. In every other phase the middle
        belongs to the action - the die is tumbling, a card is up, or the turn
        is changing - and a status painted there would flash a turn that has
-       not happened yet. */
+       not happened yet.
+
+       This runs WHILE the board is busy too, on purpose: the moment a move
+       begins the old turn is no longer true, and a spec left stored from it
+       is a spec the event's hand-back repaints - the stale "Your Turn" that
+       flashed at the payer after rent. Clearing it here is what keeps the
+       hand-back honest. */
     if (owner) {
       announce.status(null);
-    } else if (!busy) {
+    } else {
       const status = statusFor(game, { viewer: mySeat });
       let statusSpec = status ? { ...status, color: seatColour(status.seat) } : null;
       if (statusSpec) {
@@ -1262,10 +1268,16 @@ export function board({
       /* The closing. The acting player presses Done and the chest goes; the
          other player watches it go.
 
-         The chest is finished when it has been ANSWERED - the weapon
-         collected, the card turned over, the offering made - so the Done pill
-         appears in every one of those stages, and only in those. */
-      if (chest.phase === "revealed" || chest.phase === "done" || chest.phase === "praying") {
+         RAGNAROK'S DONE WAITS FOR THE COLLECT. The flow is Draw, reveal,
+         Collect, Done - so on a real draw the Done pill arrives with the
+         "done" phase, after the weapon is taken. Only a bad-luck draw, which
+         has nothing to collect, is finished straight from the reveal. */
+      const doneReady =
+        chest.phase === "praying" ||
+        chest.phase === "done" ||
+        (chest.phase === "revealed" &&
+          (chest.kind !== "ragnarok" || Boolean(chest.result?.badLuck)));
+      if (doneReady) {
         if (mine) {
           if (!card.querySelector('[data-action="done"]')) {
             card.append(chestDoneButton(() => {
@@ -1281,17 +1293,22 @@ export function board({
 
          The weapon is drawn, and then it is collected: two presses, and the
          second one is what makes the weapon the player's. The Collect pill
-         appears as soon as the weapon is on the screen. */
-      if (
-        chest.kind === "ragnarok" &&
-        (chest.phase === "revealed" || chest.phase === "done") &&
-        chest.result?.weapon &&
-        mine &&
-        !card.querySelector('[data-action="collect"]')
-      ) {
-        card.querySelector(".chest-card__collect-slot")?.append(chestCollectButton(() => {
-          void run({ type: "collectWeapon" });
-        }));
+         appears with the reveal - and it GOES when it has been pressed: a
+         dead Collect left on the "done" stage is a second Collect screen
+         that does nothing. */
+      if (chest.kind === "ragnarok") {
+        if (chest.phase === "done") {
+          card.querySelector('[data-action="collect"]')?.remove();
+        } else if (
+          chest.phase === "revealed" &&
+          chest.result?.weapon &&
+          mine &&
+          !card.querySelector('[data-action="collect"]')
+        ) {
+          card.querySelector(".chest-card__collect-slot")?.append(chestCollectButton(() => {
+            void run({ type: "collectWeapon" });
+          }));
+        }
       }
 
       paintPhase();

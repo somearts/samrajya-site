@@ -424,11 +424,27 @@ export function announcementLayer(centre, { onChange = null } = {}) {
      * The spec should have the shape from statusFor(): { label, big, sub, seat, tone }.
      */
     status(spec) {
-      if (spec) {
-        restingTurn = spec;
-        restingTurnKey = [String(spec.seat), String(spec.big)].join("|");
+      if (!spec) {
+        /* NO TURN IS TRUE RIGHT NOW - the game is between turns, or the
+           middle belongs to something else. Forget the last one: a stored
+           "Your Turn" is a spec the next event's hand-back would repaint,
+           which is how the payer briefly regained a stale turn after rent.
+           The pill goes back up the moment the board says whose turn it is. */
+        restingTurn = null;
+        restingTurnKey = null;
+        if (!pumping && !current && mode !== "event") {
+          paintTurn();
+        }
+        return;
       }
-      if (!pumping && !current && mode !== "event") {
+      const key = [String(spec.seat), String(spec.big)].join("|");
+      const unchanged = key === restingTurnKey;
+      restingTurn = spec;
+      restingTurnKey = key;
+      /* A repeat of the spec already on the pill is not a repaint. Every
+         repaint re-runs the pill's fade-in, and several paintPhases in quick
+         succession - as after a rent - strobed the pill for a second. */
+      if (!pumping && !current && mode !== "event" && !unchanged) {
         paintTurn();
       }
     },

@@ -1485,6 +1485,9 @@
 .chest-card[data-phase="revealed"] .chest-card__tagline,
 .chest-card[data-phase="revealed"] .chest-card__body,
 .chest-card[data-phase="revealed"] .chest-card__draw,
+.chest-card[data-phase="done"] .chest-card__tagline,
+.chest-card[data-phase="done"] .chest-card__body,
+.chest-card[data-phase="done"] .chest-card__draw,
 .chest-card[data-phase="bad-luck"] .chest-card__tagline,
 .chest-card[data-phase="bad-luck"] .chest-card__body,
 .chest-card[data-phase="bad-luck"] .chest-card__draw {
