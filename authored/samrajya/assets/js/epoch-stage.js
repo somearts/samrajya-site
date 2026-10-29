@@ -246,6 +246,16 @@ export function drawEpochStage(
     );
   }
 
+  /* THE PROSE IS ONE SCROLL REGION. The symbol, heading and tagline stay put
+     at the top; everything the player reads - the opening mythology, the
+     fold-out deeper myth and the line that invites the draw - scrolls together
+     inside the space between them and the action. That is what keeps DRAW
+     pinned at the bottom no matter how long the text grows, and what lets the
+     deeper myth open without shoving the button off the card. */
+  const prose = revealed
+    ? null
+    : el("div", { class: "epoch-card__scroll" }, [mythology, more, explain]);
+
   const card_ = el("article", {
     class: "property-card epoch-card",
     "data-property": "epoch",
@@ -257,9 +267,7 @@ export function drawEpochStage(
     revealed ? null : figure,
     revealed ? null : heading,
     revealed ? null : tagline,
-    revealed ? null : mythology,
-    revealed ? null : more,
-    revealed ? null : explain,
+    prose,
     outcome,
     actions.length ? el("div", { class: "epoch-card__actions" }, actions) : null,
   ]);

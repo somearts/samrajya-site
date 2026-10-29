@@ -4452,6 +4452,26 @@ button.board__cell--corner:focus-visible {
    costs no request and cannot fail to load, and it stands down once the Time
    Card is revealed so the card has the room to be read. */
 
+/* THE HOLDER IS GIVEN THE WHOLE MIDDLE. The base .board__card is only three
+   cells tall - the read-only property card's box - and there was no rule for
+   `data-card-kind="epoch"`, so the Epoch card inherited that three-cell box
+   and its content overflowed it: the mythology was clipped at the bottom and
+   the DRAW pill sat below the visible area. The Fight and the property
+   decision both state this rectangle; Epoch needs it too, and the card fills
+   it. */
+.board__card[data-card-kind="epoch"] {
+  height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+  max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+  overflow: hidden;
+}
+
+/* And the card says its own height, so the property decision's rules (which
+   also match - it wears the same `.property-card` class) cannot hand it a
+   content-sized box from three selectors up. */
+.board__card[data-card-kind="epoch"] .epoch-card {
+  height: 100%;
+}
+
 .epoch-card {
   display: flex;
   flex-direction: column;
@@ -4460,11 +4480,27 @@ button.board__cell--corner:focus-visible {
   height: 100%;
   max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
   padding: calc(var(--cell) * 0.16) calc(var(--cell) * 0.2);
-  overflow: auto;
+  overflow: hidden;
   text-align: center;
 }
 
-.epoch-card::-webkit-scrollbar {
+/* The one part of the card that may scroll: everything between the fixed
+   heading and the pinned action. It absorbs whatever height is left and
+   scrolls inside itself, so the action below it never moves off screen. */
+.epoch-card__scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--cell) * 0.1);
+  width: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.epoch-card__scroll::-webkit-scrollbar {
   display: none;
 }
 
@@ -4513,7 +4549,9 @@ button.board__cell--corner:focus-visible {
   gap: 0.5em;
   max-width: 34ch;
   margin: 0;
-  overflow: hidden;
+  /* Its own height is its content; the scroll region around it does the
+     scrolling, so nothing here is clipped and nothing here can push the
+     action below it out of reach. */
   font-size: max(10px, calc(var(--cell) * 0.132));
   line-height: 1.4;
   color: var(--ink-soft);
@@ -4558,13 +4596,22 @@ button.board__cell--corner:focus-visible {
   color: var(--ink);
 }
 
-/* The revealed Time Card. It takes the room the introduction gave up. */
+/* The revealed Time Card. It takes the room the introduction gave up, and
+   scrolls inside that room if the card's own copy ever outgrows it - the same
+   rule as the prose region, so the CONTINUE pill below stays put. */
 .epoch-card__result {
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
   place-items: center;
   width: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.epoch-card__result::-webkit-scrollbar {
+  display: none;
 }
 
 .epoch-card__result[hidden] {
