@@ -339,3 +339,162 @@ export async function cardAway(holder) {
   animation.cancel();
   resetHolder(holder);
 }
+
+/* ================================================================= the war
+
+   One strike, on both phones at the same moment, and nothing clever.
+
+   Every piece of it is played where the event says it should be and nowhere
+   else: the board shakes with a decay under six pixels, the air of the board
+   darkens once, a bright streak runs from the striker to the tile, and the
+   tile takes the weapon's own flavour. Nothing here reads the game and
+   nothing here decides anything - the events carry the numbers, this file
+   only says what they look like.
+
+   REDUCED MOTION: one flash of the tile, and no shake. */
+
+const WAR_WEAPONS = {
+  antimatter: "antimatter",
+  nuclear: "nuclear",
+  shiva: "shiva",
+};
+
+/** How long the whole war runs, on every device alike. */
+const WAR_MS = 2500;
+
+/** The shake with the decay under six pixels: transform only. */
+const WAR_QUAKE_MS = 1400;
+
+export async function fightWar(board, { weaponId = "", tint = null, fromNode = null, toNode = null } = {}) {
+  if (!board) return;
+
+  const flavour = WAR_WEAPONS[weaponId] || "plain";
+  const quiet = prefersStill();
+
+  /* Measured BEFORE the shake is put on, so the streak is not drawn off by
+     a board that is already moving under the measurement. */
+  const start = fromNode ? localTo(board, fromNode) : null;
+  const end = toNode ? localTo(board, toNode) : null;
+
+  /* The tile's flash - or for the Eye of Shiva, the gold eye - lives in the
+     cell itself, so it dies with the cell and never lies over another one. */
+  const node = toNode;
+  const taste = flavour === "shiva"
+    ? el("span", { class: "board__war-eye", "aria-hidden": "true", style: { "--war": tint || "" } })
+    : el("span", {
+        class: `board__war-flash board__war-flash--${flavour}`,
+        "aria-hidden": "true",
+        style: { "--war": tint || "" },
+      });
+  node?.append(taste);
+
+  /* A reader who asked for still: the one flash, and nothing else. */
+  if (quiet) {
+    const flash = taste?.animate(
+      [{ opacity: 0 }, { opacity: 0.9, offset: 0.25 }, { opacity: 0 }],
+      { duration: 700, easing: "ease-out", fill: "forwards" },
+    );
+    await settled(flash?.finished ?? Promise.resolve(), 760);
+    taste.remove();
+    return;
+  }
+
+  /* The air darkens once, at the strike, and opens again. */
+  const vignette = el("span", { class: "board__war-vignette", "aria-hidden": "true" });
+  board.append(vignette);
+  const vignetteIn = vignette.animate(
+    [
+      { opacity: 0 },
+      { opacity: 1, offset: 0.18 },
+      { opacity: 0.85, offset: 0.4 },
+      { opacity: 0 },
+    ],
+    { duration: WAR_QUAKE_MS, easing: "ease-out", fill: "forwards" },
+  );
+
+  /* The ground of the board gives once, and gives less every time. It is a
+     one-time class and a one-time animation; nothing else on the board is
+     asked to know about it. */
+  board.classList.add("is-quake");
+  await wait(WAR_QUAKE_MS - 100);
+  board.classList.remove("is-quake");
+
+  /* The streak: bright, quick, and smaller than the time it takes to name
+     it. It runs from the striker's own chip to the tile. */
+  if (start && end) {
+    const dx = end.left - start.left;
+    const dy = end.top - start.top;
+    const length = Math.hypot(dx, dy);
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+    const streak = el("span", {
+      class: "board__war-streak",
+      "aria-hidden": "true",
+      style: { "--war": tint || "" },
+    });
+    streak.style.left = `${start.left}px`;
+    streak.style.top = `${start.top}px`;
+    streak.style.width = `${length}px`;
+    streak.style.transform = `rotate(${angle}deg)`;
+    board.append(streak);
+    streak
+      .animate(
+        [
+          { transform: `rotate(${angle}deg) scaleX(0)`, opacity: 0.2 },
+          { transform: `rotate(${angle}deg) scaleX(1)`, opacity: 1, offset: 0.55 },
+          { transform: `rotate(${angle}deg) scaleX(1.04)`, opacity: 0 },
+        ],
+        { duration: 720, easing: "cubic-bezier(.2,.75,.4,1)", fill: "forwards" },
+      )
+      .finished.catch(() => {});
+    aggressive(streak, 800); // the streak takes itself down after the flight
+  }
+
+  /* The tile takes the weapon's flavour at the moment the streak would
+     reach it. With the chip unavailable - a board that has no striker's
+     chip on it - the strike lands at once instead. */
+  const strikeDelay = start && end ? 700 : 0;
+  const firstLanding = wait(strikeDelay).then(() => {
+    taste
+      .animate(
+        [{ opacity: 0 }, { opacity: 0.95, offset: 0.3 }, { opacity: 0 }],
+        { duration: 900, easing: "ease-out", fill: "forwards" },
+      )
+      .finished.catch(() => {});
+    if (end) {
+      const ring = el("span", {
+        class: `board__war-ring board__war-ring--${flavour}`,
+        "aria-hidden": "true",
+        style: { "--war": tint || "" },
+      });
+      ring.style.left = `${end.left}px`;
+      ring.style.top = `${end.top}px`;
+      board.append(ring);
+      ring
+        .animate(
+          [
+            { transform: "translate(-50%, -50%) scale(.4)", opacity: 0.95 },
+            { transform: "translate(-50%, -50%) scale(1.35)", opacity: 0 },
+          ],
+          { duration: 900, easing: "cubic-bezier(.2,.7,.3,1)", fill: "forwards" },
+        )
+        .finished.catch(() => {});
+      wait(950).then(() => ring.remove());
+    }
+  });
+
+  /* The war lasts the same time on both devices, whatever the pieces inside
+     it did individually. Everything above is fire-and-forget; this wait is
+     what keeps the board still for the whole of it. */
+  await wait(WAR_MS - WAR_QUAKE_MS + 100);
+  await firstLanding.catch(() => {});
+
+  vignetteIn.finished.catch(() => {});
+  vignette.remove();
+  taste.remove();
+}
+
+/** A node that takes itself away, after its own farewell has had its turn. */
+function aggressive(node, ms) {
+  if (!node) return;
+  wait(ms).then(() => node.remove()).catch(() => {});
+}

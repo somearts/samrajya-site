@@ -71,11 +71,13 @@ import {
   rentAt,
   saleValue,
   sell as ledgerSell,
+  sheetFor,
   upgrade as ledgerUpgrade,
 } from "./ledger.js";
+import { FIGHT, isTargetProtected, validTargets } from "./fight.js";
 import { NEXUS, NEXUS_PRAY_COST, drawNexusCard } from "./nexus-cards.js";
 import { CELLS } from "./spaces.js";
-import { BAD_LUCK, RAGNAROK, drawWeapon, weaponById } from "./weapons.js";
+import { BAD_LUCK, IMMUNE as IMMUNE_LIST, RAGNAROK, drawWeapon, weaponById } from "./weapons.js";
 
 export { MAX_UPGRADE, STARTING_MONEY };
 
@@ -160,6 +162,20 @@ export function createGame(players = [], { opening = STARTING_MONEY } = {}) {
        choice    what the player chose ("pray" | "draw")
        result    what the chest produced */
     chest: null,
+    /* The fight that is at the bottom-right corner, or null.
+
+       Like the chest, it is a SHARED screen: a fact about the game, living in
+       the state, so both devices draw the same Fight from the same fact and
+       neither of them needed to be told anything. The player who landed acts;
+       the other watches the same screen read-only.
+
+       playerId  the seat that landed
+       phase     open -> selected -> armed -> resolving -> result -> done
+       selectedWeaponId  the weapon the landing player has chosen
+       armed     whether the strike is armed and the tiles are blinking
+       targetId  the colony the armed strike is aimed at (set at the strike)
+       result    what the strike produced, once there has been one */
+    fight: null,
     /* Accepted actions, in order. Phase 2 numbers actions with this so a
        duplicate arriving over a socket can be ignored rather than replayed. */
     seq: 0,
@@ -226,6 +242,7 @@ function cloneGame(state) {
     visit: state.visit ? { ...state.visit } : null,
     lastRoll: state.lastRoll ? { ...state.lastRoll } : null,
     chest: state.chest ? { ...state.chest } : null,
+    fight: state.fight ? { ...state.fight } : null,
   };
 }
 
@@ -264,6 +281,14 @@ export function seatAfter(game, seat) {
   if (!order.length) return null;
   const at = order.indexOf(seat);
   return order[(at + 1) % order.length];
+}
+
+/** The seat this seat is playing against, in the roster order. */
+export function opponentOf(game, seat) {
+  const order = game?.ledger?.players?.map((player) => player.seat) || [];
+  const at = order.indexOf(seat);
+  if (at === -1) return null;
+  return order[(at + 1) % order.length] ?? null;
 }
 
 /**
@@ -533,6 +558,24 @@ export function applyAction(state, action, rng = Math.random) {
           seat: active,
           startedAt: next.chest.startedAt,
         });
+      } else if (cell?.id === FIGHT.id) {
+        /* THE FIGHT IS OPENED HERE, IN THE STATE.
+
+           The corner is a shared screen the same way the two chests are: the
+           fact lives in the state, and every client draws the middle from it.
+           The player who landed acts; the other player watches the same
+           screen read-only. Nothing about it has to be announced to be seen. */
+        next.landing.kind = "fight";
+        next.fight = {
+          playerId: active,
+          phase: "open",
+          selectedWeaponId: null,
+          armed: false,
+          targetId: null,
+          result: null,
+          startedAt: now(),
+        };
+        ok("fightOpened", { seat: active, startedAt: next.fight.startedAt });
       } else {
         next.landing.kind = "none";
       }
@@ -902,6 +945,202 @@ export function applyAction(state, action, rng = Math.random) {
       return { state: next, events };
     }
 
+    /* --------------------------------------------------------------- the fight
+
+       The corner is a SHARED screen, and every part of it is answered by an
+       action the server validates, the same way the chest is. The player who
+       landed chooses a weapon (`selectWeapon`), arms it (`armWeapon`), may
+       step back (`cancelArm`), strikes (`fightAttack`), and may always leave
+       (`leaveFight`). Nobody but the landing player's actions is accepted
+       here, and the turn is ended by the same two exits the chest uses:
+       `leaveFight` and `done`. */
+    case "selectWeapon": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "fight" ||
+        !state.fight
+      ) {
+        return refused(state, action, "There is no fight here.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      /* A weapon can be changed while it is only CHOSEN - a player who
+         touched the wrong face is not trapped by it. It cannot be changed
+         once the strike is armed or under way: Cancel is the way back, and
+         nothing else is. */
+      if (state.fight.phase === "armed" || state.fight.phase === "resolving") {
+        return refused(state, action, "The strike is already armed.");
+      }
+      const weapon = weaponById(action.weaponId);
+      if (!weapon) return refused(state, action, "That is not a weapon.");
+      if (!piece?.weapons?.includes(weapon.id)) {
+        return refused(state, action, "You do not carry that weapon.");
+      }
+
+      next.fight.selectedWeaponId = weapon.id;
+      next.fight.phase = "selected";
+      ok("fightSelected", { seat: active, weapon: weapon.id });
+      return { state: next, events };
+    }
+
+    /* THE STRIKE IS ARMED, AND THE TILES BLINK.
+
+       A weapon that cannot reach any colony cannot be armed: the client
+       disables its Attack pill, and the server refuses the arming as well,
+       because a pill is a request and not a rule. */
+    case "armWeapon": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "fight" ||
+        !state.fight
+      ) {
+        return refused(state, action, "There is no fight here.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.fight.phase !== "selected") {
+        return refused(state, action, "Choose a weapon first.");
+      }
+      const weapon = weaponById(state.fight.selectedWeaponId);
+      if (!weapon || !piece?.weapons?.includes(weapon.id)) {
+        return refused(state, action, "You do not carry that weapon.");
+      }
+      const opponent = opponentOf(state, active);
+      const targets = validTargets(next.ledger, weapon.id, active, { opponentSeat: opponent });
+      if (!targets.length) {
+        return refused(state, action, "No colony in range.");
+      }
+
+      next.fight.phase = "armed";
+      next.fight.armed = true;
+      ok("fightArmed", { seat: active, weapon: weapon.id, targets });
+      return { state: next, events };
+    }
+
+    /* Back from armed to a chosen weapon. The glow comes back; the blink
+       goes. Nothing else changes. */
+    case "cancelArm": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "fight" ||
+        !state.fight
+      ) {
+        return refused(state, action, "There is no fight here.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.fight.phase !== "armed") {
+        return refused(state, action, "There is nothing to step back from.");
+      }
+
+      next.fight.phase = "selected";
+      next.fight.armed = false;
+      ok("fightCancelled", { seat: active });
+      return { state: next, events };
+    }
+
+    /* THE STRIKE.
+
+       One press on a blinking tile, and there is no second question: the
+       strike is the press. The server answers for everything - the weapon
+       belongs to the striker, the colony is within reach, the visit has
+       struck once - and then the colony changes hands with everything built
+       on it, the weapon is spent, and both ledgers write what happened with
+       no money moving at all. */
+    case "fightAttack": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "fight" ||
+        !state.fight
+      ) {
+        return refused(state, action, "There is no fight here.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.fight.phase !== "armed") {
+        return refused(state, action, "Arm a weapon before you strike.");
+      }
+      if (state.fight.result) {
+        return refused(state, action, "The fight has already been fought.");
+      }
+      const weapon = weaponById(state.fight.selectedWeaponId);
+      if (!weapon || !piece?.weapons?.includes(weapon.id)) {
+        return refused(state, action, "You do not carry that weapon.");
+      }
+      const targetId = String(action.targetId ?? "");
+      const cell = CELLS.find((entry) => entry.id === targetId);
+      if (!cell) return refused(state, action, "There is no such colony.");
+      if (IMMUNE_LIST.includes(targetId)) {
+        return refused(state, action, "That colony is beyond any weapon.");
+      }
+      if (isTargetProtected(cell)) {
+        return refused(state, action, "That colony is protected.");
+      }
+      const opponent = opponentOf(state, active);
+      const targets = validTargets(next.ledger, weapon.id, active, { opponentSeat: opponent });
+      if (!targets.includes(targetId)) {
+        return refused(state, action, "That colony is not within reach.");
+      }
+
+      /* THE COLONY CHANGES HANDS, WITH EVERYTHING ON IT.
+
+          The sheet's owner is the only thing written: the upgrade level the
+          colony already carries is the colony's own fact and it travels with
+          it, and the rent that follows is worked out from the ownership by
+          the ledger's own rules - including the monopoly it now belongs to.
+          Nothing here recomputes rent, because nothing here has to. */
+      const sheet = sheetFor(next.ledger, targetId);
+      sheet.owner = active;
+      piece.weapons = piece.weapons.filter((id) => id !== weapon.id);
+
+      /* One sentence for each side, and no money moves. */
+      recordEntry(next.ledger, {
+        turn: state.turn,
+        seat: active,
+        kind: "fight",
+        text: `Captured ${cell.name} with ${weapon.name}`,
+        amount: 0,
+      });
+      recordEntry(next.ledger, {
+        turn: state.turn,
+        seat: opponent,
+        kind: "fight",
+        text: `Lost ${cell.name} to ${nameOfSeat(next.ledger, active)}`,
+        amount: 0,
+      });
+
+      next.fight.phase = "resolving";
+      next.fight.armed = false;
+      next.fight.targetId = targetId;
+      next.fight.result = {
+        id: targetId,
+        weapon: weapon.id,
+        name: cell.name,
+        from: opponent,
+        to: active,
+      };
+      ok("fightResolved", {
+        seat: active,
+        id: targetId,
+        weapon: weapon.id,
+        name: cell.name,
+        from: opponent,
+        to: active,
+      });
+      return { state: next, events };
+    }
+
+    /* LEAVING.
+
+       The red pill at the foot of the Fight, always there, with or without
+       weapons. Leaving ends the Fight AND the turn: a visit to the corner is
+       over when the player walks away from it. */
+    case "leaveFight": {
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (!state.fight) return refused(state, action, "There is no fight to leave.");
+
+      next.fight = null;
+      next.phase = PHASE.TURN_END;
+      ok("fightLeft", { seat: active });
+      return { state: next, events };
+    }
+
     /* ------------------------------------------------------------ the chest is
        DONE. The acting player has finished with it - the weapon is collected,
        the card is turned over - and the visit is over. This is the only thing
@@ -912,6 +1151,20 @@ export function applyAction(state, action, rng = Math.random) {
        to show. */
     case "done": {
       if (actor !== active) return refused(state, action, "It is not your turn.");
+
+      /* THE FIGHT'S CLOSING. The strike has been seen - the war has played
+         on both screens - and the acting player's board asks for the visit
+         to be over. The fight goes with it, and the turn ends. */
+      if (state.fight) {
+        if (state.fight.phase !== "resolving") {
+          return refused(state, action, "The fight is still being fought.");
+        }
+        next.fight = null;
+        next.phase = PHASE.TURN_END;
+        ok("fightClosed", { seat: active });
+        return { state: next, events };
+      }
+
       if (!state.chest) return refused(state, action, "There is nothing to finish.");
 
       if (state.chest.kind === "ragnarok") {
@@ -953,8 +1206,7 @@ export function applyAction(state, action, rng = Math.random) {
             if (state.visit?.drawn !== BAD_LUCK && !state.visit?.collected) {
               return refused(state, action, "Collect the weapon first.");
             }
-          } else if (state.landing?.id === NEXUS.id) {
-            /* THE NEXUS VISIT CAN ALWAYS BE LEFT.
+          } else if (state.landing?.id === NEXUS.id) {            /* THE NEXUS VISIT CAN ALWAYS BE LEFT.
 
                A refusal here used to be the end of the road, and it stranded the
                game: the client closed the card, asked to continue, was told to
@@ -979,6 +1231,13 @@ export function applyAction(state, action, rng = Math.random) {
             next.chest = null;
             ok("chestClosed", { kind: state.chest.kind, seat: active });
           }
+        }
+        if (kind === "fight") {
+          /* A fight is ended by the red pill (leaveFight), or by the closing
+             press that follows the strike (done). A stray `continue` does
+             not walk out of a visit the player is still standing in: the
+             turn ends through one of the two exits, or not at all. */
+          return refused(state, action, "The fight is still open.");
         }
         next.phase = PHASE.TURN_END;
         return { state: next, events };
@@ -1029,6 +1288,7 @@ export function applyAction(state, action, rng = Math.random) {
       /* The chest is gone with the turn. Both devices read this and both close
          the middle at the same moment. */
       next.chest = null;
+      next.fight = null;
       ok("turnChanged", {
         from,
         to,

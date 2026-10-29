@@ -90,6 +90,18 @@
   --sell-deep: #8f332b;
   --sell-ink: #fffaf4;
 
+  /* The war's own colours, one per weapon. The red everything about the
+     Fight answers to is the Sell red - the same calm destructive red - and
+     these three are only what a tile is stained by: the white-and-violet
+     annihilation, the warm burn, and the gold of a god's eye opening. */
+  --fight-violet: #7b5cc0;
+  --fight-warm: #c96a35;
+  --fight-gold: #c9a53d;
+
+  /* How long a blink asks the eye back while a strike is armed. One number,
+     named, because it is the rhythm the armed strike waits on. */
+  --fight-blink: 900ms;
+
   /* The air between the property card and the tiles that bound it. A share of
      the cell rather than a fixed number of pixels, so the card floats by the
      same amount at every board size. */
@@ -3797,4 +3809,518 @@ button.board__cell--corner:focus-visible {
   .board__passed {
     animation: none;
   }
+
+  /* THE FIGHT ASKS FOR LESS, AND IT IS GIVEN LESS.
+     The blink turns into the glow it rests on - the same tiles, saying the
+     same thing without moving - and the war's own pieces are asked for no
+     motion at all: the flash that the board-fx plays by hand is not the
+     stylesheet's to quiet, and these are. */
+  .board__cell.is-fight-blink::before {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  .board.is-quake {
+    animation: none;
+  }
+
+  .board__war-eye,
+  .board__war-flash,
+  .board__war-ring,
+  .board__war-streak,
+  .board__war-vignette {
+    animation: none;
+  }
+}
+
+
+/* ================================================================ the fight
+
+   The bottom-right corner, from the state.
+
+   THE CARD
+   --------
+   The Fight is a shared screen drawn into the same holder the cards and the
+   chests use, but it is not one card among them: it takes the whole middle,
+   from its own edge to the ring, because two players' weapons and their
+   live ranges cannot be read off a smaller thing. The halves are
+   viewer-relative - the BOTTOM half is always the viewer's own player - and
+   each half scrolls inside itself if its cards outgrow it, so the other
+   half is never pushed off the screen.
+
+   THE MARKS
+   ---------
+   What the tiles say while somebody is choosing lives here and nowhere
+   else. The glow is a still, soft ring; the blink is the same ring asked
+   for again, forever, on a named rhythm (--fight-blink). Both are drawn on
+   a ::before, because the owner's own ring will come back to that corner of
+   the tile the moment the marks are cleared, and it should not find its
+   pseudo overridden by a guest.
+   Nothing in either of them shifts the tile's text: transform and opacity,
+   an absolute overlay, and nothing measured.
+   ================================================================= */
+
+.board__card[data-card-kind="fight"] {
+  /* THE WHOLE MIDDLE. The header tiles above and the ring around the
+     middle are still the board's; everything between them is the Fight.
+     The ceiling is the middle's own height, expressed in cells the way the
+     rest of the board is. */
+  left: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
+  top: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
+  width: calc(var(--cell) * 4 + var(--hair) * 3 - var(--card-gap) * 2);
+  max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+  height: auto;
+}
+
+.fight-card {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cell) * 0.12);
+  padding: calc(var(--cell) * 0.16) calc(var(--cell) * 0.2);
+  overflow: hidden;
+  text-align: center;
+}
+
+.fight-card__title {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: max(15.2px, calc(var(--cell) * 0.2234));
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.fight-card__explain {
+  flex: 0 0 auto;
+  margin: calc(var(--cell) * 0.04) 0 0;
+  font-size: max(10.4px, calc(var(--cell) * 0.115));
+  line-height: 1.45;
+  color: var(--ink-soft, var(--ink));
+}
+
+.fight-card__field {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cell) * 0.1);
+  /* The halves meet on a line, not on a gap: this is one field, split. */
+  isolation: isolate;
+}
+
+.fight-half {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cell) * 0.07);
+  padding: calc(var(--cell) * 0.08) calc(var(--cell) * 0.06);
+  border: 1px solid color-mix(in srgb, var(--ink) 14%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink) 4%, var(--cell-ground));
+  text-align: left;
+  overflow: hidden;
+}
+
+/* The half that is being watched and not acted on is a little quieter than
+   the viewer's own half - not hidden, just a step back in the ink. */
+.fight-half--top {
+  color: var(--ink);
+  opacity: 0.96;
+}
+
+.fight-half__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: calc(var(--cell) * 0.09);
+  min-width: 0;
+}
+
+.fight-half__disc {
+  flex: 0 0 auto;
+  width: max(13px, calc(var(--cell) * 0.2));
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: var(--coin, var(--ink));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--coin, var(--ink)) 30%, transparent);
+}
+
+.fight-half__who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fight-half__name {
+  font-size: max(11.5px, calc(var(--cell) * 0.145));
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fight-half__civ {
+  font-size: max(9px, calc(var(--cell) * 0.1));
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 62%, var(--cell-ground));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fight-half__weapons {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  display: grid;
+  /* THREE TO A ROW, every face the same size. The track is a share of the
+     half's own width rather than of the cell, so three faces and their gaps
+     always come to exactly one row's worth of half. */
+  grid-template-columns: repeat(3, 1fr);
+  gap: calc(var(--cell) * 0.08);
+  align-content: start;
+  align-items: stretch;
+}
+
+.fight-half__weapons::-webkit-scrollbar {
+  display: none;
+}
+
+.fight-half__empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: max(10px, calc(var(--cell) * 0.11));
+  color: color-mix(in srgb, var(--ink) 55%, var(--cell-ground));
+  text-align: center;
+  padding: calc(var(--cell) * 0.1) 0;
+}
+
+.fight-card__slot {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cell) * 0.05);
+  min-width: 0;
+}
+
+.fight-card__slot.is-selected .fight-card__face {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--weapon, var(--ink)) 62%, transparent),
+    0 0 calc(var(--cell) * 0.18) color-mix(in srgb, var(--weapon, var(--ink)) 26%, transparent);
+}
+
+.fight-card__face {
+  display: grid;
+  justify-items: center;
+  align-content: end;
+  gap: calc(var(--cell) * 0.04);
+  width: 100%;
+  aspect-ratio: 1 / 1.18;
+  padding: calc(var(--cell) * 0.08) calc(var(--cell) * 0.04);
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 8px;
+  background: var(--cell-ground);
+  color: var(--ink);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.fight-card__face:disabled {
+  cursor: default;
+}
+
+.fight-card__emblem {
+  width: calc(var(--cell) * 0.34);
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+}
+
+.fight-card__emblem svg {
+  width: 100%;
+  height: 100%;
+}
+
+.fight-card__weapon-name {
+  font-size: max(8.4px, calc(var(--cell) * 0.096));
+  line-height: 1.25;
+  text-align: center;
+  color: var(--ink);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.fight-card__pillmark {
+  width: 55%;
+  height: max(3px, calc(var(--cell) * 0.045));
+  border-radius: 999px;
+  background: var(--weapon, var(--ink));
+  opacity: 0.85;
+}
+
+.fight-card__range {
+  margin: 0;
+  /* The live line, centred under the face it belongs to. */
+  font-size: max(8.6px, calc(var(--cell) * 0.098));
+  text-align: center;
+  color: color-mix(in srgb, var(--ink) 68%, var(--cell-ground));
+}
+
+/* THE ATTACK PILL. The calm red the Sell token already names: a request,
+   not a warning, and it answers only when it is live. */
+.fight-card__attack {
+  padding: calc(var(--cell) * 0.045) calc(var(--cell) * 0.06);
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sell) 16%, transparent);
+  color: var(--sell);
+  font-size: max(9px, calc(var(--cell) * 0.105));
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.fight-card__attack:not([disabled]) {
+  background: var(--sell);
+  color: var(--sell-ink);
+}
+
+.fight-card__attack[disabled] {
+  cursor: default;
+  color: color-mix(in srgb, var(--sell) 62%, var(--cell-ground));
+}
+
+.fight-card__foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: calc(var(--cell) * 0.1);
+}
+
+.fight-card__waiting {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: max(9.6px, calc(var(--cell) * 0.108));
+  color: color-mix(in srgb, var(--ink) 58%, var(--cell-ground));
+  text-align: center;
+}
+
+.fight-card__waiting-line {
+  margin: 0;
+  text-align: center;
+  font-size: max(9px, calc(var(--cell) * 0.1));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 55%, var(--cell-ground));
+  padding-bottom: calc(var(--cell) * 0.05);
+}
+
+/* THE STEP BACK, and the way out. Both are the calm red: Cancelling an
+   armed strike and leaving the fight are the same kind of request. */
+.fight-card__cancel,
+.fight-card__leave {
+  flex: 0 0 auto;
+  padding: calc(var(--cell) * 0.05) calc(var(--cell) * 0.13);
+  border: none;
+  border-radius: 999px;
+  background: var(--sell);
+  color: var(--sell-ink);
+  font-size: max(9.6px, calc(var(--cell) * 0.112));
+  letter-spacing: 0.03em;
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------ the marks
+
+   The tiles the armed strike is looking at. Their own pseudo, not the
+   owner ring's: the ring returns to that corner when the marks go. */
+
+.board__cell.is-fight-glow::before {
+  content: "";
+  position: absolute;
+  inset: 3%;
+  z-index: 3;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--sell) 40%, transparent),
+    inset 0 0 calc(var(--cell) * 0.2) color-mix(in srgb, var(--sell) 22%, transparent);
+  pointer-events: none;
+}
+
+.board__cell.is-fight-blink::before {
+  content: "";
+  position: absolute;
+  inset: 3%;
+  z-index: 3;
+  border-radius: inherit;
+  border: 2px solid color-mix(in srgb, var(--sell) 78%, transparent);
+  box-shadow: 0 0 calc(var(--cell) * 0.12) color-mix(in srgb, var(--sell) 26%, transparent);
+  pointer-events: none;
+  animation: fight-blink var(--fight-blink) cubic-bezier(.4, .6, .4, 1) infinite;
+}
+
+.board--fight-armed .board__cell.is-fight-blink {
+  cursor: pointer;
+}
+
+@keyframes fight-blink {
+  0%, 100% { transform: scale(.8); opacity: 0.22; }
+  50%      { transform: scale(1);   opacity: 0.95; }
+}
+
+/* -------------------------------------------------------------- the war
+
+   Everything the strike looks like, played by board-fx.js from the event.
+   Transform and opacity only; nothing measured; nothing moved. */
+
+.board.is-quake {
+  animation: board-quake 1400ms cubic-bezier(.36, .07, .19, .97) both;
+}
+
+@keyframes board-quake {
+  0%   { transform: translate(0, 0); }
+  9%   { transform: translate(5px, -4px); }
+  18%  { transform: translate(-4px, 4px); }
+  30%  { transform: translate(4px, -2px); }
+  44%  { transform: translate(-3px, 2px); }
+  60%  { transform: translate(2px, 2px); }
+  76%  { transform: translate(-1px, -1px); }
+  90%  { transform: translate(1px, 0); }
+  100% { transform: translate(0, 0); }
+}
+
+.board__war-vignette {
+  position: absolute;
+  inset: calc(var(--hair) * -1);
+  z-index: 45;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    ellipse at center,
+    rgb(18 17 16 / 0) 46%,
+    rgb(18 17 16 / 0.42) 100%
+  );
+}
+
+.board__war-streak {
+  position: absolute;
+  z-index: 45;
+  height: max(6px, calc(var(--cell) * 0.14));
+  border-radius: 999px;
+  transform-origin: 0 50%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--war, var(--ink)) 55%, var(--dealt-paper)),
+    var(--dealt-paper)
+  );
+  box-shadow: 0 0 calc(var(--cell) * 0.2) color-mix(in srgb, var(--war, var(--ink)) 55%, transparent);
+}
+
+.board__war-ring {
+  position: absolute;
+  z-index: 45;
+  width: calc(var(--cell) * 1.5);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  pointer-events: none;
+  border: 3px solid color-mix(in srgb, var(--war, var(--ink)) 80%, transparent);
+  box-shadow: 0 0 calc(var(--cell) * 0.22) color-mix(in srgb, var(--war, var(--ink)) 45%, transparent);
+}
+
+/* The flavours. Each is the tile being stained by its own weapon for the
+   moment the strike lands - and none of them is a second element on the
+   board: they live in the cell and die with it. */
+
+.board__war-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.board__war-flash--antimatter {
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--dealt-paper) 0%,
+    var(--fight-violet) 82%
+  );
+}
+
+.board__war-flash--nuclear {
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in srgb, var(--fight-warm) 30%, var(--dealt-paper)) 0%,
+    var(--fight-warm) 84%
+  );
+}
+
+.board__war-flash--shiva,
+.board__war-flash--plain {
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--dealt-paper) 0%,
+    color-mix(in srgb, var(--ink) 22%, var(--dealt-paper)) 82%
+  );
+}
+
+.board__war-ring--antimatter {
+  border-color: color-mix(in srgb, var(--fight-violet) 82%, transparent);
+}
+
+.board__war-ring--nuclear {
+  border-color: color-mix(in srgb, var(--fight-warm) 82%, transparent);
+}
+
+/* THE EYE OF SHIVA. A vertical eye opening on the tile, in gold light: the
+   ellipse grows along its height and not its width, and the iris inside it
+   opens with it. scaleY only, so nothing around it moves. */
+
+.board__war-eye {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: 68%;
+  height: 78%;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scaleY(0.08);
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    color-mix(in srgb, var(--fight-gold) 22%, var(--dealt-paper)) 0%,
+    color-mix(in srgb, var(--fight-gold) 62%, var(--dealt-paper)) 62%,
+    var(--fight-gold) 100%
+  );
+  box-shadow: 0 0 calc(var(--cell) * 0.24) color-mix(in srgb, var(--fight-gold) 66%, transparent);
+  animation: fight-eye 1050ms cubic-bezier(.25, .7, .3, 1) both;
+}
+
+.board__war-eye::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34%;
+  height: 72%;
+  border-radius: 50%;
+  transform: translate(-50%, -50%) scaleY(0.1);
+  background: color-mix(in srgb, var(--board-ground) 86%, transparent);
+  animation: fight-eye 1400ms cubic-bezier(.3, .7, .3, 1) both;
+  animation-delay: 130ms;
+}
+
+@keyframes fight-eye {
+  0%   { transform: translate(-50%, -50%) scaleY(0.08); opacity: 0.4; }
+  55%  { transform: translate(-50%, -50%) scaleY(1); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scaleY(1); opacity: 0.85; }
 }

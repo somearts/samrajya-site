@@ -67,6 +67,7 @@ import {
   cardAway,
   flyCoins,
   flyRent,
+  fightWar,
   pipPulse,
   resetHolder,
   ringDraw,
@@ -81,6 +82,11 @@ import {
   playNexusStage,
   playRagnarokStage,
 } from "./chest-stage.js";
+import {
+  clearFightMarks,
+  drawFightMarks,
+  drawFightStage,
+} from "./fight-stage.js";
 
 /**
  * The four corners, and the mark each one carries.
@@ -736,6 +742,17 @@ export function board({
         await dismissCard();
       }
     }
+    if (game.fight) {
+      openFightStage();
+    } else if (fightStage) {
+      /* The fight is gone: the middle is the board's again, and the tiles
+         are put back the way a quiet board has them. */
+      fightStage = null;
+      clearFightMarks(frame);
+      if (holder()?.dataset.cardKind === "fight") {
+        await dismissCard();
+      }
+    }
 
     // A property decision that has just been answered takes its card away. A
     // chest card closes itself, because it has a reveal to finish first.
@@ -802,6 +819,15 @@ export function board({
         } else if (chestStage) {
           chestStage = null;
           if (holder()?.dataset.cardKind === "chest") {
+            await dismissCard();
+          }
+        }
+        if (game.fight) {
+          openFightStage();
+        } else if (fightStage) {
+          fightStage = null;
+          clearFightMarks(frame);
+          if (holder()?.dataset.cardKind === "fight") {
             await dismissCard();
           }
         }
@@ -969,6 +995,34 @@ export function board({
           // The chest card reveals and flies the weapon itself; the chip is
           // repainted from the game's pieces at the end of the step.
           break;
+
+        case "fightResolved": {
+          /* THE WAR IS PLAYED FROM THE EVENT.
+
+             The events are the one thing both boards are handed
+             identically, in the same order, at the same turn - the same
+             weapon, the same target, the same names. So the board shakes,
+             the streak runs and the tile takes its colour here, and both
+             phones watch the same strike at the same moment.
+
+             The tile's ring is redrawn only AFTER the war: a tile that
+             changed hands before the strike arrived would show the answer
+             before the question. */
+          const target = cellAt(event.id);
+          await fightWar(frame, {
+            weaponId: event.weapon,
+            fromNode: chip(event.from),
+            toNode: target,
+          });
+          markBoard(frame, game.ledger);
+          ringDraw(target);
+          paint({ animate: true });
+          await say(event);
+          // The strike has been seen on BOTH screens now; the acting
+          // player's board closes the fight, and the turn ends with it.
+          if (isMyTurn()) void finishFightWhenFree();
+          break;
+        }
 
         case "prayed":
         case "nexusDrawn": {
@@ -1303,13 +1357,125 @@ export function board({
     }
   }
 
-  /** Wait until the board is free, or give up. */
+  /* Wait until the board is free, or give up. */
   async function waitForFree() {
     for (let i = 0; i < 200; i += 1) {
       if (!busy) return true;
       await wait(50);
     }
     return false;
+  }
+
+  /* ------------------------------------------------------------- the fight
+
+     The corner is a SHARED screen, drawn from the state the same way the
+     chests are: `game.fight` is the whole truth about it, both players draw
+     the middle from it, the acting player holds the buttons, and nothing
+     about it has to be announced to be seen.
+
+     The war is NOT drawn here. It is played from the `fightResolved` event,
+     the one thing both boards are handed identically; the stage only shows
+     the screen and marks the tiles the strike is looking at. */
+
+  /* The stage that has been played, so a redraw does not wipe a screen that
+     is already right. Unlike the chest, nothing inside the card is
+     mid-animation: the blink and the glow live on the tiles, and they are
+     repainted from the state every time the stage is looked at. */
+  let fightStage = null;
+
+  /** Draw the Fight, from the state, and mark the tiles it is looking at. */
+  function openFightStage() {
+    const fight = game?.fight;
+    if (!fight) return;
+
+    cardMode = isMyTurn() ? "decision" : "read";
+    reading = false;
+    cardKey = `fight:${fight.playerId}:${fight.phase}:${fight.startedAt || 0}`;
+
+    const mine = isMyTurn();
+    const stageKey =
+      `fight:${fight.phase}:${fight.selectedWeaponId || ""}:${fight.armed}:${fight.startedAt || 0}`;
+    const changed = fightStage !== stageKey;
+    fightStage = stageKey;
+
+    /* THE TILES SAY WHAT THE STRIKE IS LOOKING AT, on both screens alike:
+       the soft glow while a weapon is chosen, the slow blink while it is
+       armed. Marks are drawn from the ledger the whole game shares, so a
+       tile that glows on one phone glows on the other. */
+    drawFightMarks(frame, fight, game.ledger);
+
+    if (!changed && holder() && !holder().hidden) return;
+
+    const card = drawFightStage(frame, fight, {
+      mine,
+      ledger: game.ledger,
+      pieces: game.pieces,
+      /* The half at the bottom is the viewer's own player. viewerSeat is
+         what orders them, and it is this browser's seat, not the game's. */
+      viewerSeat: mySeat === null ? (mine ? fight.playerId : null) : Number(mySeat),
+      playerName: chestName(fight.playerId),
+    });
+    if (!card) return;
+
+    /* THE BUTTONS. Only the acting player's are live: the server refuses
+       anything from anybody else, and a button that does nothing would be
+       worse than one that is not there. One press does one thing - a face
+       chooses or, already chosen, arms; the pill says it again. */
+    if (mine) {
+      const choose = (weaponId) => {
+        const current = game.fight;
+        if (!current || current.phase === "armed" || current.phase === "resolving") return;
+        if (current.phase === "selected" && current.selectedWeaponId === weaponId) {
+          /* THE SAME FACE AGAIN IS THE ARMING TOO, and so is the pill:
+             choose, then arm, one face at a time. */
+          void run({ type: "armWeapon" });
+          return;
+        }
+        void run({ type: "selectWeapon", weaponId });
+      };
+      for (const btn of card.querySelectorAll('[data-action="face"]')) {
+        btn.addEventListener("click", () => choose(btn.dataset.weapon));
+      }
+      for (const btn of card.querySelectorAll('[data-action="attack"]')) {
+        btn.addEventListener("click", () => choose(btn.dataset.weapon));
+      }
+      card.querySelector('[data-action="cancel"]')
+        ?.addEventListener("click", () => void run({ type: "cancelArm" }));
+      card.querySelector('[data-action="leave"]')
+        ?.addEventListener("click", () => void run({ type: "leaveFight" }));
+    }
+
+    paintPhase();
+  }
+
+  /** Ask the server to close the fight, once the board is free.
+
+      The war has played to its end on this screen, and the turn ends only
+      when the state says the strike has been seen. The fight is sent on its
+      way here rather than inside the event, because the board's lock is held
+      while an event plays - and a request sent into a busy board is dropped. */
+  let finishingFight = false;
+  async function finishFightWhenFree() {
+    if (finishingFight) return;
+    finishingFight = true;
+    try {
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        if (!await waitForFree()) {
+          await wait(250);
+          continue;
+        }
+        /* The fight has moved on - by the other screen's own press arriving
+           first, or by a leave - so there is nothing this board owes it. */
+        if (game.fight?.phase !== "resolving" || !isMyTurn()) return;
+        const result = await run({ type: "done" });
+        if (result) return;
+        await wait(250);
+      }
+    } catch {
+      /* The server refused, which means the fight has moved on. */
+    } finally {
+      finishingFight = false;
+    }
   }
 
   /** Open the card the decision belongs to. */
@@ -1330,6 +1496,15 @@ export function board({
        nobody can see - so the card that is already up stays up. */
     if (cardKey === key && holder() && !holder().hidden) return;
     cardKey = key;
+
+    if (landing.kind === "fight") {
+      /* THE FIGHT IS DRAWN FROM THE STATE, ON BOTH SCREENS. The same shared
+         stage the chests draw from: `game.fight` is the truth, the buttons
+         belong to the player who landed, and a device that reconnects or
+         joins late draws the same middle. Nobody has to refresh. */
+      openFightStage();
+      return;
+    }
 
     if (landing.kind === "chest") {
       /* THE CHEST IS DRAWN FROM THE STATE, ON BOTH SCREENS.
@@ -1530,6 +1705,22 @@ export function board({
     cell.addEventListener("click", () => {
       if (busy) return;
       const id = cell.dataset.id;
+      /* THE ARMED STRIKE IS ASKED OF THE TILE ITSELF.
+
+          While a weapon is armed, a tap on the board is not a request to
+          read a card - it is the strike, or it is nothing. A blinking tile
+          is in reach and takes the strike at once, with no second
+          question; anything else gets a very small shake and keeps the
+          strike armed. */
+      const fight = game.fight;
+      if (fight && fight.phase === "armed" && isMyTurn()) {
+        if (cell.classList.contains("is-fight-blink")) {
+          void run({ type: "fightAttack", targetId: id });
+        } else {
+          void shake(cell);
+        }
+        return;
+      }
       /* The chest tiles answer at any time - the pop-up is read-only and
          covers nothing that is being decided. Everything else waits for the
          board to be at rest. */
@@ -1601,6 +1792,9 @@ export function board({
      makes a late join and a reconnect work: the chest is in the state, and
      the state is what the board is built from. */
   else if (game.chest) openChestStage();
+  /* and the Fight is the same kind of fact: whatever stage it is in, it is
+     on the screen without a refresh. */
+  else if (game.fight) openFightStage();
 
   return frame;
 }

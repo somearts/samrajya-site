@@ -163,6 +163,57 @@ export function announcementFor(event, { viewer = null, ledger = null } = {}) {
       };
     }
 
+    /* THE FIGHT IS SETTLED.
+
+       One event, two sentences. The one who struck is told what they took;
+       the one who was struck is told what they lost; each with the other's
+       name, and with what the colony now is - theirs, or his and hers. */
+    case "fightResolved": {
+      const took = mine !== null && Number(event.to) === mine;
+      const lost = mine !== null && Number(event.from) === mine;
+      const other = nameOf(took ? event.from : event.to);
+      if (took) {
+        return {
+          label: "CAPTURED",
+          big: event.name || squareName(event.id),
+          sub: `from ${other} \u00b7 now yours`,
+          seat: event.to,
+          tone: "earn",
+        };
+      }
+      if (lost) {
+        return {
+          label: "LOST",
+          big: event.name || squareName(event.id),
+          sub: `to ${other}`,
+          seat: event.from,
+          tone: "spend",
+        };
+      }
+      /* A reader who was in neither seat - a third player, or nobody. */
+      return {
+        label: "CAPTURED",
+        big: event.name || squareName(event.id),
+        sub: `by ${nameOf(event.to)}`,
+        seat: event.to,
+        tone: "earn",
+      };
+    }
+
+    /* The corner is walked away from, or the war has finished being seen and
+       the visit is over. Both are the turn's own fact, not a second battle. */
+    case "fightLeft":
+      return {
+        label: "THE FIGHT",
+        big: "Left the fight",
+        sub: "No weapon spent",
+        seat: event.seat,
+        tone: "plain",
+      };
+
+    case "fightClosed":
+      return null;
+
     default:
       return null;
   }
