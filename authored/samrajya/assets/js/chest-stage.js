@@ -837,14 +837,18 @@ export async function playRagnarokStage(board, chest) {
 }
 
 /**
- * The Kronos stage: the draw, and the shield that was drawn.
+ * The Kronos stage: the shuffle, and the shield that was drawn.
  *
- * The same two moments as Ragnarok's - the shuffle, then the face turning
- * over in the slot the player touched - because they ARE the same two moments
- * and the same shuffleFaces runs. What is its own is what the face shows: the
- * shield in its own colour, and under the answer, which weapon it stops and
- * how long it stands. A draw that found nothing left (all three already held)
- * says so and shows no face.
+ * ONE SERVER PHASE, TWO BEATS ON THE GLASS. The draw is answered the moment
+ * the button is pressed - the shield is standing and the face is decided in
+ * the state from then - so the chest arrives here already at "revealed". This
+ * function plays the entrance the two devices agree on: three seconds of
+ * shuffle from THIS browser's first sight of the card, and then the face
+ * turns over to what the state already holds. The same reasoning as the
+ * Nexus deck - a device that arrives late, reloads, or missed a message
+ * plays the whole shuffle and shows the same answer - but with no round-trip
+ * between the draw and the confirmation: nothing has to be asked for, and
+ * nothing can be interrupted leaving a card that shuffles for ever.
  */
 export async function playKronosStage(board, chest) {
   const holder = board.querySelector(".board__card");
@@ -856,84 +860,83 @@ export async function playKronosStage(board, chest) {
   const shield = chest.result?.shield ? shieldById(chest.result.shield) : null;
   const slots = [...card.querySelectorAll(".chest-card__slot")];
 
-  /* THE SHUFFLE. The answer was decided when the button was pressed and is
-     already in the state; nothing about it is SHOWN until the shuffle is
-     over. The same three seconds, the same riffle, the same stillness for a
-     reader who asked for less motion - so every device turns the face at the
-     same moment. */
-  if (chest.phase === "drawing") {
+  if (chest.phase !== "revealed") return card;
+
+  /* THE SHUFFLE, ONCE PER CARD. The answer was decided when the button was
+     pressed; nothing about it is SHOWN until these three seconds are over.
+     The flag keeps the entrance to one run per card even if a repaint asks
+     again, and a card that is drawn fresh (a reload, a late join) plays it
+     in full. */
+  if (!card.dataset.shuffled) {
+    card.dataset.shuffled = "true";
     await shuffleFaces(card);
-    return card;
   }
 
   /* THE REVEAL, AND NOTHING AFTER IT. One face turns over and keeps its
-     answer; the other two step aside. The shield was already deployed the
-     moment it was drawn - this is the two screens agreeing on the moment the
-     face turns, and the card is stable from here until Done closes the chest. */
-  if (chest.phase === "revealed") {
-    const chosenIndex = Number(chest.result?.slot ?? 1);
-    const chosen = slots[chosenIndex] || slots[1] || slots[0];
-    for (const slot of slots) {
-      if (!none && shield && slot === chosen) {
-        /* The face that turns over shows the shield that was drawn, in the
-           shield's own colour, with the emblem of the weapon it answers. */
-        slot.dataset.shield = shield.id;
-        slot.style.setProperty("--weapon", shieldColor(shield.id));
-        slot.classList.add("is-drawn");
-        const face = slot.querySelector(".chest-card__face");
-        if (face) face.innerHTML = emblem(shield, shieldColor(shield.id));
-        const name = slot.querySelector(".chest-card__slot-name");
-        if (name) {
-          /* Filtered, for the reason the weapon card's own copy is: a trailing
-             null is not a Node, and replaceChildren would refuse it. */
-          name.replaceChildren(
-            ...[
-              el("span", { text: shield.name }),
-              weaponById(shield.counters)
-                ? el("span", {
-                    class: "chest-card__slot-stops",
-                    text: `Stops ${weaponById(shield.counters).name}`,
-                  })
-                : null,
-            ].filter(Boolean),
-          );
-        }
-        const pill = slot.querySelector(".chest-card__pill");
-        if (pill) pill.style.removeProperty("background");
-      } else {
-        slot.hidden = true;
+     answer; the other two step aside. The card is stable from here until
+     Done closes the chest. */
+  const chosenIndex = Number(chest.result?.slot ?? 1);
+  const chosen = slots[chosenIndex] || slots[1] || slots[0];
+  for (const slot of slots) {
+    if (!none && shield && slot === chosen) {
+      /* The face that turns over shows the shield that was drawn, in the
+         shield's own colour, with the emblem of the weapon it answers. */
+      slot.dataset.shield = shield.id;
+      slot.style.setProperty("--weapon", shieldColor(shield.id));
+      slot.classList.add("is-drawn");
+      const face = slot.querySelector(".chest-card__face");
+      if (face) face.innerHTML = emblem(shield, shieldColor(shield.id));
+      const name = slot.querySelector(".chest-card__slot-name");
+      if (name) {
+        /* Filtered, for the reason the weapon card's own copy is: a trailing
+           null is not a Node, and replaceChildren would refuse it. */
+        name.replaceChildren(
+          ...[
+            el("span", { text: shield.name }),
+            weaponById(shield.counters)
+              ? el("span", {
+                  class: "chest-card__slot-stops",
+                  text: `Stops ${weaponById(shield.counters).name}`,
+                })
+              : null,
+          ].filter(Boolean),
+        );
       }
+      const pill = slot.querySelector(".chest-card__pill");
+      if (pill) pill.style.removeProperty("background");
+    } else {
+      slot.hidden = true;
     }
-    if (result) {
-      result.hidden = false;
-      /* THE REVEALED SHIELD, IN FULL: its name, what it is, the one weapon it
-         stops, and the two owned turns it stands for. Everything the player
-         needs to know about what just happened is on the card they are
-         already reading - no second screen, no splash. */
-      const stops = shield ? weaponById(shield.counters)?.name : "";
-      result.replaceChildren(
-        ...[
-          el("p", {
-            class: "chest-card__drew",
-            text: none
-              ? KRONOS_CHEST.badLuck
-              : `You drew the ${shield?.name || "shield"}.`,
-          }),
-          !none && shield?.blurb
-            ? el("p", { class: "chest-card__weapon-blurb", text: shield.blurb })
-            : null,
-          stops
-            ? el("p", { class: "chest-card__weapon-targets", text: `Stops: ${stops}` })
-            : null,
-          !none
-            ? el("p", {
-                class: "chest-card__weapon-targets",
-                text: "Deployed now. Stands for two of your turns.",
-              })
-            : null,
-        ].filter(Boolean),
-      );
-    }
+  }
+  if (result) {
+    result.hidden = false;
+    /* THE REVEALED SHIELD, IN FULL: its name, what it is, the one weapon it
+       stops, and the two owned turns it stands for. Everything the player
+       needs to know about what just happened is on the card they are
+       already reading - no second screen, no splash. */
+    const stops = shield ? weaponById(shield.counters)?.name : "";
+    result.replaceChildren(
+      ...[
+        el("p", {
+          class: "chest-card__drew",
+          text: none
+            ? KRONOS_CHEST.badLuck
+            : `You drew the ${shield?.name || "shield"}.`,
+        }),
+        !none && shield?.blurb
+          ? el("p", { class: "chest-card__weapon-blurb", text: shield.blurb })
+          : null,
+        stops
+          ? el("p", { class: "chest-card__weapon-targets", text: `Stops: ${stops}` })
+          : null,
+        !none
+          ? el("p", {
+              class: "chest-card__weapon-targets",
+              text: "Deployed now. Stands for two of your turns.",
+            })
+          : null,
+      ].filter(Boolean),
+    );
   }
 
   return card;

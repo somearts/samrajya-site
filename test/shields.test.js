@@ -9,6 +9,10 @@
 
    - each shield names exactly one weapon, by the weapon's own id;
    - a drawn shield deploys at once, for its owner, with two owned turns;
+   - the draw IS the reveal: one action, one post-draw phase, the face
+     already decided in the state - nothing waits on a second round-trip;
+   - the visit can always be left, so an interrupted draw can never strand
+     the chest;
    - it blocks its own weapon exactly once and is spent on the block;
    - the other two weapons walk straight past it;
    - it can never be redrawn, refreshed, overwritten or stacked;
@@ -85,10 +89,9 @@ function atKronos() {
   return goTo(createGame(PLAYERS, { testMode: true }), KRONOS_INDEX);
 }
 
-/** Draw from the chest and turn the face over - the whole visit, up to Done. */
+/** Draw from the chest - which answers the whole visit, face and all. */
 function drawAt(state, slot = 1, rng = () => 0) {
-  const drawn = take(state, { type: "drawShield", slot }, rng).state;
-  return take(drawn, { type: "revealShield" }).state;
+  return take(state, { type: "drawShield", slot }, rng).state;
 }
 
 /** End the active player's turn on a quiet square and hand it over. */
@@ -195,7 +198,7 @@ test("a drawn shield deploys at once: its owner, its weapon, two owned turns", (
 
   assert.deepEqual(drawn.pieces[0].weapons, [], "a shield is NOT a weapon and joins no inventory");
   assert.equal(drawn.visit.shieldDrawn, event.shield, "the visit is answered");
-  assert.equal(drawn.chest.phase, "drawing", "the shuffle may begin");
+  assert.equal(drawn.chest.phase, "revealed", "the face is already turned in the state: one action, no round-trip");
   assert.ok(
     drawn.ledger.history.some((entry) => entry.text === `Deployed ${shieldById(event.shield).name}`),
     "the ledger says what was deployed",
@@ -206,16 +209,19 @@ test("a drawn shield deploys at once: its owner, its weapon, two owned turns", (
   assert.deepEqual(shieldsOf(drawn, drawn.active), drawn.shields);
 });
 
-test("the face turns over at its own moment, and only once", () => {
-  let state = atKronos();
-  state = take(state, { type: "drawShield", slot: 0 }, () => 0).state;
-
-  refuse(state, { type: "revealShield", seat: 1 }, "It is not your turn.");
-  state = take(state, { type: "revealShield" }).state;
+test("the draw IS the reveal: the answer is in the state from the one press", () => {
+  /* There is no second action between the press and the confirmation. The
+     chest lands at "revealed" with the shield already named in its result,
+     so a client that reloads, reconnects or arrives late reads the SAME face
+     out of the same state - there is no "drawing" limbo to be stranded in
+     and nothing has to be asked for after the draw. */
+  const state = take(atKronos(), { type: "drawShield", slot: 0 }, () => 0).state;
   assert.equal(state.chest.phase, "revealed");
-  assert.ok(state.chest.startedAt > 0, "the reveal has its own moment for both devices");
+  assert.ok(state.chest.result?.shield, "the face is decided in the state");
+  assert.equal(state.chest.result.slot, 0, "the face the player touched");
+  assert.ok(state.chest.startedAt > 0, "the moment both devices begin their shuffle from");
 
-  refuse(state, { type: "revealShield" }, "That shield has already been turned over.");
+  refuse(state, { type: "drawShield", seat: 1 }, "It is not your turn.");
 });
 
 test("the chest cannot be drawn from twice, and not by the other player", () => {
@@ -226,15 +232,24 @@ test("the chest cannot be drawn from twice, and not by the other player", () => 
   refuse(fresh, { type: "drawShield", seat: 1 }, "It is not your turn.");
 });
 
-test("the visit must be answered before it is left", () => {
+test("Done waits for the draw; the visit itself can always be left", () => {
   const state = atKronos();
+  // Done is the acknowledgement of what was drawn: it waits for the draw.
   refuse(state, { type: "done" }, "Draw from the chest first.");
-  refuse(state, { type: "continue" }, "Draw from the chest first.");
 
-  const revealed = drawAt(state);
+  // But the VISIT is never a trap, the way Nexus's never was: a player who
+  // walks away - or a client whose draw was interrupted - closes the chest
+  // and the turn carries on, with no shield standing.
+  const left = take(state, { type: "continue" }).state;
+  assert.equal(left.chest, null, "the chest closes behind the player");
+  assert.deepEqual(left.shields, [], "nothing was drawn, so nothing stands");
+  assert.equal(left.phase, PHASE.TURN_END, "and the turn carries on");
+
+  const revealed = drawAt(atKronos());
   const closed = take(revealed, { type: "done" }).state;
   assert.equal(closed.chest, null, "Done closes the chest");
   assert.equal(closed.phase, PHASE.TURN_END, "and the turn goes with it");
+  assert.equal(closed.shields.length, 1, "the shield stands after the visit closes");
 });
 
 test("shields cross the wire and come back unchanged", () => {
@@ -281,8 +296,7 @@ test("drawing while all three stand is a miss, and overwrites nothing", () => {
   assert.deepEqual(drawn.shields, before, "every standing shield kept its own turns");
 
   // A miss is still an answer: the visit can be closed.
-  const revealed = take(drawn, { type: "revealShield" }).state;
-  const closed = take(revealed, { type: "done" }).state;
+  const closed = take(drawn, { type: "done" }).state;
   assert.equal(closed.chest, null);
 });
 
@@ -462,4 +476,48 @@ test("a strike is answered by exactly one shield, and only that one is spent", (
     ["kavacha"],
     "the matching shield is spent; the one answering another weapon still stands",
   );
+});
+
+test("the reported scenario, whole: nothing owned, a Test-mode arrival, one draw - the shield stands and it blocks", () => {
+  /* THE REPORT: a fresh game, a Test-mode throw straight to Kronos, a player
+     who owns no colony and no weapon, one draw - and the shield was never
+     seen again. This walks that exact road and insists on every step: the
+     shield is active at the draw, the confirmation state needs no second
+     ask, the visit cannot strand, and the shield really stops the Eye of
+     Shiva when it comes. */
+  let state = createGame(PLAYERS, { testMode: true });
+  assert.deepEqual(state.pieces[0].weapons, [], "arriving with no weapon");
+  assert.equal(state.ledger.properties.size, 0, "and no colony owned - by anyone");
+
+  // The Test-mode throw onto Kronos, and the one press.
+  state = goTo(state, KRONOS_INDEX);
+  state = drawAt(state, 0, () => 0); // rng 0 -> the first shield going
+  assert.equal(state.shields.length, 1, "ACTIVE IMMEDIATELY - at the draw, in the state");
+  assert.equal(state.shields[0].id, "kavacha");
+  assert.equal(state.shields[0].owner, 0, "for the player who drew it, whatever they own");
+  assert.equal(state.shields[0].turnsLeft, 2, "both of its turns");
+  assert.equal(state.chest.phase, "revealed", "and the card's own state already shows the answer");
+
+  // Done, the turn hands over - and nothing anywhere clears the shield.
+  state = take(state, { type: "done" }).state;
+  state = take(state, { type: "continue" }).state; // -> seat 1
+  assert.equal(state.shields.length, 1, "still standing after the visit closes");
+
+  // The opponent comes to the Fight with the Eye of Shiva and a colony in
+  // range of it - the one weapon the Kavacha answers. Orion's Belt is the
+  // Eye's own reach; the shield owner holds it from the fresh board.
+  sheetFor(state.ledger, "orions-belt").owner = 0;
+  state.pieces[1].weapons = ["shiva"];
+  const atFight = goTo(state, FIGHT_INDEX);
+  const selected = take(atFight, { type: "selectWeapon", weaponId: "shiva" }).state;
+  const armed = take(selected, { type: "armWeapon" }).state;
+  const { state: struck, events } = take(armed, { type: "fightAttack", targetId: "orions-belt" });
+
+  assert.equal(sheetFor(struck.ledger, "orions-belt").owner, 0, "the strike is stopped dead");
+  assert.deepEqual(struck.pieces[1].weapons, ["shiva"], "the weapon is not spent on a blocked strike");
+  assert.deepEqual(struck.shields, [], "and the shield is spent on the block");
+  const blocked = events.find((e) => e.type === "shieldBlocked");
+  assert.ok(blocked, "the block is said");
+  assert.equal(blocked.shield, "kavacha");
+  assert.equal(blocked.weapon, "shiva", "the Eye of Shiva and no other weapon");
 });

@@ -1132,8 +1132,7 @@ export function board({
           break;
         }
 
-        case "shieldDrawn":
-        case "shieldRevealed": {
+        case "shieldDrawn": {
           /* The shield was deployed the moment it was drawn, and the chest
              card draws itself from the state; what this adds is the CHIP, so
              the mark is standing beside the owner's name while the shuffle
@@ -1466,13 +1465,6 @@ export function board({
         ) {
           revealWeaponWhenFree();
         }
-        if (
-          chest.kind === "kronos" &&
-          chest.phase === "drawing" &&
-          chest.choice === "draw"
-        ) {
-          revealShieldWhenFree();
-        }
       }
       /* The Collect has been accepted and the chest is on its way out. The
          closing is asked for here as well as at the draw, so a board that
@@ -1518,13 +1510,6 @@ export function board({
           chest.choice === "draw"
         ) {
           revealWeaponWhenFree();
-        }
-        if (
-          chest.kind === "kronos" &&
-          chest.phase === "drawing" &&
-          chest.choice === "draw"
-        ) {
-          revealShieldWhenFree();
         }
       })
       .catch(() => {});
@@ -1588,31 +1573,6 @@ export function board({
       /* The server refused, which means the chest has moved on. */
     } finally {
       revealingWeapon = false;
-    }
-  }
-
-  /* The same, for the shield at Kronos: the shuffle is over, and the face is
-     turned by asking the server - which is what puts both devices' faces down
-     at the same moment. The same wait, the same patience, the same reason: a
-     reveal that gave up would leave the chest on "drawing" for ever. */
-  let revealingShield = false;
-  async function revealShieldWhenFree() {
-    if (revealingShield) return;
-    revealingShield = true;
-    try {
-      for (let attempt = 0; attempt < 400; attempt += 1) {
-        if (!await waitForFree()) {
-          await wait(250);
-          continue;
-        }
-        const result = await run({ type: "revealShield" });
-        if (result) return;
-        await wait(250);
-      }
-    } catch {
-      /* The server refused, which means the chest has moved on. */
-    } finally {
-      revealingShield = false;
     }
   }
 

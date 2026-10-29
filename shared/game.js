@@ -1200,7 +1200,18 @@ export function applyAction(state, action, rng = Math.random) {
 
       next.visit.shieldDrawn = none ? "none" : outcome;
       next.phase = PHASE.DECISION;
-      next.chest.phase = "drawing";
+      /* ONE POST-DRAW PHASE, AND IT IS THIS ONE.
+
+         The shield is already standing and the face is already decided, so
+         the state says "revealed" from this moment: there is no second
+         action the confirmation waits on. The clients play the shuffle as an
+         entrance and then show the face the state is ALREADY holding - the
+         same "a device that arrives late sees the whole shuffle" design the
+         Nexus deck works by. A reveal round-trip used to sit between the
+         draw and the confirmation, and when it was interrupted the chest was
+         left at a "drawing" phase that had no Done pill and no way out: the
+         shield stood, and the player never saw it. */
+      next.chest.phase = "revealed";
       next.chest.startedAt = now();
       next.chest.choice = "draw";
       next.chest.result = {
@@ -1225,42 +1236,6 @@ export function applyAction(state, action, rng = Math.random) {
         weapon: shield?.counters || null,
         turnsLeft: SHIELD_TURNS,
         slot: next.chest.result.slot,
-        startedAt: next.chest.startedAt,
-      });
-      return { state: next, events };
-    }
-
-    /* THE SHIELD'S FACE IS TURNED OVER.
-
-       The draw was answered the moment the button was pressed and the shield
-       was standing from then. This is the moment both devices turn the face
-       over together - the same separate action Ragnarok's reveal is, for the
-       same reason: two screens, one moment. */
-    case "revealShield": {
-      if (actor !== active) return refused(state, action, "It is not your turn.");
-      if (
-        state.phase !== PHASE.DECISION ||
-        state.landing?.kind !== "chest" ||
-        !(KRONOS && state.landing?.id === KRONOS.id)
-      ) {
-        return refused(state, action, "There is no chest to draw from.");
-      }
-      if (!state.chest || state.chest.kind !== "kronos" || state.chest.choice !== "draw") {
-        return refused(state, action, "There is nothing to turn over.");
-      }
-      if (state.chest.phase === "revealed") {
-        return refused(state, action, "That shield has already been turned over.");
-      }
-      if ((state.visit?.shieldDrawn ?? null) === null) {
-        return refused(state, action, "Draw from the chest first.");
-      }
-
-      next.chest.phase = "revealed";
-      next.chest.startedAt = now();
-      ok("shieldRevealed", {
-        seat: active,
-        shield: state.chest.result?.shield || null,
-        none: Boolean(state.chest.result?.none),
         startedAt: next.chest.startedAt,
       });
       return { state: next, events };
@@ -1931,12 +1906,15 @@ export function applyAction(state, action, rng = Math.random) {
               return refused(state, action, "Collect the weapon first.");
             }
           } else if (KRONOS && state.landing?.id === KRONOS.id) {
-            /* A shield is drawn before the visit may be left - the same rule
-               Ragnarok's draw answers to, and the reason a player cannot walk
-               away from the shield chest having been offered nothing. */
-            if ((state.visit?.shieldDrawn ?? null) === null) {
-              return refused(state, action, "Draw from the chest first.");
-            }
+            /* THE KRONOS VISIT CAN ALWAYS BE LEFT, THE SAME WAY NEXUS'S CAN.
+
+               Refusing the leave is what turned a client hiccup into a
+               stranded game: a dropped or interrupted draw left the visit
+               unanswered, every automatic `continue` was refused with "Draw
+               from the chest first", and there was no press that could end
+               the turn. So the leave is never refused. A player who walks
+               away without drawing gets no shield; the chest closes and the
+               turn carries on. */
           } else if (state.landing?.id === NEXUS.id) {            /* THE NEXUS VISIT CAN ALWAYS BE LEFT.
 
                A refusal here used to be the end of the road, and it stranded the
