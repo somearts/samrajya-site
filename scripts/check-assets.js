@@ -893,11 +893,15 @@ const cardJs = await readShipped(join("assets", "js", "property-card.js"));
   );
 
   const chestCode = await readShipped(join("assets", "js", "chest-card.js"));
+  const chestStageCode = await readShipped(join("assets", "js", "chest-stage.js"));
   // Comments are stripped before looking for copy. Three of the card's strings
   // are quoted in the comments that explain why they are not in the card, and a
   // check that cannot tell a sentence from a sentence about a sentence is a
   // check that either fails forever or gets deleted.
   const chestCodeBare = chestCode
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+  const chestStageBare = chestStageCode
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 
@@ -906,6 +910,29 @@ const cardJs = await readShipped(join("assets", "js", "property-card.js"));
     /from "\.\/shared\/weapons\.js"/.test(chestCodeBare) &&
       !/Welcome to Ragnarok|Community Chest|armoury at the end of time|bad luck\./i.test(chestCodeBare),
     "no line of the card's copy is written into the card's code",
+  );
+
+  /* ---------------------------------------------------------------- nexus god */
+  section("The Nexus god's picture");
+
+  /* THE PICTURE MUST BE SHIPPED AND THE CARD MUST ASK FOR IT BY ITS SHIPPED
+     NAME. The build renames every asset by content, so the card's request and
+     the file's name have to agree, and a build that loses the copy has to
+     fail here rather than leave a dead image on the live Nexus card. */
+  const godManifest = await readShipped("manifest.json").then(
+    (text) => JSON.parse(text),
+    () => ({}),
+  );
+  const godShipped = godManifest.files["assets/img/god.png"];
+  check(
+    "the god's picture is copied into the build",
+    typeof godShipped === "string" && existsSync(join(OUT, godShipped)),
+  );
+  check(
+    "and the Nexus card asks for it by its shipped name",
+    /nexus-card__god/.test(chestStageBare) === true &&
+      typeof godShipped === "string" &&
+      chestStageBare.includes(godShipped.split("/").pop()),
   );
 
   check(

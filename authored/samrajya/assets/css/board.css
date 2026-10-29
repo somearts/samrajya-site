@@ -1666,6 +1666,24 @@
   object-fit: contain;
 }
 
+/* Silhouette fallback: used only when the god's picture fails to load. The
+   outline is a polygon fill: no request, no gradient, nothing to lose. */
+.nexus-card--silhouette .nexus-card__god {
+  visibility: hidden;
+}
+
+.nexus-card--silhouette .nexus-card__figure-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 8% 0 0;
+  background: var(--ink);
+  clip-path: polygon(
+    58% 0%, 62% 14%, 78% 26%, 84% 48%, 74% 56%, 70% 74%,
+    58% 100%, 44% 100%, 34% 72%, 30% 52%, 18% 46%, 22% 24%, 38% 14%, 42% 2%
+  );
+  opacity: .85;
+}
+
 .nexus-card__title {
   flex: 0 0 auto;
   margin: calc(var(--cell) * 0.02) 0 0;

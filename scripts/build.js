@@ -206,10 +206,12 @@ async function hashAssets() {
         }
       }
 
-      if (/\.html$/i.test(file.path)) {
-        /* A page reference: `src="assets/js/app.js"`, `href="assets/css/board.css"`. */
+      if (!/\.css$/i.test(file.path)) {
+        /* A page or asset reference written in markup or in code:
+           `src="assets/js/app.js"` in the page, and
+           `src: "assets/img/god.png"` in a module. */
         const written = body.replace(
-          /(\b(?:src|href)\s*=\s*)(["'])([^"'\n]+)\2/g,
+          /(\b(?:src|href)\s*[:=]\s*)(["'])([^"'\n]+)\2/g,
           (whole, pre, quote, spec) => {
             const next = swapover(spec);
             return next === null ? whole : pre + quote + next + quote;

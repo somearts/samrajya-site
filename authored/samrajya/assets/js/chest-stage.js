@@ -124,6 +124,14 @@ function nexusCard({ drawable, phase, caption }) {
         src: "assets/img/god.png",
         alt: NEXUS_KEEPER.title,
         draggable: "false",
+        /* THE FALLBACK IS FOR A LOAD ERROR AND NOTHING ELSE. The picture is
+           part of the build's output, and the build check answers for it; if
+           it still fails to arrive, one line in the console says the page is
+           being seen through the silhouette. */
+        onerror: () => {
+          console.warn("Nexus god image failed to load; showing the silhouette fallback.");
+          card.classList.add("nexus-card--silhouette");
+        },
       }),
     ]),
     el("h3", { class: "nexus-card__title", text: NEXUS_KEEPER.title }),
