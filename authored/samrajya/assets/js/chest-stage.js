@@ -42,6 +42,7 @@ import { flyCoins, resetHolder } from "./board-fx.js";
 import { prefersStill } from "./dice.js";
 import { NEXUS_KEEPER, NEXUS_PRAY_COST } from "./shared/nexus-cards.js";
 import { RAGNAROK, WEAPONS, weaponById } from "./shared/weapons.js";
+import { CELLS } from "./shared/spaces.js";
 import { rupees } from "./shared/economy.js";
 /* The chest card's face. The emblem and the colour a weapon is drawn in are
    exported there because the profile and the name chip draw them too, and
@@ -696,11 +697,32 @@ export async function playRagnarokStage(board, chest) {
     }
     if (result) {
       result.hidden = false;
+      /* THE REVEALED WEAPON, IN FULL. Its name on the face above; under it,
+         what it is and where it can strike - the weapon's own blurb and the
+         colonies its own target list reaches, read from the same data the
+         rules use. The card says everything the player needs before the one
+         press (Collect) that takes it. */
+      const targets = weapon
+        ? weapon.targets
+            .map((id) => CELLS.find((entry) => entry.id === id)?.name || id)
+            .join(", ")
+        : "";
       result.replaceChildren(
-        el("p", {
-          class: "chest-card__drew",
-          text: bad ? RAGNAROK.badLuck : `You drew the ${weapon?.name || "weapon"}.`,
-        }),
+        ...[
+          el("p", {
+            class: "chest-card__drew",
+            text: bad ? RAGNAROK.badLuck : `You drew the ${weapon?.name || "weapon"}.`,
+          }),
+          weapon?.blurb
+            ? el("p", { class: "chest-card__weapon-blurb", text: weapon.blurb })
+            : null,
+          targets
+            ? el("p", {
+                class: "chest-card__weapon-targets",
+                text: `Strikes: ${targets}`,
+              })
+            : null,
+        ].filter(Boolean),
       );
     }
   }

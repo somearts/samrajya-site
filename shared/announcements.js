@@ -10,6 +10,16 @@
    an event happened - it is a pure table of words over shared/economy.js, so a
    plain node test can read it.
 
+   TWO SENTENCES, AND NOTHING ELSE
+   --------------------------------
+   The big splash says exactly two things: ACQUIRED, when something is taken,
+   and RENT, when rent is paid. Every other event - passing, upgrading,
+   selling, the chests, the fight, the lap - happens through the interface
+   that owns it (the card, the tile, the turn indicator) and announces
+   nothing: a splash for it is a second voice saying what the player has
+   already been shown. An unknown event, or one deliberately silenced, is
+   answered with null.
+
    A null answer means "no announcement": the movement, the landing highlight,
    the chest reveal and the persistent turn status all have their own voice and
    do not need a second one on top of them.
@@ -17,7 +27,6 @@
 
 import { rupees } from "./economy.js";
 import { nameOfSeat } from "./ledger.js";
-import { NEXUS_PRAY_COST } from "./nexus-cards.js";
 import { propertyFor } from "./properties.js";
 
 const MINUS = "\u2212";
@@ -56,86 +65,6 @@ export function announcementFor(event, { viewer = null, ledger = null } = {}) {
         tone: "spend",
       };
 
-    case "sold":
-      return {
-        label: "SOLD",
-        big: squareName(event.id),
-        sub: signed(event.payout || 0),
-        seat: event.seat,
-        tone: "earn",
-      };
-
-    case "upgraded":
-      return {
-        label: "UPGRADED",
-        big: event.name || "Upgraded",
-        sub: `${signed(-(event.cost || 0))} · rent now ${rupees(event.rent || 0)}`,
-        seat: event.seat,
-        tone: "spend",
-      };
-
-    case "passed":
-      /* DONE ON YOUR OWN SQUARE is said by the card's own "Already Yours"
-         button and by nothing else. A second announcement would be the
-         player being told what they just read, so there is no announcement:
-         null is this module's word for "say nothing". */
-      if (event.kind === "own") return null;
-      return {
-        label: "PASSED",
-        big: squareName(event.id),
-        sub: "Not this time",
-        seat: event.seat,
-        tone: "plain",
-      };
-
-    case "redemption":
-      return {
-        label: "REDEMPTION",
-        big: signed(event.amount || 200),
-        sub: "Lap complete",
-        seat: event.seat,
-        tone: "earn",
-      };
-
-    case "prayed":
-      return {
-        label: "OFFERING",
-        big: signed(-(event.amount || NEXUS_PRAY_COST)),
-        sub: "At the Nexus",
-        seat: event.seat,
-        tone: "spend",
-      };
-
-    /* The card has been CHOSEN. Nothing has moved yet: the money moves when
-       the card is turned over, so the middle does not say a number twice. */
-    case "nexusDrawn":
-      return null;
-
-    /* The card is turned over, and this is where the money moves. */
-    case "nexusRevealed": {
-      const card = event.card || {};
-      const amount = Number(event.amount ?? card.amount) || 0;
-      return {
-        label: card.name || "Nexus",
-        big: signed(amount),
-        sub: "The Unnamed Keeper turns a card",
-        seat: event.seat,
-        tone: amount >= 0 ? "earn" : "spend",
-      };
-    }
-
-    /* The player left the Nexus without praying and without drawing. Nothing
-       moved, and both screens are told so - one sentence, in the middle, and
-       the turn carries on. */
-    case "nexusDeclined":
-      return {
-        label: "THE NEXUS",
-        big: "Left in peace",
-        sub: "The keeper was not approached",
-        seat: event.seat,
-        tone: "plain",
-      };
-
     case "rentPaid":
     case "rentShort": {
       const received = mine !== null && Number(event.to) === mine;
@@ -167,57 +96,6 @@ export function announcementFor(event, { viewer = null, ledger = null } = {}) {
         tone: "spend",
       };
     }
-
-    /* THE FIGHT IS SETTLED.
-
-       One event, two sentences. The one who struck is told what they took;
-       the one who was struck is told what they lost; each with the other's
-       name, and with what the colony now is - theirs, or his and hers. */
-    case "fightResolved": {
-      const took = mine !== null && Number(event.to) === mine;
-      const lost = mine !== null && Number(event.from) === mine;
-      const other = nameOf(took ? event.from : event.to);
-      if (took) {
-        return {
-          label: "CAPTURED",
-          big: event.name || squareName(event.id),
-          sub: `from ${other} \u00b7 now yours`,
-          seat: event.to,
-          tone: "earn",
-        };
-      }
-      if (lost) {
-        return {
-          label: "LOST",
-          big: event.name || squareName(event.id),
-          sub: `to ${other}`,
-          seat: event.from,
-          tone: "spend",
-        };
-      }
-      /* A reader who was in neither seat - a third player, or nobody. */
-      return {
-        label: "CAPTURED",
-        big: event.name || squareName(event.id),
-        sub: `by ${nameOf(event.to)}`,
-        seat: event.to,
-        tone: "earn",
-      };
-    }
-
-    /* The corner is walked away from, or the war has finished being seen and
-       the visit is over. Both are the turn's own fact, not a second battle. */
-    case "fightLeft":
-      return {
-        label: "THE FIGHT",
-        big: "Left the fight",
-        sub: "No weapon spent",
-        seat: event.seat,
-        tone: "plain",
-      };
-
-    case "fightClosed":
-      return null;
 
     default:
       return null;

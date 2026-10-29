@@ -11,7 +11,7 @@ import assert from "node:assert/strict";
 
 import { announcementFor, signed, statusFor } from "../shared/announcements.js";
 import { createGame } from "../shared/game.js";
-import { baseRentOf, priceOf, upgradeAt } from "../shared/economy.js";
+import { baseRentOf, priceOf } from "../shared/economy.js";
 
 const PLAYERS = [
   { name: "Sam", civ: "indus-valley" },
@@ -41,42 +41,35 @@ test("buying says ACQUIRED, the square, and what left the purse", () => {
   });
 });
 
-test("selling says SOLD and what came back", () => {
-  const spec = announcementFor(
-    { type: "sold", seat: 0, id: "moon", payout: 475 },
-    { viewer: 0, ledger },
+test("only two kinds of splash exist; everything else says nothing", () => {
+  /* ACQUIRED and the rent pair are the whole announcement vocabulary. Every
+     other event - passing, upgrading, selling, the chests, the fight, the
+     lap, refusals - is shown by the interface that owns it and announces
+     nothing: a splash there is a second voice saying what the player has
+     already been shown. */
+  for (const type of [
+    "sold", "upgraded", "passed", "redemption", "prayed",
+    "nexusDrawn", "nexusRevealed", "nexusDeclined",
+    "weaponDrawn", "weaponCollected",
+    "fightResolved", "fightLeft", "fightClosed",
+    "chestOpened", "chestClosed", "refused",
+    "moved", "landed", "turnChanged",
+  ]) {
+    assert.equal(
+      announcementFor({ type, seat: 0, id: "moon", name: "Moon", amount: -50 }, { viewer: 0, ledger }),
+      null,
+      `${type} says nothing`,
+    );
+  }
+  // The two that remain, named:
+  assert.equal(
+    announcementFor({ type: "bought", seat: 0, id: "moon", name: "Moon", price: 100 }, { viewer: 0, ledger }).label,
+    "ACQUIRED",
   );
-  assert.equal(spec.label, "SOLD");
-  assert.equal(spec.big, "Moon");
-  assert.equal(spec.sub, "+₹475");
-});
-
-test("an upgrade names the level and the rent it now carries", () => {
-  const spec = announcementFor(
-    { type: "upgraded", seat: 0, id: "moon", name: "Lunar Outpost", cost: 100, rent: 80 },
-    { viewer: 0, ledger },
+  assert.equal(
+    announcementFor({ type: "rentPaid", id: "moon", from: 1, to: 0, amount: 20 }, { viewer: 0, ledger }).label,
+    "RENT RECEIVED",
   );
-  assert.equal(spec.label, "UPGRADED");
-  assert.equal(spec.big, "Lunar Outpost");
-  assert.equal(spec.sub, "−₹100 · rent now ₹80");
-});
-
-test("passing says PASSED and the square it passed on", () => {
-  const spec = announcementFor(
-    { type: "passed", seat: 1, id: "kuiper-belt" },
-    { viewer: 1, ledger },
-  );
-  assert.equal(spec.label, "PASSED");
-  assert.equal(spec.big, "Kuiper Belt");
-  assert.equal(spec.sub, "Not this time");
-});
-
-test("redemption says REDEMPTION, the amount and why", () => {
-  const spec = announcementFor({ type: "redemption", seat: 0, amount: 200 }, { viewer: 0, ledger });
-  assert.equal(spec.label, "REDEMPTION");
-  assert.equal(spec.big, "+₹200");
-  assert.equal(spec.sub, "Lap complete");
-  assert.equal(spec.tone, "earn");
 });
 
 test("the rent sentence is written for the phone that is reading it", () => {
@@ -127,21 +120,6 @@ test("a rename on the server reaches both sentences", () => {
     announcementFor(event, { viewer: 1, ledger: renamed }).sub,
     "from Sakshi · Quasar",
   );
-});
-
-test("the upgrade cost comes from the economy, not from the sentence", () => {
-  const spec = announcementFor(
-    {
-      type: "upgraded",
-      seat: 0,
-      id: "moon",
-      name: "Lunar Outpost",
-      cost: upgradeAt("moon", 0).cost,
-      rent: 80,
-    },
-    { viewer: 0, ledger },
-  );
-  assert.match(spec.sub, /^−₹\d/);
 });
 
 /* --------------------------------------------------------------- the status */

@@ -1494,6 +1494,31 @@
   display: none;
 }
 
+/* AND THE WELCOME GOES WITH THEM. The header's "Welcome to Ragnarok" belongs
+   to the card the player was welcomed with; the moment the shuffle is over
+   the card is the WEAPON, and a welcome sitting above it reads as a second
+   screen the player has been put back into. The header stays for the shuffle
+   itself and for the open stage - it leaves only with the reveal. */
+.chest-card[data-phase="revealed"] .property-card__head,
+.chest-card[data-phase="done"] .property-card__head {
+  display: none;
+}
+
+/* What the weapon is, and where it can strike - said under the revealed face,
+   in the card's own quiet type. */
+.chest-card__weapon-blurb,
+.chest-card__weapon-targets {
+  margin: 0;
+  font-size: max(9.6px, calc(var(--cell) * 0.128));
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.chest-card__weapon-targets {
+  font-size: max(8.8px, calc(var(--cell) * 0.115));
+  color: color-mix(in srgb, var(--ink) 62%, var(--cell-ground));
+}
+
 .chest-card[data-phase="drawing"] .chest-card__draw {
   display: none;
 }
