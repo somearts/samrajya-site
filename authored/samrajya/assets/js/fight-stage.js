@@ -144,16 +144,21 @@ function fightHalf({ ledger, pieces, seat, viewerSeat, mine, fight }) {
   const side = Number(seat) === Number(viewerSeat) ? "bottom" : "top";
   const legion = Boolean(mine && Number(seat) === Number(viewerSeat));
 
-  const weapons = el("div", { class: "fight-half__weapons" }, [
-    inventory.length
-      ? inventory.map((id) => {
-          const weapon = weaponById(id);
-          return weapon
-            ? weaponFace({ weapon, ledger, seat, mine: legion, fight })
-            : null;
-        })
-      : el("p", { class: "fight-half__empty", text: "No weapons detected." }),
-  ]);
+  /* The children are the nodes THEMSELVES, not a single array slot holding
+     them: `el` concatenates one level, so wrapping the map's result in an
+     extra array hands it a non-Node child, and `String(child)` writes
+     "[object HTMLDivElement],[object HTMLDivElement]" into the box as TEXT
+     instead of appending the cards as elements. */
+  const slots = inventory.length
+    ? inventory.map((id) => {
+        const weapon = weaponById(id);
+        return weapon
+          ? weaponFace({ weapon, ledger, seat, mine: legion, fight })
+          : null;
+      })
+    : [el("p", { class: "fight-half__empty", text: "No weapons detected." })];
+
+  const weapons = el("div", { class: "fight-half__weapons" }, slots);
 
   const half = el("section", {
     class: `fight-half fight-half--${side}`,

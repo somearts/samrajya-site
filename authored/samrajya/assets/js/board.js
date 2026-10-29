@@ -1505,8 +1505,24 @@ export function board({
       for (const btn of card.querySelectorAll('[data-action="face"]')) {
         btn.addEventListener("click", () => choose(btn.dataset.weapon));
       }
+      /* THE ATTACK PILL ENTERS THE ARMED STATE IN ONE PRESS: the weapon is
+         chosen first if it is not already the selected one, and then armed,
+         so the valid colonies start blinking and the instruction to tap one
+         appears. Two existing actions, in the order they must happen; the
+         server still decides whether either is allowed. */
       for (const btn of card.querySelectorAll('[data-action="attack"]')) {
-        btn.addEventListener("click", () => choose(btn.dataset.weapon));
+        btn.addEventListener("click", async () => {
+          const weaponId = btn.dataset.weapon;
+          const current = game.fight;
+          if (!current || current.phase === "armed" || current.phase === "resolving") return;
+          if (current.selectedWeaponId !== weaponId) {
+            const picked = await run({ type: "selectWeapon", weaponId });
+            if (!picked) return;
+          }
+          if (game.fight?.phase === "selected" && game.fight?.selectedWeaponId === weaponId) {
+            void run({ type: "armWeapon" });
+          }
+        });
       }
       card.querySelector('[data-action="cancel"]')
         ?.addEventListener("click", () => void run({ type: "cancelArm" }));
