@@ -31,8 +31,8 @@ import { resetHolder } from "./board-fx.js";
 import { validTargets } from "./shared/fight.js";
 import { CELLS } from "./shared/spaces.js";
 import { coinColor, civById } from "./shared/civilizations.js";
-import { emblem, weaponColor } from "./chest-card.js";
-import { weaponById } from "./shared/weapons.js";
+import { emblem, shieldColor, weaponColor } from "./chest-card.js";
+import { shieldById, weaponById } from "./shared/weapons.js";
 
 /* ------------------------------------------------------------------ names */
 
@@ -231,13 +231,28 @@ export function drawFightStage(
   ]);
 
   /* THE FOOT: one muted line - what the screen is asking for while the
-     strike is armed, who is at the Fight otherwise. The acting player's
-     Cancel sits beside it, and the Leave pill is always theirs. */
+     strike is armed, who is at the Fight otherwise, and - once a strike has
+     been spent against a shield - the name of the shield that stopped it.
+     The acting player's Cancel sits beside it, and the Leave pill is always
+     theirs.
+
+     THE BLOCKED LINE IS THE WHOLE OF THE BLOCK'S VISIBLE ANSWER inside the
+     card. It is drawn from the fight's own result, which lives in the shared
+     state, so both screens print the same sentence at the same moment; the
+     shield's own colour carries it, and no second screen is opened to say
+     what the card can say in five words. */
   const armed = fight.phase === "armed";
+  const blocked = Boolean(fight.result?.blocked);
+  const shield = blocked ? shieldById(fight.result?.shield) : null;
   const foot = el("footer", { class: "fight-card__foot" }, [
     el("p", {
-      class: "fight-card__waiting",
-      text: armed ? "Tap a blinking colony" : `${playerName} is at the Fight`,
+      class: `fight-card__waiting${blocked ? " fight-card__waiting--blocked" : ""}`,
+      style: blocked ? { "--shield": shieldColor(shield?.id) } : {},
+      text: blocked
+        ? `Stopped by ${shield?.name || "a shield"}`
+        : armed
+          ? "Tap a blinking colony"
+          : `${playerName} is at the Fight`,
     }),
     mine && armed
       ? el("button", {

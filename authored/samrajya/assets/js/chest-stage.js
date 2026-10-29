@@ -41,14 +41,14 @@ import { settled } from "./motion.js";
 import { flyCoins, resetHolder } from "./board-fx.js";
 import { prefersStill } from "./dice.js";
 import { NEXUS_KEEPER, NEXUS_PRAY_COST } from "./shared/nexus-cards.js";
-import { RAGNAROK, WEAPONS, weaponById } from "./shared/weapons.js";
+import { KRONOS_CHEST, RAGNAROK, SHIELDS, WEAPONS, shieldById, weaponById } from "./shared/weapons.js";
 import { CELLS } from "./shared/spaces.js";
 import { rupees } from "./shared/economy.js";
 /* The chest card's face. The emblem and the colour a weapon is drawn in are
    exported there because the profile and the name chip draw them too, and
    they must all draw the same thing: one place knows what a weapon looks
    like and every screen that shows one asks it. */
-import { emblem, weaponColor } from "./chest-card.js";
+import { emblem, shieldColor, weaponColor } from "./chest-card.js";
 
 /** How long the deck shuffles for, in milliseconds. */
 export const SHUFFLE_MS = 3500;
@@ -231,6 +231,100 @@ function ragnarokCard({ drawable, phase, caption }) {
     el("div", { class: "chest-card__result", hidden: true }),
     /* The Collect pill. The weapon is drawn, and the player takes it: that is
        a second press, and it is the press that ends the visit. */
+    el("div", { class: "chest-card__collect-slot" }),
+  ]);
+
+  if (caption) card.append(caption);
+  return card;
+}
+
+/**
+ * The chest of shields: three faces, one per shield, and a draw.
+ *
+ * THE SAME CARD AS RAGNAROK'S, WEARING ITS OWN DATA. The same shell, the same
+ * three faces, the same shuffle and the same separate reveal - so nothing here
+ * is a second card architecture to keep in step with the first. What is its
+ * own is what the faces hold: the three shields, each in the shield's own
+ * colour with the EMBLEM of the one weapon it answers, and that weapon named
+ * under the shield's name so the counter is read rather than guessed.
+ *
+ * THERE IS NO COLLECT PILL. A shield deploys the moment it is drawn - it is
+ * already standing before the face turns over - so a press that would only
+ * confirm what has already happened is not offered. The visit's last press is
+ * Done, appended by the board the same way Nexus's is.
+ */
+function kronosCard({ drawable, phase, caption }) {
+  const slot = (shield, index) => {
+    const stops = weaponById(shield.counters)?.name || "";
+    return el("button", {
+      type: "button",
+      class: "chest-card__slot chest-card__slot--shield",
+      "data-shield": shield.id,
+      "data-slot": String(index),
+      style: { "--weapon": shieldColor(shield.id) },
+      "aria-label": `Draw a shield: ${shield.name}`,
+      disabled: !drawable || phase !== "open",
+    }, [
+      el("span", { class: "chest-card__back", "aria-hidden": "true" }, [
+        el("span", { class: "chest-card__mark", text: "?" }),
+      ]),
+      el("span", {
+        class: "chest-card__face",
+        "aria-hidden": "true",
+        html: emblem(shield, shieldColor(shield.id)),
+      }),
+      el("span", { class: "chest-card__pill", "aria-hidden": "true" }),
+      el("span", { class: "chest-card__slot-name" }, [
+        el("span", { text: shield.name }),
+        stops
+          ? el("span", { class: "chest-card__slot-stops", text: `Stops ${stops}` })
+          : null,
+      ].filter(Boolean)),
+    ]);
+  };
+
+  const card = el("article", {
+    class: "property-card chest-card chest-card--kronos",
+    "data-property": "kronos",
+    "data-chest": "kronos",
+    "data-phase": phase,
+    /* The same constant shape as Ragnarok's: the three faces are the whole of
+       the card from open to done, so the stage is written into it rather than
+       rebuilt over it and the shuffle survives every repaint. */
+    "data-shape": "chest",
+    // A chest belongs to no set, so the edge is the board's own ink.
+    style: { "--accent": "var(--ink)" },
+    "aria-live": "polite",
+  }, [
+    el("div", { class: "property-card__head" }, [
+      el("div", { class: "property-card__title" }, [
+        el("span", { class: "property-card__pill", "aria-hidden": "true" }),
+        el("h3", {
+          class: "property-card__name",
+          html: KRONOS_CHEST.titleLines.map((line) => `<span>${line}</span>`).join(""),
+        }),
+      ]),
+    ]),
+    el("p", { class: "chest-card__tagline", text: KRONOS_CHEST.tagline }),
+    el("p", { class: "chest-card__body", text: KRONOS_CHEST.body }),
+    el("div", { class: "chest-card__slots" },
+      /* Enumerated rather than derived, the same way Ragnarok's are: a
+         shields list with one too few is a bug here, not a chest that quietly
+         offers fewer choices. */
+      [0, 1, 2].map((n) => slot(SHIELDS[n], n)),
+    ),
+    el("button", {
+      type: "button",
+      class: "chest-card__draw",
+      "data-action": "draw",
+      disabled: !drawable || phase !== "open",
+      "aria-disabled": String(!drawable || phase !== "open"),
+      text: "Draw",
+    }),
+    el("div", { class: "chest-card__result", hidden: true }),
+    /* No collect - a shield deploys at the draw - but the slot is kept so the
+       card is the same grid at every stage and nothing jumps when Done
+       arrives. */
     el("div", { class: "chest-card__collect-slot" }),
   ]);
 
@@ -431,7 +525,7 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
 
   resetHolder(holder);
   holder.dataset.cardKind = "chest";
-  holder.dataset.property = chest.kind === "nexus" ? "nexus" : "ragnarok";
+  holder.dataset.property = chest.kind;
   board.dataset.property = holder.dataset.property;
 
   const name = playerName || "Your opponent";
@@ -448,10 +542,11 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
      the options while nobody has chosen and the deck afterwards, and a card
      showing both is a card saying two things at once. */
   const existing = holder.querySelector(".nexus-card, .chest-card");
-  const sameKind = existing && (
-    (chest.kind === "nexus" && existing.classList.contains("nexus-card")) ||
-    (chest.kind === "ragnarok" && existing.classList.contains("chest-card"))
-  );
+  /* WHICH CHEST'S CARD IS ALREADY UP - answered by the card's OWN data, not
+     by its class. The Ragnarok and the Kronos card wear the same class, and a
+     class check alone would keep a shield card on screen through a visit to
+     the armoury, or the other way round, with only the stage written into it. */
+  const sameKind = existing && existing.dataset.chest === chest.kind;
   /* The shape of the card: does it have the options, or the deck? The Nexus
      card carries both and so it changes shape; the Ragnarok card is the same
      three faces from open to done, so it never does - and a card whose shape
@@ -470,11 +565,17 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
           phase: chest.phase,
           caption: mine ? null : chestCaption(name, `is at the Nexus`),
         })
-      : ragnarokCard({
-          drawable: mine,
-          phase: chest.phase,
-          caption: mine ? null : chestCaption(name, `is at Ragnarok`),
-        });
+      : chest.kind === "kronos"
+        ? kronosCard({
+            drawable: mine,
+            phase: chest.phase,
+            caption: mine ? null : chestCaption(name, `is at Kronos`),
+          })
+        : ragnarokCard({
+            drawable: mine,
+            phase: chest.phase,
+            caption: mine ? null : chestCaption(name, `is at Ragnarok`),
+          });
     holder.replaceChildren(card);
   } else {
     card.dataset.phase = chest.phase;
@@ -506,8 +607,8 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
 /**
  * A chest that is being LOOKED AT rather than visited.
  *
- * This is the pop-up a player gets for pressing the Nexus or Ragnarok tile:
- * the god's picture, the mythology, the two options - all there, all disabled,
+ * This is the pop-up a player gets for pressing the Nexus, Ragnarok or Kronos
+ * tile: the picture, the mythology, the faces - all there, all disabled,
  * because nobody is at the chest. It is the same drawing as the shared stage,
  * so the two can never drift apart, and it is drawn the same way: from a
  * record of what the screen is, not from an event that may never arrive.
@@ -518,12 +619,14 @@ export function drawChestPeek(board, kind, { onClose = null } = {}) {
 
   resetHolder(holder);
   holder.dataset.cardKind = "chest";
-  holder.dataset.property = kind === "nexus" ? "nexus" : "ragnarok";
+  holder.dataset.property = kind;
   board.dataset.property = holder.dataset.property;
 
   const card = kind === "nexus"
     ? nexusCard({ drawable: false, phase: "peek", caption: null })
-    : ragnarokCard({ drawable: false, phase: "peek", caption: null });
+    : kind === "kronos"
+      ? kronosCard({ drawable: false, phase: "peek", caption: null })
+      : ragnarokCard({ drawable: false, phase: "peek", caption: null });
 
   /* A close button, so the pop-up can be dismissed. */
   card.prepend(el("button", {
@@ -647,7 +750,10 @@ export async function playNexusStage(board, chest, { chip = null, elapsed = 0 } 
  */
 export async function playRagnarokStage(board, chest) {
   const holder = board.querySelector(".board__card");
-  const card = holder?.querySelector(".chest-card");
+  /* The RAGNAROK card specifically: the Kronos card wears the same class, and
+     a stage that drew the wrong chest's faces would turn over a shield with a
+     weapon's rules. */
+  const card = holder?.querySelector(".chest-card:not(.chest-card--kronos)");
   if (!card || !chest) return null;
 
   const result = card.querySelector(".chest-card__result");
@@ -720,6 +826,109 @@ export async function playRagnarokStage(board, chest) {
             ? el("p", {
                 class: "chest-card__weapon-targets",
                 text: `Strikes: ${targets}`,
+              })
+            : null,
+        ].filter(Boolean),
+      );
+    }
+  }
+
+  return card;
+}
+
+/**
+ * The Kronos stage: the draw, and the shield that was drawn.
+ *
+ * The same two moments as Ragnarok's - the shuffle, then the face turning
+ * over in the slot the player touched - because they ARE the same two moments
+ * and the same shuffleFaces runs. What is its own is what the face shows: the
+ * shield in its own colour, and under the answer, which weapon it stops and
+ * how long it stands. A draw that found nothing left (all three already held)
+ * says so and shows no face.
+ */
+export async function playKronosStage(board, chest) {
+  const holder = board.querySelector(".board__card");
+  const card = holder?.querySelector(".chest-card--kronos");
+  if (!card || !chest) return null;
+
+  const result = card.querySelector(".chest-card__result");
+  const none = Boolean(chest.result?.none);
+  const shield = chest.result?.shield ? shieldById(chest.result.shield) : null;
+  const slots = [...card.querySelectorAll(".chest-card__slot")];
+
+  /* THE SHUFFLE. The answer was decided when the button was pressed and is
+     already in the state; nothing about it is SHOWN until the shuffle is
+     over. The same three seconds, the same riffle, the same stillness for a
+     reader who asked for less motion - so every device turns the face at the
+     same moment. */
+  if (chest.phase === "drawing") {
+    await shuffleFaces(card);
+    return card;
+  }
+
+  /* THE REVEAL, AND NOTHING AFTER IT. One face turns over and keeps its
+     answer; the other two step aside. The shield was already deployed the
+     moment it was drawn - this is the two screens agreeing on the moment the
+     face turns, and the card is stable from here until Done closes the chest. */
+  if (chest.phase === "revealed") {
+    const chosenIndex = Number(chest.result?.slot ?? 1);
+    const chosen = slots[chosenIndex] || slots[1] || slots[0];
+    for (const slot of slots) {
+      if (!none && shield && slot === chosen) {
+        /* The face that turns over shows the shield that was drawn, in the
+           shield's own colour, with the emblem of the weapon it answers. */
+        slot.dataset.shield = shield.id;
+        slot.style.setProperty("--weapon", shieldColor(shield.id));
+        slot.classList.add("is-drawn");
+        const face = slot.querySelector(".chest-card__face");
+        if (face) face.innerHTML = emblem(shield, shieldColor(shield.id));
+        const name = slot.querySelector(".chest-card__slot-name");
+        if (name) {
+          /* Filtered, for the reason the weapon card's own copy is: a trailing
+             null is not a Node, and replaceChildren would refuse it. */
+          name.replaceChildren(
+            ...[
+              el("span", { text: shield.name }),
+              weaponById(shield.counters)
+                ? el("span", {
+                    class: "chest-card__slot-stops",
+                    text: `Stops ${weaponById(shield.counters).name}`,
+                  })
+                : null,
+            ].filter(Boolean),
+          );
+        }
+        const pill = slot.querySelector(".chest-card__pill");
+        if (pill) pill.style.removeProperty("background");
+      } else {
+        slot.hidden = true;
+      }
+    }
+    if (result) {
+      result.hidden = false;
+      /* THE REVEALED SHIELD, IN FULL: its name, what it is, the one weapon it
+         stops, and the two owned turns it stands for. Everything the player
+         needs to know about what just happened is on the card they are
+         already reading - no second screen, no splash. */
+      const stops = shield ? weaponById(shield.counters)?.name : "";
+      result.replaceChildren(
+        ...[
+          el("p", {
+            class: "chest-card__drew",
+            text: none
+              ? KRONOS_CHEST.badLuck
+              : `You drew the ${shield?.name || "shield"}.`,
+          }),
+          !none && shield?.blurb
+            ? el("p", { class: "chest-card__weapon-blurb", text: shield.blurb })
+            : null,
+          stops
+            ? el("p", { class: "chest-card__weapon-targets", text: `Stops: ${stops}` })
+            : null,
+          !none
+            ? el("p", {
+                class: "chest-card__weapon-targets",
+                text: "Deployed now. Stands for two of your turns.",
               })
             : null,
         ].filter(Boolean),

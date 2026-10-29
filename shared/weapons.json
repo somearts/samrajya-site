@@ -9,7 +9,14 @@
     "Colours are named tokens, not hex: `set` refers to a set in spaces.js, so",
     "the three weapon colours are the board's own and cannot drift from it.",
     "The three chosen are indigo, terracotta and teal - the three calmest on the",
-    "board, and each far enough from the other two to be told apart at pill size."
+    "board, and each far enough from the other two to be told apart at pill size.",
+    "",
+    "KRONOS - the shield chest, in the same file because it is the same kind of",
+    "thing: one draw, decided from data, shown by the same card. A shield names",
+    "ONE weapon in `counters` - the weapon's own id, never a name retyped - and",
+    "blocks that weapon and no other. Its colour is its own set (violet, green,",
+    "gold) so a shield never reads as the weapon it stops, while its EMBLEM is",
+    "that weapon's emblem, so the face still says which weapon it answers."
   ],
 
   "chest": {
@@ -56,6 +63,45 @@
         "lagrange-l2", "event-horizon", "earth-137",
         "orions-belt", "wow-signal", "dyson-sphere"
       ]
+    }
+  ],
+
+  "kronos": {
+    "id": "kronos",
+    "title": "Welcome to Kronos",
+    "titleLines": ["Welcome to", "Kronos"],
+    "tagline": "The shield-circle at the end of time.",
+    "body": "Kronos offers a shield. Draw once per visit: it deploys the moment it is drawn, stands for two of your own turns, and is spent the instant it stops its one weapon. It answers no other - the remaining weapons pass it by.",
+    "badLuck": "Nothing left to defend with."
+  },
+
+  "shields": [
+    {
+      "id": "kavacha",
+      "name": "Kavacha of Parvati",
+      "counters": "shiva",
+      "set": "s1",
+      "emblem": "eye",
+      "blurb": "A veil no gaze may pierce.",
+      "stands": "Stops the Eye of Shiva, once."
+    },
+    {
+      "id": "matterforge",
+      "name": "Matterforge Shield",
+      "counters": "antimatter",
+      "set": "s5",
+      "emblem": "rings",
+      "blurb": "Matter re-woven faster than it can be undone.",
+      "stands": "Stops the Antimatter Weapon, once."
+    },
+    {
+      "id": "nuclear-aegis",
+      "name": "Nuclear Aegis",
+      "counters": "nuclear",
+      "set": "s6",
+      "emblem": "cone",
+      "blurb": "A hush of hardened light around what it keeps.",
+      "stands": "Stops the Nuclear Warhead, once."
     }
   ],
 

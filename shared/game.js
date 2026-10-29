@@ -78,12 +78,26 @@ import { FIGHT, isTargetProtected, validTargets } from "./fight.js";
 import { NEXUS, NEXUS_PRAY_COST, drawNexusCard } from "./nexus-cards.js";
 import { NO_EFFECT, NO_TARGET, drawTimeCard, timeCardById } from "./epoch-cards.js";
 import { CELLS } from "./spaces.js";
-import { BAD_LUCK, IMMUNE as IMMUNE_LIST, RAGNAROK, drawWeapon, weaponById } from "./weapons.js";
+import {
+  BAD_LUCK,
+  IMMUNE as IMMUNE_LIST,
+  RAGNAROK,
+  drawShield,
+  drawWeapon,
+  shieldById,
+  weaponById,
+} from "./weapons.js";
 
 export { MAX_UPGRADE, STARTING_MONEY };
 
 /** The Epoch tile, matched from the board's own data rather than retyped. */
 const EPOCH = CELLS.find((cell) => cell.id === "epoch") || null;
+
+/** The Kronos tile, matched the same way. */
+const KRONOS = CELLS.find((cell) => cell.id === "kronos") || null;
+
+/** How many of the owner's turns a shield stands for, once drawn. */
+export const SHIELD_TURNS = 2;
 
 /** The four phases a turn can be in, plus the two animation phases. */
 export const PHASE = Object.freeze({
@@ -159,7 +173,7 @@ export function createGame(players = [], { opening = STARTING_MONEY, testMode = 
        message, or that joined late, or that reconnected, reads the same chest
        out of the same state and shows the same screen.
 
-       kind      "ragnarok" or "nexus"
+       kind      "ragnarok", "kronos" or "nexus"
        playerId  the seat that is at the chest
        phase     where the chest is in its own little story
        startedAt when it began, so both devices can start their animation at
@@ -196,6 +210,21 @@ export function createGame(players = [], { opening = STARTING_MONEY, testMode = 
     /* Pending extra rolls, per seat. Temporal Loop grants one; Time Theft may
        transfer one. Consumed by the next `roll` the seat takes. */
     bonusRolls: { 0: 0, 1: 0 },
+    /* The KRONOS SHIELDS standing in this game, as a list of:
+
+         { id, owner, weapon, turnsLeft }
+
+       `weapon` is the ONE weapon the shield answers; `turnsLeft` counts the
+       OWNER's turns only, and is spent on a successful block. A shield is
+       added when it is drawn at Kronos, ticked at TURN_END, and removed when
+       it blocks or expires.
+
+       ONE PER WEAPON, PER PLAYER, AT MOST THREE - the whole of the anti-stacking
+       rule, and it is held by the draw itself rather than by a check here: a
+       draw never offers a shield the player already stands behind, so a second
+       copy cannot be drawn, a shield cannot be refreshed by redrawing it, and
+       the list can never hold two entries that answer the same weapon. */
+    shields: [],
     /* A Frozen Moment laid on a seat, per seat. One-shot: it cancels a pending
        bonus roll, or nullifies the opponent's next bonus grant within their
        following turn, and is always cleared by the end of that turn. */
@@ -271,6 +300,7 @@ function cloneGame(state) {
     chest: state.chest ? { ...state.chest } : null,
     fight: state.fight ? { ...state.fight } : null,
     epoch: state.epoch ? { ...state.epoch } : null,
+    shields: (state.shields || []).map((shield) => ({ ...shield })),
     bonusRolls: { ...(state.bonusRolls || { 0: 0, 1: 0 }) },
     frozen: { ...(state.frozen || { 0: false, 1: false }) },
     futureSight: { ...(state.futureSight || { 0: null, 1: null }) },
@@ -331,6 +361,13 @@ export function opponentOf(game, seat) {
  */
 export function visitOf(game) {
   return game?.visit ? { ...game.visit } : null;
+}
+
+/** The Kronos shields standing for a seat, as plain copies. */
+export function shieldsOf(game, seat) {
+  return (game?.shields || [])
+    .filter((shield) => shield.owner === seat)
+    .map((shield) => ({ ...shield }));
 }
 
 /**
@@ -491,6 +528,11 @@ export function applyAction(state, action, rng = Math.random) {
         upgrades: 0,
         drawn: null,
         collected: false,
+        /* KRONOS ONLY. What the shield draw found: the shield id, the
+           sentinel "none" for a draw that found nothing left to offer, or
+           null while the chest has not been drawn from - the same three
+           states `drawn` holds at Ragnarok. */
+        shieldDrawn: null,
         rent: 0,
         paid: false,
         short: 0,
@@ -586,7 +628,11 @@ export function applyAction(state, action, rng = Math.random) {
             });
           }
         }
-      } else if (cell?.id === RAGNAROK.id || cell?.id === NEXUS.id) {
+      } else if (
+        cell?.id === RAGNAROK.id ||
+        cell?.id === NEXUS.id ||
+        (KRONOS && cell?.id === KRONOS.id)
+      ) {
         next.landing.kind = "chest";
         /* THE CHEST IS OPENED HERE, IN THE STATE.
 
@@ -600,7 +646,11 @@ export function applyAction(state, action, rng = Math.random) {
            The phase starts at "open": the chest is there, the acting player
            may press, and the other player is watching. */
         next.chest = {
-          kind: cell.id === RAGNAROK.id ? "ragnarok" : "nexus",
+          kind: cell.id === RAGNAROK.id
+            ? "ragnarok"
+            : cell.id === NEXUS.id
+              ? "nexus"
+              : "kronos",
           playerId: active,
           phase: "open",
           startedAt: now(),
@@ -708,6 +758,11 @@ export function applyAction(state, action, rng = Math.random) {
         upgrades: 0,
         drawn: null,
         collected: false,
+        /* KRONOS ONLY. What the shield draw found: the shield id, the
+           sentinel "none" for a draw that found nothing left to offer, or
+           null while the chest has not been drawn from - the same three
+           states `drawn` holds at Ragnarok. */
+        shieldDrawn: null,
         rent: 0,
         paid: false,
         short: 0,
@@ -799,10 +854,18 @@ export function applyAction(state, action, rng = Math.random) {
             });
           }
         }
-      } else if (cell?.id === RAGNAROK.id || cell?.id === NEXUS.id) {
+      } else if (
+        cell?.id === RAGNAROK.id ||
+        cell?.id === NEXUS.id ||
+        (KRONOS && cell?.id === KRONOS.id)
+      ) {
         next.landing.kind = "chest";
         next.chest = {
-          kind: cell.id === RAGNAROK.id ? "ragnarok" : "nexus",
+          kind: cell.id === RAGNAROK.id
+            ? "ragnarok"
+            : cell.id === NEXUS.id
+              ? "nexus"
+              : "kronos",
           playerId: active,
           phase: "open",
           startedAt: now(),
@@ -1076,6 +1139,133 @@ export function applyAction(state, action, rng = Math.random) {
       return { state: next, events };
     }
 
+    /* -------------------------------------------------------------- Kronos
+
+       The shield chest. The same little story as Ragnarok - a draw the server
+       decides, a shuffle the clients play, a face turned over at its own
+       moment - with one press fewer, because a shield DEPLOYS the moment it is
+       drawn. There is nothing to collect: the shield is already standing, and
+       Collect would be a press that changes nothing. */
+
+    case "drawShield": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "chest" ||
+        !(KRONOS && state.landing?.id === KRONOS.id)
+      ) {
+        return refused(state, action, "There is no chest to draw from.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if ((state.visit?.shieldDrawn ?? null) !== null) {
+        return refused(state, action, "This chest has already been drawn from.");
+      }
+      if (!state.chest || state.chest.kind !== "kronos") {
+        return refused(state, action, "There is no chest to draw from.");
+      }
+      if (state.chest.phase !== "open") {
+        return refused(state, action, "The draw is already under way.");
+      }
+      if (!state.visit) return refused(state, action, "There is no chest to draw from.");
+
+      /* WHAT MAY BE OFFERED, AND WHAT MAY NOT.
+
+         A player stands behind AT MOST ONE SHIELD PER WEAPON, and the draw is
+         where that rule is held: it never offers a shield the player already
+         stands behind. So a shield cannot be refreshed by drawing a second
+         copy, cannot be stacked, and cannot be silently overwritten - the only
+         thing a draw can do is add a shield that is not yet held. With all
+         three already held the draw is a miss, recorded as "none", and the
+         visit is answered either way. */
+      const standing = (state.shields || [])
+        .filter((entry) => entry.owner === active)
+        .map((entry) => entry.id);
+      const outcome = drawShield(rng, standing);
+      const shield = outcome ? shieldById(outcome) : null;
+      const none = !shield;
+
+      /* DEPLOYED AT THE DRAW, IN THE SAME ACTION.
+
+         The shield enters the shared state here, with its full two turns: the
+         turn it is drawn in IS the owner's first of the two, and TURN_END below
+         takes one off. From this moment both screens hold the same fact, a
+         strike is answered from that fact, and there is no separate activation
+         - nothing to press, nothing to forget, nothing one device knows that
+         the other does not. */
+      if (shield) {
+        next.shields = [
+          ...(state.shields || []),
+          { id: shield.id, owner: active, weapon: shield.counters, turnsLeft: SHIELD_TURNS },
+        ];
+      }
+
+      next.visit.shieldDrawn = none ? "none" : outcome;
+      next.phase = PHASE.DECISION;
+      next.chest.phase = "drawing";
+      next.chest.startedAt = now();
+      next.chest.choice = "draw";
+      next.chest.result = {
+        shield: none ? null : outcome,
+        none,
+        /* The face the player touched. Both devices turn over the same one. */
+        slot: Number.isInteger(action.slot) ? Math.max(0, Math.min(2, action.slot)) : 1,
+      };
+      if (shield) {
+        recordEntry(next.ledger, {
+          turn: state.turn,
+          seat: active,
+          kind: "shield",
+          text: `Deployed ${shield.name}`,
+          amount: 0,
+        });
+      }
+      ok("shieldDrawn", {
+        seat: active,
+        shield: none ? null : outcome,
+        none,
+        weapon: shield?.counters || null,
+        turnsLeft: SHIELD_TURNS,
+        slot: next.chest.result.slot,
+        startedAt: next.chest.startedAt,
+      });
+      return { state: next, events };
+    }
+
+    /* THE SHIELD'S FACE IS TURNED OVER.
+
+       The draw was answered the moment the button was pressed and the shield
+       was standing from then. This is the moment both devices turn the face
+       over together - the same separate action Ragnarok's reveal is, for the
+       same reason: two screens, one moment. */
+    case "revealShield": {
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "chest" ||
+        !(KRONOS && state.landing?.id === KRONOS.id)
+      ) {
+        return refused(state, action, "There is no chest to draw from.");
+      }
+      if (!state.chest || state.chest.kind !== "kronos" || state.chest.choice !== "draw") {
+        return refused(state, action, "There is nothing to turn over.");
+      }
+      if (state.chest.phase === "revealed") {
+        return refused(state, action, "That shield has already been turned over.");
+      }
+      if ((state.visit?.shieldDrawn ?? null) === null) {
+        return refused(state, action, "Draw from the chest first.");
+      }
+
+      next.chest.phase = "revealed";
+      next.chest.startedAt = now();
+      ok("shieldRevealed", {
+        seat: active,
+        shield: state.chest.result?.shield || null,
+        none: Boolean(state.chest.result?.none),
+        startedAt: next.chest.startedAt,
+      });
+      return { state: next, events };
+    }
+
     /* --------------------------------------------------------------- Nexus */
     case "pray": {
       if (actor !== active) return refused(state, action, "It is not your turn.");
@@ -1334,6 +1524,72 @@ export function applyAction(state, action, rng = Math.random) {
       const targets = validTargets(next.ledger, weapon.id, active, { opponentSeat: opponent });
       if (!targets.includes(targetId)) {
         return refused(state, action, "That colony is not within reach.");
+      }
+
+      /* KRONOS ANSWERS HERE, BEFORE ANYTHING MOVES.
+
+         The defender is whoever holds the colony under the strike. If one of
+         their shields names this weapon, the strike is spent against it:
+
+         - the shield is removed in the SAME action that read it, so it can be
+           consumed only once - there is no second read and no second press;
+         - this returns BEFORE the colony changes hands and BEFORE the weapon
+           is spent, which is what stops the destructive effect from reaching
+           the target through any other path: no capture, no rent shift, no
+           weapon lost by the attacker;
+         - only the shield's OWN weapon is answered. The other two pass by,
+           because the match is on the exact weapon id.
+
+         The weapon stays with its owner. A block denies the strike; it does
+         not delete the weapon, so a shield buys its owner a turn rather than
+         handing them the attacker's arsenal. */
+      const defender = ownerOf(next.ledger, targetId);
+      const shield = defender === null || defender === active
+        ? null
+        : (state.shields || []).find(
+            (entry) => entry.owner === defender && entry.weapon === weapon.id,
+          );
+      if (shield) {
+        next.shields = (state.shields || []).filter((entry) => entry !== shield);
+        const shieldName = shieldById(shield.id)?.name || shield.id;
+
+        next.fight.phase = "resolving";
+        next.fight.armed = false;
+        next.fight.targetId = targetId;
+        next.fight.result = {
+          id: targetId,
+          weapon: weapon.id,
+          name: cell.name,
+          from: defender,
+          to: active,
+          blocked: true,
+          shield: shield.id,
+        };
+
+        recordEntry(next.ledger, {
+          turn: state.turn,
+          seat: active,
+          kind: "fight",
+          text: `${weapon.name} stopped by ${shieldName} at ${cell.name}`,
+          amount: 0,
+        });
+        recordEntry(next.ledger, {
+          turn: state.turn,
+          seat: defender,
+          kind: "fight",
+          text: `${shieldName} spent at ${cell.name}`,
+          amount: 0,
+        });
+
+        ok("shieldBlocked", {
+          seat: active,
+          owner: defender,
+          shield: shield.id,
+          weapon: weapon.id,
+          id: targetId,
+          name: cell.name,
+        });
+        return { state: next, events };
       }
 
       /* THE COLONY CHANGES HANDS, WITH EVERYTHING ON IT.
@@ -1634,6 +1890,14 @@ export function applyAction(state, action, rng = Math.random) {
         if (state.visit?.drawn !== BAD_LUCK && !state.visit?.collected) {
           return refused(state, action, "Collect the weapon first.");
         }
+      } else if (state.chest.kind === "kronos") {
+         /* The shield deploys at the draw, so there is no Collect step - but
+            the draw must have happened, or the visit would close having
+            offered nothing. A miss ("none", all three already held) counts as
+            answered: it is a result, and the player is let go. */
+         if ((state.visit?.shieldDrawn ?? null) === null) {
+           return refused(state, action, "Draw from the chest first.");
+         }
       } else if (state.chest.kind === "nexus") {
         /* A Nexus card that has been chosen but not turned over is turned over
            first, so the money moves exactly once and at the moment the card
@@ -1665,6 +1929,13 @@ export function applyAction(state, action, rng = Math.random) {
             }
             if (state.visit?.drawn !== BAD_LUCK && !state.visit?.collected) {
               return refused(state, action, "Collect the weapon first.");
+            }
+          } else if (KRONOS && state.landing?.id === KRONOS.id) {
+            /* A shield is drawn before the visit may be left - the same rule
+               Ragnarok's draw answers to, and the reason a player cannot walk
+               away from the shield chest having been offered nothing. */
+            if ((state.visit?.shieldDrawn ?? null) === null) {
+              return refused(state, action, "Draw from the chest first.");
             }
           } else if (state.landing?.id === NEXUS.id) {            /* THE NEXUS VISIT CAN ALWAYS BE LEFT.
 
@@ -1769,6 +2040,34 @@ export function applyAction(state, action, rng = Math.random) {
         ledgerRedemption(next.ledger, from, state.turn);
         ok("redemption", { seat: from, amount: due });
       }
+
+      /* KRONOS SHIELDS AGE WITH THE TURNS OF THEIR OWNER.
+
+         This is the owner's turn ending, so only the shields whose owner is
+         `from` tick; the opponent's are left exactly as they are, which is
+         what makes the duration TWO OWNED turns rather than two whole turns.
+         A shield that reaches zero is gone from the same list in the same
+         action that said so, so it can neither block nor be seen again after
+         its moment. The bonus-roll branch above does not reach here: no turn
+         changed, so nothing ages. */
+      const aged = [];
+      for (const shield of next.shields || []) {
+        if (shield.owner !== from) {
+          aged.push(shield);
+          continue;
+        }
+        const left = (shield.turnsLeft || 0) - 1;
+        if (left > 0) {
+          aged.push({ ...shield, turnsLeft: left });
+          continue;
+        }
+        ok("shieldExpired", {
+          seat: shield.owner,
+          shield: shield.id,
+          weapon: shield.weapon,
+        });
+      }
+      next.shields = aged;
 
       next.active = to;
       next.phase = PHASE.AWAITING_ROLL;

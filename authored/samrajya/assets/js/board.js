@@ -46,9 +46,9 @@ import { DICE_DELAY_MS, DICE_HOLD_MS, DICE_ROLL_MS, pause } from "./timing.js";
 // The layer draws the coins; the rules they obey - including the name a seat
 // goes by - are in coins.js, which imports nothing and is tested on its own.
 import { coins } from "./coin-layer.js";
-import { renderWeapons } from "./chest-card.js";
+import { renderShields, renderWeapons } from "./chest-card.js";
 import { squareCard } from "./square-card.js";
-import { RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
+import { KRONOS_CHEST, RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
 import { NEXUS } from "./shared/nexus-cards.js";
 import { hideCard, showCard, syncCard } from "./property-card.js";
 import {
@@ -60,7 +60,7 @@ import { profilePanel } from "./profile.js";
 import { announcementLayer } from "./announcement.js";
 import { announcementFor, statusFor } from "./shared/announcements.js";
 import { isPurchasable } from "./shared/properties.js";
-import { ENABLE_SELL, PHASE, restoreGame } from "./shared/game.js";
+import { ENABLE_SELL, PHASE, restoreGame, shieldsOf } from "./shared/game.js";
 import { coinColor } from "./shared/civilizations.js";
 import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
 import {
@@ -79,6 +79,7 @@ import {
   chestWaiting,
   drawChestPeek,
   drawChestStage,
+  playKronosStage,
   playNexusStage,
   playRagnarokStage,
 } from "./chest-stage.js";
@@ -494,6 +495,10 @@ export function board({
     syncActive(root(), game.active);
     for (const piece of game.pieces) {
       renderWeapons(root(), piece.seat, piece.weapons);
+      /* The same place, the same reason: a KRONOS shield is carried, so its
+         mark - and the turns its owner has left on it - live on the chip next
+         to the weapons it stands against. */
+      renderShields(root(), piece.seat, shieldsOf(game, piece.seat));
     }
     syncCard(frame, context());
     paintPhase();
@@ -711,7 +716,9 @@ export function board({
     try {
       response = await session.action(roomId, {
         ...action,
-        ...((action.type === "roll" || action.type === "drawWeapon") && rng !== undefined
+        ...((action.type === "roll" ||
+          action.type === "drawWeapon" ||
+          action.type === "drawShield") && rng !== undefined
           ? { rng }
           : {}),
       });
@@ -1125,6 +1132,41 @@ export function board({
           break;
         }
 
+        case "shieldDrawn":
+        case "shieldRevealed": {
+          /* The shield was deployed the moment it was drawn, and the chest
+             card draws itself from the state; what this adds is the CHIP, so
+             the mark is standing beside the owner's name while the shuffle
+             still runs. No splash: the deployment confirmation is the card
+             the player is already reading, and the mark on the chip. */
+          paint({ animate: false });
+          break;
+        }
+
+        case "shieldBlocked": {
+          /* THE STRIKE IS SPENT AGAINST THE SHIELD, and there is no war to
+             play: fightWar is the blow LANDING, and this is the blow NOT
+             landing. What both screens show is drawn from the state they
+             both hold - the fight card's own line saying what stopped the
+             strike, and the shield's mark leaving the defender's chip in the
+             repaint. The closing is the same as a captured strike's: the
+             acting player's board ends the fight once it has been seen, and
+             the turn goes with it. */
+          paint({ animate: true });
+          if (isMyTurn()) void finishFightWhenFree();
+          break;
+        }
+
+        case "shieldExpired": {
+          /* The turn has handed over and the shield is gone from the state.
+             The repaint takes the mark off the chip at the moment it goes -
+             the chip is where carried things are shown, so the chip is where
+             the ending of a carrying is shown. Nothing else speaks: this is a
+             fact about an item, not an event in the middle of a decision. */
+          paint({ animate: false });
+          break;
+        }
+
         case "fightResolved": {
           /* THE WAR IS PLAYED FROM THE EVENT.
 
@@ -1296,6 +1338,22 @@ export function board({
           handlers['[data-action="draw"]'] = () => {
             void run({ type: "drawNexus" });
           };
+        } else if (chest.kind === "kronos") {
+          /* KRONOS OFFERS THREE SHIELD FACES, and the player touches one of
+             them. The Draw pill is the same draw said once more. Both answer
+             ONLY at the "open" stage, exactly as Ragnarok's do - and there is
+             no Collect pill, because a shield deploys the moment it is drawn:
+             the press that follows the reveal is Done, which ends the visit. */
+          for (const slot of [0, 1, 2]) {
+            handlers[`.chest-card__slot[data-slot="${slot}"]`] = () => {
+              if (game.chest?.phase !== "open") return;
+              void run({ type: "drawShield", slot });
+            };
+          }
+          handlers['[data-action="draw"]'] = () => {
+            if (game.chest?.phase !== "open") return;
+            void run({ type: "drawShield", slot: 1 });
+          };
         } else {
           /* Ragnarok offers three faces, and the player touches one of them.
              The Draw pill is the same draw said once more: it takes the
@@ -1330,12 +1388,15 @@ export function board({
          there is no Done pill and nothing after the reveal. Done survives
          only where there is no collect to make (a bad-luck draw) and where
          the chest's own rules already asked for it: an answered Nexus, an
-         offering. */
+         offering. KRONOS IS ALWAYS DONE: a shield deploys at the draw, so
+         there is no Collect to press - Done is the one press that lets the
+         player acknowledge what now stands for them before the visit ends. */
       const ragnarokRevealed =
         chest.kind === "ragnarok" && chest.phase === "revealed";
       const needsDone =
         chest.phase === "praying" ||
         (chest.kind === "nexus" && chest.phase === "revealed") ||
+        (chest.kind === "kronos" && chest.phase === "revealed") ||
         (ragnarokRevealed && Boolean(chest.result?.badLuck));
       if (needsDone) {
         if (mine) {
@@ -1405,6 +1466,13 @@ export function board({
         ) {
           revealWeaponWhenFree();
         }
+        if (
+          chest.kind === "kronos" &&
+          chest.phase === "drawing" &&
+          chest.choice === "draw"
+        ) {
+          revealShieldWhenFree();
+        }
       }
       /* The Collect has been accepted and the chest is on its way out. The
          closing is asked for here as well as at the draw, so a board that
@@ -1423,7 +1491,9 @@ export function board({
           chip: chip(chest.playerId),
           elapsed: Date.now() - chestStageAt,
         })
-      : playRagnarokStage(frame, chest);
+      : chest.kind === "kronos"
+        ? playKronosStage(frame, chest)
+        : playRagnarokStage(frame, chest);
     Promise.resolve(playing)
       .then(() => {
         /* The animation has played to the end. The card may now be turned
@@ -1448,6 +1518,13 @@ export function board({
           chest.choice === "draw"
         ) {
           revealWeaponWhenFree();
+        }
+        if (
+          chest.kind === "kronos" &&
+          chest.phase === "drawing" &&
+          chest.choice === "draw"
+        ) {
+          revealShieldWhenFree();
         }
       })
       .catch(() => {});
@@ -1511,6 +1588,31 @@ export function board({
       /* The server refused, which means the chest has moved on. */
     } finally {
       revealingWeapon = false;
+    }
+  }
+
+  /* The same, for the shield at Kronos: the shuffle is over, and the face is
+     turned by asking the server - which is what puts both devices' faces down
+     at the same moment. The same wait, the same patience, the same reason: a
+     reveal that gave up would leave the chest on "drawing" for ever. */
+  let revealingShield = false;
+  async function revealShieldWhenFree() {
+    if (revealingShield) return;
+    revealingShield = true;
+    try {
+      for (let attempt = 0; attempt < 400; attempt += 1) {
+        if (!await waitForFree()) {
+          await wait(250);
+          continue;
+        }
+        const result = await run({ type: "revealShield" });
+        if (result) return;
+        await wait(250);
+      }
+    } catch {
+      /* The server refused, which means the chest has moved on. */
+    } finally {
+      revealingShield = false;
     }
   }
 
@@ -1908,11 +2010,12 @@ export function board({
 
        A chest that is OPEN is not looked at: the visit is on the screen and
        it is the same screen, so there is nothing to open. */
-    if (cell.id === NEXUS.id || cell.id === RAGNAROK.id) {
+    if (cell.id === NEXUS.id || cell.id === RAGNAROK.id || cell.id === KRONOS_CHEST.id) {
       if (game.chest) return;
-      drawChestPeek(frame, cell.id === NEXUS.id ? "nexus" : "ragnarok", {
-        onClose: () => closeRead(),
-      });
+      drawChestPeek(frame,
+        cell.id === NEXUS.id ? "nexus" : cell.id === KRONOS_CHEST.id ? "kronos" : "ragnarok",
+        { onClose: () => closeRead() },
+      );
       paintPhase();
       return;
     }

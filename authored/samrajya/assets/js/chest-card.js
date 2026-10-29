@@ -60,7 +60,14 @@
 import { el } from "./dom.js";
 import { settled } from "./motion.js";
 import { resetHolder } from "./board-fx.js";
-import { RAGNAROK, WEAPONS, drawWeapon, weaponById } from "./shared/weapons.js";
+import {
+  RAGNAROK,
+  SHIELDS,
+  WEAPONS,
+  drawWeapon,
+  shieldById,
+  weaponById,
+} from "./shared/weapons.js";
 import { SETS } from "./shared/spaces.js";
 import { propertyFor } from "./shared/properties.js";
 
@@ -76,6 +83,11 @@ export const DOT_CAP = 6;
 /** The colour a weapon is drawn in, from the set the data names. */
 export function weaponColor(id) {
   return SETS[weaponById(id)?.set]?.color || "var(--ink)";
+}
+
+/** The colour a shield is drawn in, from the set the data names. */
+export function shieldColor(id) {
+  return SETS[shieldById(id)?.set]?.color || "var(--ink)";
 }
 
 /* ---------------------------------------------------------------- emblems
@@ -106,14 +118,21 @@ const EMBLEMS = {
     <line x1="16" y1="12" x2="16" y2="28" stroke="${c}" stroke-width="1.6" stroke-linecap="round"/>`,
 };
 
-/** One weapon's emblem, as an SVG string. */
-export function emblem(weapon) {
-  const draw = EMBLEMS[weapon?.emblem];
+/**
+ * One emblem, as an SVG string.
+ *
+ * `thing` is a weapon or a shield - anything carrying an `emblem` name and an
+ * `id`. The colour follows that id through its own lookup unless one is handed
+ * in: a shield wears the weapon's EMBLEM in the shield's own colour, and that
+ * is expressed here, so neither lookup has to know about the other.
+ */
+export function emblem(thing, colour) {
+  const draw = EMBLEMS[thing?.emblem];
   if (!draw) return "";
-  const colour = weaponColor(weapon.id);
+  const ink = colour || weaponColor(thing.id);
   return (
     `<svg viewBox="0 0 32 40" class="chest-card__emblem" xmlns="http://www.w3.org/2000/svg"` +
-    ` aria-hidden="true" focusable="false">${draw(colour)}</svg>`
+    ` aria-hidden="true" focusable="false">${draw(ink)}</svg>`
   );
 }
 
@@ -283,6 +302,63 @@ export function clearWeapons(root, seatIndex) {
   const holder = root.querySelectorAll(".who")[seatIndex]?.querySelector(".who__weapons");
   if (holder) holder.replaceChildren();
   return holder;
+}
+
+/**
+ * The KRONOS shields standing for a seat, beside that seat's weapon dots.
+ *
+ * THE SAME ROW AS THE WEAPONS, AND FOR THE SAME REASON: the chip's grid gives
+ * the carried things exactly one cell, and a shield is a carried thing - it
+ * stands between a weapon and its owner, so the two are read side by side.
+ * The paint order does the rest: the weapon dots are redrawn first and these
+ * are laid after them, so the marks can never end up under a replaced row.
+ *
+ * One mark per shield - a dot in the shield's own colour with the number of
+ * its OWNER's turns left beside it, which is the whole of the shield's status
+ * in the smallest space the board has. At most three can stand (one per
+ * weapon), so nothing here can overflow, and the full sentence is on the
+ * mark's title for anyone who wants it.
+ */
+export function renderShields(root, seatIndex, shields = []) {
+  const chip = root.querySelectorAll(".who")[seatIndex];
+  if (!chip) return null;
+
+  // Cleared first: a shield that has blocked or expired is gone from the
+  // state, and its mark goes with the next paint rather than lingering.
+  for (const stale of chip.querySelectorAll(".who__shield")) stale.remove();
+  if (!shields.length) return null;
+
+  const host = chip.querySelector(".who__weapons") || chip;
+  host.append(
+    ...shields.map((shield) => {
+      const data = shieldById(shield.id);
+      const stops = weaponById(data?.counters)?.name || "";
+      const turns = Math.max(0, Number(shield.turnsLeft) || 0);
+      return el("span", {
+        class: "who__shield",
+        "data-shield": shield.id,
+        "data-turns": String(turns),
+        title: stops
+          ? `${data?.name || shield.id} - stops the ${stops} - ${turns} turn${turns === 1 ? "" : "s"} left`
+          : `${data?.name || shield.id} - ${turns} turn${turns === 1 ? "" : "s"} left`,
+        "aria-hidden": "true",
+      }, [
+        el("span", {
+          class: "who__shield-dot",
+          style: { "--shield": shieldColor(shield.id) },
+        }),
+        el("span", { class: "who__shield-turns", text: String(turns) }),
+      ]);
+    }),
+  );
+  return host;
+}
+
+/** Clear a seat's shield marks. Used by a new game. */
+export function clearShields(root, seatIndex) {
+  const chip = root.querySelectorAll(".who")[seatIndex];
+  if (!chip) return;
+  for (const stale of chip.querySelectorAll(".who__shield")) stale.remove();
 }
 
 /* -------------------------------------------------------------- the flow */

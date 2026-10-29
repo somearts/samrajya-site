@@ -282,6 +282,28 @@ async function generateWeapons() {
   const total = odds.reduce((sum, [, n]) => sum + Number(n), 0);
   if (total !== 100) fail(`shared/weapons.json odds come to ${total}, not 100`);
 
+  // The shields answer real weapons. A `counters` that names something that is
+  // not a weapon would build a shield that can never fire, and nothing else in
+  // the system would notice - so it is caught here, where the data is read.
+  const weaponIds = new Set((data.weapons || []).map((w) => w.id));
+  const shields = data.shields || [];
+  if (shields.length !== 3) {
+    fail(`shared/weapons.json has ${shields.length} shields, not 3`);
+  }
+  const countered = [];
+  for (const shield of shields) {
+    if (!weaponIds.has(shield.counters)) {
+      fail(`shared/weapons.json: shield "${shield.id}" counters "${shield.counters}", which is not a weapon`);
+    }
+    if (!shield.id || !shield.name || !shield.set || !shield.emblem) {
+      fail(`shared/weapons.json: shield "${shield.id}" is missing id, name, set or emblem`);
+    }
+    countered.push(shield.counters);
+  }
+  if (new Set(countered).size !== countered.length) {
+    fail(`shared/weapons.json: two shields counter the same weapon`);
+  }
+
   const module = `/* GENERATED FILE - DO NOT EDIT.
 
    Written by scripts/build.js from shared/weapons.json.
@@ -299,10 +321,18 @@ function deepFreeze(o) {
 /** The chest this describes, and all of its copy. */
 export const RAGNAROK = deepFreeze(${JSON.stringify(data.chest)});
 
+/** The shield chest's copy - the same shape, the same job, at Kronos. */
+export const KRONOS_CHEST = deepFreeze(${JSON.stringify(data.kronos)});
+
 /** The three weapons, in the order they are offered. */
 export const WEAPONS = deepFreeze(${JSON.stringify(data.weapons)}.map((w) => Object.freeze(w)));
 
 export const WEAPON_IDS = Object.freeze(WEAPONS.map((w) => w.id));
+
+/** The three shields, in the order they are offered. */
+export const SHIELDS = deepFreeze(${JSON.stringify(shields)}.map((s) => Object.freeze(s)));
+
+export const SHIELD_IDS = Object.freeze(SHIELDS.map((s) => s.id));
 
 /** Colonies no weapon reaches. Said here, and never said out loud. */
 export const IMMUNE = deepFreeze(${JSON.stringify(data.immune)});
@@ -314,6 +344,8 @@ export const ODDS = deepFreeze(${JSON.stringify(data.odds)});
 
 const BY_ID = new Map(WEAPONS.map((w) => [w.id, w]));
 
+const SHIELD_BY_ID = new Map(SHIELDS.map((s) => [s.id, s]));
+
 /** A weapon by id, or null. Never a fallback and never a guess. */
 export function weaponById(id) {
   return BY_ID.get(String(id ?? "").trim().toLowerCase()) || null;
@@ -322,6 +354,17 @@ export function weaponById(id) {
 /** What a weapon can strike, as colony ids. */
 export function targetsOf(id) {
   return weaponById(id)?.targets ? [...weaponById(id).targets] : [];
+}
+
+/** A shield by id, or null. Never a fallback and never a guess. */
+export function shieldById(id) {
+  return SHIELD_BY_ID.get(String(id ?? "").trim().toLowerCase()) || null;
+}
+
+/** The one shield that counters a given weapon id, or null. */
+export function shieldFor(weaponId) {
+  const id = String(weaponId ?? "").trim().toLowerCase();
+  return SHIELDS.find((s) => s.counters === id) || null;
 }
 
 /**
@@ -345,6 +388,30 @@ export function drawWeapon(rng = Math.random) {
     if (point < cursor) return id;
   }
   return BAD_LUCK;
+}
+
+/**
+ * Draw from the shield chest. Returns a shield id, or null.
+ *
+ * UNIFORM AMONG WHAT IS LEFT. \`held\` is the ids the drawing player already
+ * stands behind; a shield already held is never drawn again, so a shield can
+ * neither be refreshed by drawing a second copy nor stacked by keeping one.
+ * When nothing is left the draw is a miss - it returns null rather than
+ * reaching for a shield the player holds, which is what makes the no-
+ * overwrite rule impossible to sidestep from the drawing side.
+ *
+ * \`rng\` is injected and defaults to Math.random. Anything in [0, 1) works.
+ */
+export function drawShield(rng = Math.random, held = []) {
+  const taken = new Set(held || []);
+  const available = SHIELDS.filter((s) => !taken.has(s.id));
+  if (!available.length) return null;
+
+  const roll = Number(rng());
+  const draw = Number.isFinite(roll) ? roll : 0;
+  const point = Math.min(0.999999999, Math.max(0, draw));
+  const at = Math.min(available.length - 1, Math.floor(point * available.length));
+  return available[at].id;
 }
 `;
 

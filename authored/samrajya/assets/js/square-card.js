@@ -65,8 +65,8 @@ const COPY = {
   kronos: {
     kind: "A chest",
     lines: [
-      "A chest on the board, and nothing has been decided to come out of it yet.",
-      "The tile says nothing, and so does this card.",
+      "The shield-circle. Draw once per visit: the shield deploys the moment it is drawn and stands for two of your own turns.",
+      "It answers one weapon and no other - tap the chest to see the three.",
     ],
   },
 };

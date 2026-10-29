@@ -1365,7 +1365,8 @@ const cardJs = await readShipped(join("assets", "js", "property-card.js"));
     "the chest is a fact in the state, not an event",
     /chest:\s*null,/.test(gameJs) &&
       /next\.chest = \{/.test(gameJs) &&
-      /kind: cell\.id === RAGNAROK\.id \? "ragnarok" : "nexus"/.test(gameJs),
+      (/kind: cell\.id === RAGNAROK\.id\s*\? "ragnarok"\s*: "nexus"/.test(gameJs) ||
+        /kind:\s*cell\.id === RAGNAROK\.id\s*\? "ragnarok"\s*: cell\.id === NEXUS\.id\s*\? "nexus"\s*: "kronos"/.test(gameJs)),
     "a shared screen that is built by one player and sent to the other is a " +
       "screen that can be missed, and the player who missed it has to refresh",
   );

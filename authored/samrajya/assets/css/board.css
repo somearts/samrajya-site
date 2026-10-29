@@ -1458,6 +1458,24 @@
   color: var(--ink-soft);
 }
 
+/* A SHIELD'S FACE carries a second line: the one weapon it answers. The name
+   box grows to hold both - the two-line name and the one-line counter - and
+   the counter is quieter than the name so the eye reads the shield first and
+   the weapon it stops second. The colour is the shield's own, which ties the
+   line to the face above it without either having to say so. */
+.chest-card--kronos .chest-card__slot-name {
+  height: 4.82em;
+  gap: 0.08em;
+  align-content: center;
+}
+
+.chest-card__slot-stops {
+  display: block;
+  font-size: 0.86em;
+  line-height: 1.2;
+  color: color-mix(in srgb, var(--weapon, var(--ink)) 64%, var(--ink-soft));
+}
+
 .chest-card__slot[hidden],
 .chest-card__result[hidden] {
   /* An author rule of `display` beats the browser's own `[hidden]` rule, so
@@ -3029,6 +3047,39 @@ button.board__cell--corner:focus-visible {
   min-width: 0;
 }
 
+/* A KRONOS SHIELD, and the turns left on it.
+
+   The mark lives inside the weapon-dots cell - the one place the chip has for
+   what a player carries - as a dot in the shield's own colour with the number
+   of its OWNER's turns beside it. The numeral is set in the ink rather than
+   knocked out of the dot: at six pixels a reversed digit is a smudge, and
+   this way it reads at the same size the weapon dots already do. */
+.who__shield {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+  height: 8px;
+}
+
+.who__shield-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--shield, var(--ink));
+  box-shadow: 0 0 0 1px rgb(18 17 16 / 0.2);
+}
+
+.who__shield-turns {
+  align-self: center;
+  font-size: max(6.5px, 0.46rem);
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
 .who--active {
   border-color: color-mix(in srgb, var(--coin, var(--ink)) 58%, var(--line));
   box-shadow:
@@ -4164,6 +4215,27 @@ button.board__cell--corner:focus-visible {
   font-size: max(9.6px, calc(var(--cell) * 0.108));
   color: color-mix(in srgb, var(--ink) 58%, var(--cell-ground));
   text-align: center;
+}
+
+/* A STRIKE A SHIELD STOPPED says so in the same quiet line, marked with a dot
+   in the shield's own colour - the same dot the chips carry, so the two say
+   the same thing about the same shield. No new surface and no splash: the
+   foot of the card the fight has been in all along, one shade darker so the
+   sentence reads as an outcome rather than as the idle line it replaced. */
+.fight-card__waiting--blocked {
+  color: color-mix(in srgb, var(--ink) 72%, var(--cell-ground));
+}
+
+.fight-card__waiting--blocked::before {
+  content: "";
+  display: inline-block;
+  width: max(5px, calc(var(--cell) * 0.06));
+  height: max(5px, calc(var(--cell) * 0.06));
+  margin-right: 0.5em;
+  border-radius: 50%;
+  background: var(--shield, var(--ink));
+  box-shadow: 0 0 0 1px rgb(18 17 16 / 0.2);
+  vertical-align: middle;
 }
 
 .fight-card__waiting-line {
