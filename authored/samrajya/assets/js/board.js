@@ -742,13 +742,23 @@ export function board({
       // The button answers the tap at once with a shake, and the middle says
       // why at the same time. Neither waits for the other, and the board does
       // not stand still for either: a refusal is a sentence, not a pause.
-      shake(target);
-      await announce.show({
-        label: "NOT NOW",
-        big: "That cannot happen",
-        sub: no.why,
-        tone: "refused",
-      });
+      //
+      // A TURN WARNING IS THE EXCEPTION, AND IT IS SILENT. "It is not your
+      // turn" is what the server answers to any action that arrived after the
+      // turn moved - a stale tap, or the board's own follow-up (continue, the
+      // fight's done) landing a beat late during ordinary play. Splashing it
+      // put "That cannot happen / It is not your turn" on screens doing
+      // nothing wrong. The server still refuses; only the sentence is
+      // dropped, and the turn indicator already says whose turn it is.
+      if (!/not your turn/i.test(no.why || "")) {
+        shake(target);
+        await announce.show({
+          label: "NOT NOW",
+          big: "That cannot happen",
+          sub: no.why,
+          tone: "refused",
+        });
+      }
       return { events: [no] };
     }
 
@@ -1066,10 +1076,17 @@ export function board({
         }
 
         case "weaponDrawn":
-        case "weaponCollected":
-          // The chest card reveals and flies the weapon itself; the chip is
-          // repainted from the game's pieces at the end of the step.
+          // The chest card reveals the weapon itself; the chip is repainted
+          // from the game's pieces at the end of the step.
           break;
+
+        case "weaponCollected": {
+          /* The weapon is the player's now. Collect is the LAST press of
+             the Ragnarok flow: the board closes the chest behind it as soon
+             as it is free, so there is no Done screen and no second tap. */
+          if (isMyTurn()) closeChestWhenFree();
+          break;
+        }
 
         case "fightResolved": {
           /* THE WAR IS PLAYED FROM THE EVENT.
@@ -1244,19 +1261,23 @@ export function board({
           };
         } else {
           /* Ragnarok offers three faces, and the player touches one of them.
-             The face that was touched is the one that turns over, on both
-             phones. The Draw pill is the same draw said once more: it takes
-             the middle face, which is what a straight read of the row takes
-             too. */
+             The Draw pill is the same draw said once more: it takes the
+             middle face, which is what a straight read of the row takes
+             too. Both answer ONLY at the "open" stage: a second tap after
+             the draw has begun can do nothing at all, and the server would
+             refuse it anyway. */
           for (const slot of [0, 1, 2]) {
             handlers[`.chest-card__slot[data-slot="${slot}"]`] = () => {
+              if (game.chest?.phase !== "open") return;
               void run({ type: "drawWeapon", slot });
             };
           }
           handlers['[data-action="draw"]'] = () => {
+            if (game.chest?.phase !== "open") return;
             void run({ type: "drawWeapon", slot: 1 });
           };
           handlers['[data-action="collect"]'] = () => {
+            if (game.chest?.phase !== "revealed") return;
             void run({ type: "collectWeapon" });
           };
         }
@@ -1265,19 +1286,21 @@ export function board({
       card = drawChestStage(frame, chest, { mine, handlers, playerName: name });
       if (!card) return;
 
-      /* The closing. The acting player presses Done and the chest goes; the
-         other player watches it go.
+      /* THE CLOSING - AND RAGNAROK HAS NONE.
 
-         RAGNAROK'S DONE WAITS FOR THE COLLECT. The flow is Draw, reveal,
-         Collect, Done - so on a real draw the Done pill arrives with the
-         "done" phase, after the weapon is taken. Only a bad-luck draw, which
-         has nothing to collect, is finished straight from the reveal. */
-      const doneReady =
+         A real Ragnarok draw ends at Collect: the server awards the weapon
+         and the board closes the chest behind it (closeChestWhenFree), so
+         there is no Done pill and nothing after the reveal. Done survives
+         only where there is no collect to make (a bad-luck draw) and where
+         the chest's own rules already asked for it: an answered Nexus, an
+         offering. */
+      const ragnarokRevealed =
+        chest.kind === "ragnarok" && chest.phase === "revealed";
+      const needsDone =
         chest.phase === "praying" ||
-        chest.phase === "done" ||
-        (chest.phase === "revealed" &&
-          (chest.kind !== "ragnarok" || Boolean(chest.result?.badLuck)));
-      if (doneReady) {
+        (chest.kind === "nexus" && chest.phase === "revealed") ||
+        (ragnarokRevealed && Boolean(chest.result?.badLuck));
+      if (needsDone) {
         if (mine) {
           if (!card.querySelector('[data-action="done"]')) {
             card.append(chestDoneButton(() => {
@@ -1287,15 +1310,17 @@ export function board({
         } else if (!card.querySelector('[data-role="waiting"]')) {
           card.append(chestWaiting(name));
         }
+      } else if (!mine && ragnarokRevealed && !card.querySelector('[data-role="waiting"]')) {
+        /* The watcher waits with the player who is about to collect. */
+        card.append(chestWaiting(name));
       }
 
-      /* RAGNAROK'S SECOND PRESS.
+      /* COLLECT IS THE LAST PRESS.
 
-         The weapon is drawn, and then it is collected: two presses, and the
-         second one is what makes the weapon the player's. The Collect pill
-         appears with the reveal - and it GOES when it has been pressed: a
-         dead Collect left on the "done" stage is a second Collect screen
-         that does nothing. */
+         The revealed card shows exactly one CTA: Collect. Pressed once, it
+         awards the weapon server-side and the chest is on its way out -
+         see closeChestWhenFree below. At the "done" phase any Collect left
+         on the card is removed; it has already done its work. */
       if (chest.kind === "ragnarok") {
         if (chest.phase === "done") {
           card.querySelector('[data-action="collect"]')?.remove();
@@ -1306,9 +1331,11 @@ export function board({
           !card.querySelector('[data-action="collect"]')
         ) {
           card.querySelector(".chest-card__collect-slot")?.append(chestCollectButton(() => {
+            if (game.chest?.phase !== "revealed") return;
             void run({ type: "collectWeapon" });
           }));
         }
+        if (chest.phase === "done" && mine) closeChestWhenFree();
       }
 
       paintPhase();
@@ -1341,6 +1368,13 @@ export function board({
         ) {
           revealWeaponWhenFree();
         }
+      }
+      /* The Collect has been accepted and the chest is on its way out. The
+         closing is asked for here as well as at the draw, so a board that
+         re-enters the "done" stage (a repaint, a reload) still returns to
+         the game instead of waiting for a Done pill that no longer exists. */
+      if (chest.kind === "ragnarok" && chest.phase === "done" && mine) {
+        closeChestWhenFree();
       }
       return;
     }
@@ -1450,6 +1484,46 @@ export function board({
       await wait(50);
     }
     return false;
+  }
+
+  /**
+   * Close the Ragnarok chest once its Collect has been accepted.
+   *
+   * The weapon is the player's the moment the server says so; the chest is a
+   * stage with nothing left to show, so the board closes it as soon as the
+   * board is free and the turn carries on. Collect is therefore the last
+   * press - no Done pill, no confirmation screen. Sent by the player at the
+   * chest only; the watcher's chest closes from the same server state when
+   * the snapshot arrives. The same shape as finishFightWhenFree: a request
+   * sent into a busy board is dropped, and a dropped request is a chest that
+   * never closes.
+   */
+  let closingChest = false;
+  async function closeChestWhenFree() {
+    if (closingChest) return;
+    closingChest = true;
+    try {
+      for (let attempt = 0; attempt < 200; attempt += 1) {
+        if (!await waitForFree()) {
+          await wait(250);
+          continue;
+        }
+        if (
+          game.chest?.kind !== "ragnarok" ||
+          game.chest?.phase !== "done" ||
+          !isMyTurn()
+        ) {
+          return;
+        }
+        const result = await run({ type: "done" });
+        if (result) return;
+        await wait(250);
+      }
+    } catch {
+      /* The server refused, which means the chest has moved on. */
+    } finally {
+      closingChest = false;
+    }
   }
 
   /* ------------------------------------------------------------- the fight

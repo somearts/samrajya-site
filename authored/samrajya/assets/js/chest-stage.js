@@ -654,13 +654,27 @@ export async function playRagnarokStage(board, chest) {
   const weapon = chest.result?.weapon ? weaponById(chest.result.weapon) : null;
   const slots = [...card.querySelectorAll(".chest-card__slot")];
 
-  if (chest.phase === "drawing" || chest.phase === "revealed") {
-    /* The face that was touched is the one that turns over. The chest says
+  /* THE SHUFFLE. The draw was decided the moment the button was pressed and
+     the answer is already in the state - but nothing about it is SHOWN
+     until the shuffle is over. The old stage turned the chosen face over
+     here, during "drawing", which flashed the weapon before the shuffle
+     had run and made the reveal a second screen. The faces stay backs and
+     move for three seconds; they are not touched otherwise. */
+  if (chest.phase === "drawing") {
+    await shuffleFaces(card);
+    return card;
+  }
+
+  /* THE REVEAL, AND NOTHING AFTER IT. One face turns over and keeps its
+     answer on screen; the other two step aside. The card is stable from
+     here until Collect closes the chest - there is no later stage to fall
+     into, and no second button. */
+  if (chest.phase === "revealed") {
+    /* The face the player touched is the one that turns over. The chest says
        which slot was chosen; without it, the middle one is the face. */
     const chosenIndex = Number(chest.result?.slot ?? 1);
     const chosen = slots[chosenIndex] || slots[1] || slots[0];
-    for (const [index, slot] of slots.entries()) {
-      slot.dataset.phase = chest.phase;
+    for (const slot of slots) {
       if (!bad && weapon && slot === chosen) {
         /* The face that turns over shows the weapon that was drawn, which is
            not always the weapon the face was labelled with. The colour and
@@ -676,7 +690,7 @@ export async function playRagnarokStage(board, chest) {
         if (name) name.replaceChildren(el("span", { text: weapon.name }));
         const pill = slot.querySelector(".chest-card__pill");
         if (pill) pill.style.removeProperty("background");
-      } else if (chest.phase === "revealed") {
+      } else {
         slot.hidden = true;
       }
     }
@@ -692,6 +706,37 @@ export async function playRagnarokStage(board, chest) {
   }
 
   return card;
+}
+
+/**
+ * The three backs, moving, for the length of the shuffle.
+ *
+ * Three seconds, transform only, and the faces are never touched: the answer
+ * stays in the state and appears only with the "revealed" stage. A reader who
+ * asked for less motion gets the same three seconds of stillness, so the
+ * reveal arrives at the same moment on every device.
+ */
+function shuffleFaces(card) {
+  const slots = [...card.querySelectorAll(".chest-card__slot:not([hidden])")];
+  if (still()) return wait(3000);
+  const riffling = slots.map((slot, i) =>
+    slot.animate(
+      [
+        { transform: "translate(0, 0) rotate(0deg)" },
+        {
+          transform: `translate(${i === 1 ? -7 : 7}px, -5px) rotate(${i === 1 ? -4 : 4}deg)`,
+          offset: 0.4,
+        },
+        { transform: "translate(0, 0) rotate(0deg)" },
+      ],
+      { duration: 500, iterations: 6, easing: "ease-in-out" },
+    ),
+  );
+  return wait(3000).then(() => {
+    /* Cancelled rather than allowed to finish: a running animation's last
+       frame would sit under the reveal until it timed out on its own. */
+    riffling.forEach((a) => a.cancel());
+  });
 }
 
 /* -------------------------------------------------------------- the closing */

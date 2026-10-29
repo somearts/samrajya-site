@@ -388,7 +388,9 @@ export function syncCard(board, ctx) {
   /* --- Pass, Done, Continue --- */
 
   const next = card.querySelector(".property-card__next");
-  const words = { buy: "Pass", own: "Done", rent: "Continue" };
+  /* The own-square CTA is "Already Yours": there was never an offer to
+     decline, so the button says what the square is and ends the visit. */
+  const words = { buy: "Pass", own: "Already Yours", rent: "Continue" };
   if (deciding && words[kind] && !answered) {
     next.hidden = false;
     next.dataset.kind = kind;
