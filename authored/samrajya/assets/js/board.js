@@ -417,6 +417,67 @@ export function board({
   frame.closeProfile = closeProfile;
   frame.toggleProfile = openProfile;
 
+  /* --------------------------------------------------------- the test panel
+     A compact panel that replaces the die when the Test pill is pressed. It
+     lets the active player type a step count (1-28) and move the coin
+     instantly. Back returns to the die. */
+  let testPanelOpen = false;
+
+  function openTestPanel() {
+    if (!game?.testMode) return;
+    if (game.phase !== PHASE.AWAITING_ROLL) return;
+    if (!isMyTurn()) return;
+    testPanelOpen = true;
+    renderTestPanel();
+    paintPhase();
+  }
+
+  function closeTestPanel() {
+    testPanelOpen = false;
+    centreArea.querySelector(".board__test-panel")?.remove();
+    paintPhase();
+  }
+
+  function renderTestPanel() {
+    centreArea.querySelector(".board__test-panel")?.remove();
+    const panel = el("div", { class: "board__test-panel" }, [
+      el("span", { class: "board__test-label", text: "TEST MOVE" }),
+      el("input", {
+        type: "text",
+        class: "board__test-input",
+        inputmode: "numeric",
+        pattern: "[0-9]*",
+        min: "1",
+        max: "28",
+        value: "1",
+        "aria-label": "Steps to move (1 to 28)",
+      }),
+      el("button", {
+        type: "button",
+        class: "btn btn--quiet board__test-move",
+        text: "Move",
+        onclick: () => {
+          const input = panel.querySelector(".board__test-input");
+          const steps = parseInt(input?.value || "", 10);
+          if (Number.isInteger(steps) && steps >= 1 && steps <= 28) {
+            closeTestPanel();
+            run({ type: "testRoll", steps });
+          }
+        },
+      }),
+      el("button", {
+        type: "button",
+        class: "btn btn--quiet board__test-back",
+        text: "Back",
+        onclick: closeTestPanel,
+      }),
+    ]);
+    centreArea.append(panel);
+  }
+
+  frame.openTestPanel = openTestPanel;
+  frame.closeTestPanel = closeTestPanel;
+
 
   const root = () => frame.closest(".board-screen") || document;
   const holder = () => frame.querySelector(".board__card");
@@ -467,7 +528,7 @@ export function board({
     // The die belongs to the board, not to one player: both phones watch the
     // same throw. Only the right to press it is the active seat's.
     const rollable =
-      game.phase === PHASE.AWAITING_ROLL && !reading && !busy && isMyTurn();
+      game.phase === PHASE.AWAITING_ROLL && !reading && !busy && isMyTurn() && !testPanelOpen;
     die?.setAttribute("tabindex", rollable ? "0" : "-1");
     die?.setAttribute("aria-hidden", String(!rollable));
     frame.dataset.rollable = rollable ? "true" : "false";
@@ -483,6 +544,7 @@ export function board({
     const wanted = [];
     if (cardUp) wanted.push("card");
     if (profileSeat !== null) wanted.push("profile");
+    if (testPanelOpen) wanted.push("test");
     for (const reason of middleOwners) {
       if (!wanted.includes(reason)) {
         middleOwners.delete(reason);
@@ -519,7 +581,7 @@ export function board({
     frame.dataset.die = dieVisible(game, {
       seat: mySeat,
       throwing: frame.dataset.throwing === "true",
-      card: cardUp,
+      card: cardUp || testPanelOpen,
       announcement: announce.covering(),
       profile: profileSeat !== null,
     })
@@ -874,6 +936,13 @@ export function board({
     for (const event of events) {
       switch (event.type) {
         case "moved": {
+          /* A test move skips the die tumble and hold delay. The coin starts
+             moving immediately with the normal hop animation. */
+          if (event.test) {
+            await pieces.walk(event.path, event.seat);
+            paintPhase();
+            break;
+          }
           /* THE DIE GOES FIRST.
              The coin does not move while the die is still tumbling. The die
              tumbles for DICE_ROLL_MS, the face is held for DICE_HOLD_MS - still,

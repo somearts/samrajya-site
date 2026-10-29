@@ -169,6 +169,19 @@ input {
   padding-top: 0.75rem;
 }
 
+/* The footer when it holds two buttons side by side (Test mode). */
+.stage__foot:has(.board-foot) {
+  display: block;
+}
+
+.board-foot {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
 /* ------------------------------------------------------------------- mark */
 
 .composition {

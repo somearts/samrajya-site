@@ -161,7 +161,8 @@ function buildActions() {
       state.errors = {};
       render();
 
-      const result = await session.create({ name: name.value, civ: state.draft.civ });
+      const testMode = new URLSearchParams(location.search).get("test") === "1";
+      const result = await session.create({ name: name.value, civ: state.draft.civ, testMode });
       state.busy = false;
       if (!result.ok) {
         state.error = result.error;
@@ -299,6 +300,11 @@ function buildActions() {
          another game cannot read them. */
       session.clearGameKeys(code);
       render();
+    },
+
+    openTestPanel: () => {
+      const frame = document.querySelector(".board");
+      frame?.openTestPanel?.();
     },
 
     /**

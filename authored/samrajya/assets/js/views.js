@@ -679,14 +679,34 @@ export function boardView(state, actions) {
     frame?.applySnapshot?.(snapshot);
   };
 
-  return {
-    body: el("div", { class: "board-screen" }, [roster, theBoard]),
-    foot: el("button", {
+  const isTestMode = state.room?.testMode === true;
+  const isActive = state.game?.active !== null && state.game?.active !== undefined && state.game?.active === state.room?.seat;
+  const isAwaitingRoll = state.game?.phase === "AWAITING_ROLL";
+  const testEnabled = isTestMode && isActive && isAwaitingRoll;
+
+  const foot = el("div", { class: "board-foot" }, [
+    el("button", {
       type: "button",
       class: "btn btn--quiet",
       text: "Leave the board",
       onclick: actions.leaveBoard,
     }),
+    isTestMode
+      ? el("button", {
+          type: "button",
+          class: `btn btn--quiet${testEnabled ? "" : " btn--disabled"}`,
+          text: "Test",
+          disabled: !testEnabled,
+          "aria-disabled": String(!testEnabled),
+          title: testEnabled ? "Open test move panel" : "Only available during your roll phase",
+          onclick: testEnabled ? actions.openTestPanel : undefined,
+        })
+      : null,
+  ]);
+
+  return {
+    body: el("div", { class: "board-screen" }, [roster, theBoard]),
+    foot,
     onMount: () => {
       // The board is the point of the screen, so the focus goes there rather
       // than to a button nobody asked for.

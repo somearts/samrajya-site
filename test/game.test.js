@@ -790,3 +790,79 @@ test("a refused action leaves the sequence number alone", () => {
   refuse(state, { type: "buy" });
   assert.equal(state.seq, before);
 });
+
+/* ------------------------------------------------------------- test mode */
+
+test("testRoll is rejected in a room without testMode", () => {
+  const state = game();
+  refuse(state, { type: "testRoll", steps: 5 }, "Test mode is not enabled for this game.");
+});
+
+test("testRoll is rejected for a non-active player", () => {
+  const state = createGame(PLAYERS, { testMode: true });
+  state.active = 1; // Smith's turn, Sam tries to test-roll
+  refuse(state, { type: "testRoll", steps: 5, seat: 0 }, "It is not your turn.");
+});
+
+test("testRoll is rejected outside the roll phase", () => {
+  const state = createGame(PLAYERS, { testMode: true });
+  state.phase = PHASE.DECISION;
+  refuse(state, { type: "testRoll", steps: 5 }, "The die waits until the visit is over.");
+});
+
+test("testRoll is rejected for steps outside 1 to 28", () => {
+  const state = createGame(PLAYERS, { testMode: true });
+  refuse(state, { type: "testRoll", steps: 0 }, "Test roll must be an integer from 1 to 28.");
+  refuse(state, { type: "testRoll", steps: 29 }, "Test roll must be an integer from 1 to 28.");
+  refuse(state, { type: "testRoll", steps: 3.5 }, "Test roll must be an integer from 1 to 28.");
+  refuse(state, { type: "testRoll" }, "Test roll must be an integer from 1 to 28.");
+});
+
+test("in a test room, testRoll produces the same events as a normal roll of the same value", () => {
+  // Normal roll of 3 (Ragnarok corner)
+  const normal = game();
+  const normalResult = take(normal, { type: "roll" }, face(3)).state;
+
+  // Test roll of 3
+  const testRoom = createGame(PLAYERS, { testMode: true });
+  const testResult = take(testRoom, { type: "testRoll", steps: 3 }).state;
+
+  // Same position, same phase, same landing
+  assert.equal(
+    testResult.pieces.find((p) => p.seat === 0).position,
+    normalResult.pieces.find((p) => p.seat === 0).position,
+    "same position",
+  );
+  assert.equal(testResult.phase, normalResult.phase, "same phase");
+  assert.equal(testResult.landing.id, normalResult.landing.id, "same landing");
+  assert.equal(testResult.landing.kind, normalResult.landing.kind, "same landing kind");
+
+  // Test events are marked
+  const testEvents = [];
+  applyAction(createGame(PLAYERS, { testMode: true }), { type: "testRoll", steps: 5 })
+    .events
+    .forEach((e) => testEvents.push(e));
+  const moved = testEvents.find((e) => e.type === "moved");
+  assert.equal(moved.test, true, "moved event is marked test: true");
+  const landed = testEvents.find((e) => e.type === "landed");
+  assert.equal(landed.test, true, "landed event is marked test: true");
+});
+
+test("testRoll moves to the correct index from Start", () => {
+  // From index 0, steps = target index
+  const state = createGame(PLAYERS, { testMode: true });
+  const result = take(state, { type: "testRoll", steps: 23 }).state; // Fight corner
+  assert.equal(result.pieces.find((p) => p.seat === 0).position, 23);
+  assert.equal(result.landing.id, "fight");
+  assert.equal(result.landing.kind, "fight");
+  assert.ok(result.fight, "Fight opens");
+});
+
+test("testRoll wraps past Start and earns orbit credit", () => {
+  // From index 25, steps 5 wraps to index 2 (25 + 5 = 30, 30 % 28 = 2)
+  const state = createGame(PLAYERS, { testMode: true });
+  state.pieces.find((p) => p.seat === 0).position = 25;
+  const result = take(state, { type: "testRoll", steps: 5 }).state;
+  assert.equal(result.pieces.find((p) => p.seat === 0).position, 2);
+  assert.ok(result.visit.redemption > 0, "orbit credit earned");
+});

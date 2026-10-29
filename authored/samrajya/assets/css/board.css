@@ -4324,3 +4324,61 @@ button.board__cell--corner:focus-visible {
   55%  { transform: translate(-50%, -50%) scaleY(1); opacity: 0.9; }
   100% { transform: translate(-50%, -50%) scaleY(1); opacity: 0.85; }
 }
+
+/* --------------------------------------------------------------- the test panel
+
+   A compact panel that replaces the die when Test mode is active. It lets the
+   active player type a step count and move the coin instantly. */
+
+.board__test-panel {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--cell) * 0.1);
+  z-index: 25;
+  background: var(--centre-ground);
+  border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+  border-radius: 12px;
+  padding: calc(var(--cell) * 0.2) calc(var(--cell) * 0.25);
+}
+
+.board__test-label {
+  font-size: max(10px, calc(var(--cell) * 0.12));
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 65%, transparent);
+}
+
+.board__test-input {
+  width: calc(var(--cell) * 1.2);
+  height: calc(var(--cell) * 0.5);
+  font-size: max(16px, calc(var(--cell) * 0.22));
+  text-align: center;
+  border: 1px solid color-mix(in srgb, var(--ink) 25%, transparent);
+  border-radius: 6px;
+  background: var(--cell-ground);
+  color: var(--ink);
+}
+
+.board__test-input:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+.board__test-move,
+.board__test-back {
+  min-height: calc(var(--cell) * 0.4);
+  padding: 0.3em 0.8em;
+  font-size: max(11px, calc(var(--cell) * 0.13));
+}
+
+/* The disabled state for the Test pill in the footer. */
+.btn--disabled {
+  opacity: 0.45;
+  pointer-events: none;
+  cursor: not-allowed;
+}

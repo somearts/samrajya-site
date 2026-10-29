@@ -128,7 +128,7 @@ export function pathFrom(from, steps, total = BOARD_SIZE) {
  * belong to the game, because they are facts about a turn rather than about an
  * economy.
  */
-export function createGame(players = [], { opening = STARTING_MONEY } = {}) {
+export function createGame(players = [], { opening = STARTING_MONEY, testMode = false } = {}) {
   const ledger = createLedger(players, { opening });
   return {
     ledger,
@@ -140,6 +140,7 @@ export function createGame(players = [], { opening = STARTING_MONEY } = {}) {
     })),
     phase: PHASE.AWAITING_ROLL,
     active: ledger.players[0]?.seat ?? null,
+    testMode,
     /* What the active player landed on, and what this visit has already done.
        Both are cleared when the turn ends. */
     landing: null,
@@ -243,6 +244,7 @@ function cloneGame(state) {
     lastRoll: state.lastRoll ? { ...state.lastRoll } : null,
     chest: state.chest ? { ...state.chest } : null,
     fight: state.fight ? { ...state.fight } : null,
+    testMode: state.testMode,
   };
 }
 
@@ -585,6 +587,177 @@ export function applyAction(state, action, rng = Math.random) {
          is what the client sends when the coin has stopped, and that is the
          step that opens the decision. A square that wants nothing goes to
          RESOLVING instead, so the highlight has its own moment. */
+      next.phase = PHASE.MOVING;
+      return { state: next, events };
+    }
+
+    /* ------------------------------------------------------------- testRoll */
+    case "testRoll": {
+      if (!state.testMode) {
+        return refused(state, action, "Test mode is not enabled for this game.");
+      }
+      if (state.phase !== PHASE.AWAITING_ROLL) {
+        return refused(state, action, "The die waits until the visit is over.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (!piece) return refused(state, action, "That seat has no piece.");
+
+      const steps = Number(action.steps);
+      if (!Number.isInteger(steps) || steps < 1 || steps > 28) {
+        return refused(state, action, "Test roll must be an integer from 1 to 28.");
+      }
+
+      const face = steps;
+      const from = piece.position;
+      const to = advance(from, face);
+      const cell = CELLS.find((entry) => entry.index === to) || CELLS[to];
+
+      /* Crossing Start EARNS the Redemption, but does not pay it yet. The
+         payment belongs to the end of the turn: a player who crosses Start and
+         then lands on a square still has a visit to finish, and a purse that
+         rose during the walk would be paying them in the middle of their own
+         move. The flag rides on the visit and `continue` pays it at TURN_END. */
+      const crossedStart = from > 0 && from + face >= BOARD_SIZE;
+
+      piece.position = to;
+      next.lastRoll = { seat: active, face, from, to, id: cell?.id || "", test: true };
+
+      next.landing = {
+        seat: active,
+        index: to,
+        id: cell?.id || "",
+        kind: "none",
+      };
+      next.chest = null;
+      next.visit = {
+        seat: active,
+        bought: false,
+        upgrades: 0,
+        drawn: null,
+        collected: false,
+        rent: 0,
+        paid: false,
+        short: 0,
+        /* What completing a lap is owed, paid when the turn is resolved. */
+        redemption: crossedStart ? REDEMPTION : 0,
+        /* Nexus only. */
+        prayed: false,
+        nexusDrawn: false,
+        nexusCard: null,
+        /* The player left the Nexus without praying or drawing. */
+        declined: false,
+      };
+      next.phase = PHASE.MOVING;
+
+      ok("moved", {
+        seat: active,
+        from,
+        to,
+        steps: face,
+        path: pathFrom(from, face),
+        face,
+        test: true,
+      });
+      ok("landed", {
+        seat: active,
+        index: to,
+        id: cell?.id || "",
+        name: cell?.name || "",
+        test: true,
+      });
+
+      /* What the square wants. A property is the only kind that can hold a
+         decision except Ragnarok; a corner or a silent chest goes straight on
+         to RESOLVING and the UI sweeps it away. */
+      if (cell?.type === "property" && isPriced(cell.id)) {
+        const owner = ownerOf(next.ledger, cell.id);
+
+        if (owner === null) {
+          next.landing.kind = "buy";
+        } else if (owner === active) {
+          next.landing.kind = "own";
+        } else {
+          next.landing.kind = "rent";
+          const verdict = payRent(next.ledger, cell.id, active);
+          next.visit.rent = verdict.rent || 0;
+          next.visit.paid = Boolean(verdict.paid);
+          next.visit.short = verdict.shortfall || 0;
+
+          recordEntry(next.ledger, {
+            turn: state.turn,
+            seat: active,
+            kind: "rent",
+            text: `Rent paid to ${nameOfSeat(next.ledger, owner)} · ${cell.name}`,
+            amount: -(verdict.amount || 0),
+          });
+          if ((verdict.amount || 0) > 0) {
+            recordEntry(next.ledger, {
+              turn: state.turn,
+              seat: owner,
+              kind: "rent",
+              text: `Rent received from ${nameOfSeat(next.ledger, active)} · ${cell.name}`,
+              amount: verdict.amount || 0,
+            });
+          }
+
+          if (verdict.shortfall > 0) {
+            ok("rentShort", {
+              id: cell.id,
+              from: active,
+              to: owner,
+              rent: verdict.rent || 0,
+              amount: verdict.amount || 0,
+              short: verdict.short || 0,
+              shortfall: verdict.shortfall || 0,
+              payer: verdict.payer,
+              holder: verdict.holder,
+              test: true,
+            });
+          } else {
+            ok("rentPaid", {
+              id: cell.id,
+              from: active,
+              to: owner,
+              amount: verdict.rent || 0,
+              payer: verdict.payer,
+              holder: verdict.holder,
+              rent: rentAt(next.ledger, cell.id),
+              test: true,
+            });
+          }
+        }
+      } else if (cell?.id === RAGNAROK.id || cell?.id === NEXUS.id) {
+        next.landing.kind = "chest";
+        next.chest = {
+          kind: cell.id === RAGNAROK.id ? "ragnarok" : "nexus",
+          playerId: active,
+          phase: "open",
+          startedAt: now(),
+          choice: null,
+          result: null,
+        };
+        ok("chestOpened", {
+          kind: next.chest.kind,
+          seat: active,
+          startedAt: next.chest.startedAt,
+          test: true,
+        });
+      } else if (cell?.id === FIGHT.id) {
+        next.landing.kind = "fight";
+        next.fight = {
+          playerId: active,
+          phase: "open",
+          selectedWeaponId: null,
+          armed: false,
+          targetId: null,
+          result: null,
+          startedAt: now(),
+        };
+        ok("fightOpened", { seat: active, startedAt: next.fight.startedAt, test: true });
+      } else {
+        next.landing.kind = "none";
+      }
+
       next.phase = PHASE.MOVING;
       return { state: next, events };
     }

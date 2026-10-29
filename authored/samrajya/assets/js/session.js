@@ -245,9 +245,9 @@ export class Session {
    * the same address, and lands on the room that is already there rather than
    * opening a second one.
    */
-  async create({ name, civ }) {
+  async create({ name, civ, testMode = false }) {
     const createKey = takeCreateKey();
-    const body = await this.#post("/rooms", { createKey, name, civ });
+    const body = await this.#post("/rooms", { createKey, name, civ, testMode });
     if (!body.ok) return body;
     this.roomId = body.data.roomId;
     this.setRoom(this.roomId);

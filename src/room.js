@@ -182,6 +182,7 @@ export class GameRoom {
     }
 
     const host = validateSeat(body?.name, body?.civ, "player 1");
+    const testMode = body?.testMode === true;
 
     this.room = {
       roomId: this.code,
@@ -189,6 +190,7 @@ export class GameRoom {
       createdAt: now,
       updatedAt: now,
       status: "LOBBY",
+      testMode,
       players: [seatFor(identity, host, "HOST", true), emptySeat()],
     };
     await this.#persist();
@@ -289,7 +291,7 @@ export class GameRoom {
       if (!this.room.players[1].joined) {
         return json({ error: "Waiting for the second player.", code: "WAITING" }, 409);
       }
-      this.room.game = createGame(this.room.players);
+      this.room.game = createGame(this.room.players, { testMode: this.room.testMode });
       this.room.status = "PLAYING";
       this.room.updatedAt = Date.now();
       await this.#persist();
@@ -541,6 +543,7 @@ export class GameRoom {
     // starting a new one is a button away.
     this.room = {
       ...raw,
+      testMode: raw.testMode === true,
       players: raw.players.map((p) => ({ ...p, civ: p.civ ?? null })),
       // The game is stored in its wire form (the ledger's Map as entries) so
       // what is persisted is exactly what a socket would have been sent.
@@ -563,6 +566,7 @@ export class GameRoom {
       roomId: this.room.roomId,
       status: this.room.status,
       seat: seat === -1 ? null : seat,
+      testMode: this.room.testMode === true,
       // The game, in its wire form, and the number of the last accepted action.
       // Null until the game has started; the client treats that as "waiting",
       // not as a failure.
