@@ -3862,15 +3862,41 @@ button.board__cell--corner:focus-visible {
    ================================================================= */
 
 .board__card[data-card-kind="fight"] {
-  /* THE WHOLE MIDDLE. The header tiles above and the ring around the
-     middle are still the board's; everything between them is the Fight.
-     The ceiling is the middle's own height, expressed in cells the way the
-     rest of the board is. */
+  /* THE WHOLE MIDDLE, DECLARED AS A RECTANGLE. The header tiles above and the
+     ring around the middle are still the board's; everything between them is
+     the Fight - the same eight-by-four rectangle the property decision uses.
+
+     The height has to be WRITTEN here; it cannot be left to the content. The
+     halves inside the card are laid out with `flex: 1 1 0` so that they SHARE
+     whatever height the field is given, and that is also the height they are
+     asked to contribute when the box is content-sized. A container whose height
+     comes from zero-based items is a container that measures its own items at
+     zero: the browser sizes the card from the field, the field sizes itself
+     from the halves, the halves contribute their flex base size - nothing - and
+     the weapon grid beneath them comes out zero pixels tall while the heading,
+     the foot and the Leave pill keep their intrinsic heights and make the card
+     look as though it had drawn. The weapon cards are not "too small to see":
+     their box was never given a height to be seen in.
+
+     So the rectangle is stated, the card fills it, the field takes what the
+     heading and the foot leave over, the halves split that between them, and
+     anything they outgrow scrolls inside the half that outgrew it. */
   left: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
   top: calc(var(--cell) + var(--hair) * 2 + var(--card-gap));
   width: calc(var(--cell) * 4 + var(--hair) * 3 - var(--card-gap) * 2);
+  height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
   max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
-  height: auto;
+}
+
+/* The card fills that rectangle, and says so in its own right. The property
+   decision's rules also match this card - it wears the same `.property-card`
+   class, and a holder left carrying `data-mode="decision"` from an earlier
+   square would hand it `height: auto` from three selectors up - so the Fight
+   names its height here, later and just as specifically, and the halves cannot
+   be handed a collapsed box by somebody else's rule. */
+.board__card[data-card-kind="fight"] .fight-card {
+  height: 100%;
+  gap: calc(var(--cell) * 0.12);
 }
 
 .fight-card {

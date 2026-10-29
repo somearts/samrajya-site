@@ -152,7 +152,7 @@ function fightHalf({ ledger, pieces, seat, viewerSeat, mine, fight }) {
             ? weaponFace({ weapon, ledger, seat, mine: legion, fight })
             : null;
         })
-      : el("p", { class: "fight-half__empty", text: "No weapons." }),
+      : el("p", { class: "fight-half__empty", text: "No weapons detected." }),
   ]);
 
   const half = el("section", {
