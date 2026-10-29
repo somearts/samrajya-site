@@ -366,7 +366,7 @@ export class GameRoom {
     // come from the server, except in the preview, where the end-to-end suite
     // may hand one over so a branch can be seen rather than waited for.
     const rng =
-      (action.type === "roll" || action.type === "drawWeapon") &&
+      (action.type === "roll" || action.type === "drawWeapon" || action.type === "drawTimeCard") &&
       this.env?.ALLOW_TEST_RNG === "1" &&
       typeof action.rng === "number"
         ? () => action.rng

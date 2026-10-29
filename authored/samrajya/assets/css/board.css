@@ -4436,3 +4436,266 @@ button.board__cell--corner:focus-visible {
   pointer-events: none;
   cursor: not-allowed;
 }
+
+
+/* ================================================================ the epoch
+
+   The threshold tile, from the state. Built on the Nexus card's bones: the
+   same figure-title-tagline-mythology spine, the same one action pinned to the
+   bottom, the same proportions and type. What is Epoch's own is the mark and
+   the cards - not the layout.
+
+   THE FIGURE
+   -----------
+   Where Nexus carries the god's picture, Epoch carries its own drawn mark: an
+   opened ring with the present held at its centre. It is inline SVG, so it
+   costs no request and cannot fail to load, and it stands down once the Time
+   Card is revealed so the card has the room to be read. */
+
+.epoch-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--cell) * 0.1);
+  height: 100%;
+  max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+  padding: calc(var(--cell) * 0.16) calc(var(--cell) * 0.2);
+  overflow: auto;
+  text-align: center;
+}
+
+.epoch-card::-webkit-scrollbar {
+  display: none;
+}
+
+.epoch-card__figure-wrap {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: calc(var(--cell) * 1.5);
+  color: var(--ink);
+}
+
+.epoch-card__figure {
+  display: grid;
+  place-items: center;
+}
+
+.epoch-card__mark {
+  display: block;
+}
+
+.epoch-card__title {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: max(13px, calc(var(--cell) * 0.185));
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+
+.epoch-card__tagline {
+  flex: 0 0 auto;
+  margin: 0;
+  max-width: 30ch;
+  text-align: center;
+  font-size: max(10px, calc(var(--cell) * 0.135));
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.epoch-card__mythology {
+  flex: 0 0 auto;
+  display: grid;
+  gap: 0.5em;
+  max-width: 34ch;
+  margin: 0;
+  overflow: hidden;
+  font-size: max(10px, calc(var(--cell) * 0.132));
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.epoch-card__mythology span {
+  display: block;
+}
+
+/* The deeper myth, folded shut by default so the action stays within reach on
+   a phone. It opens in place and scrolls with the card. */
+.epoch-card__more {
+  flex: 0 0 auto;
+  max-width: 34ch;
+  text-align: left;
+  font-size: max(9.4px, calc(var(--cell) * 0.124));
+  color: var(--ink-soft);
+}
+
+.epoch-card__more[open] .epoch-card__mythology--deep {
+  margin-top: 0.5em;
+}
+
+.epoch-card__more-summary {
+  cursor: pointer;
+  text-align: center;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  list-style: none;
+}
+
+.epoch-card__more-summary::-webkit-details-marker {
+  display: none;
+}
+
+.epoch-card__explain {
+  flex: 0 0 auto;
+  margin: 0;
+  max-width: 30ch;
+  font-size: max(10px, calc(var(--cell) * 0.132));
+  line-height: 1.4;
+  color: var(--ink);
+}
+
+/* The revealed Time Card. It takes the room the introduction gave up. */
+.epoch-card__result {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+
+.epoch-card__result[hidden] {
+  display: none;
+}
+
+.epoch-card__face {
+  display: grid;
+  gap: calc(var(--cell) * 0.06);
+  width: 100%;
+  max-width: 32ch;
+  padding: calc(var(--cell) * 0.14) calc(var(--cell) * 0.16);
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 10px;
+  background: var(--cell-ground);
+  text-align: center;
+  animation: epoch-reveal 260ms cubic-bezier(.22,.7,.3,1) both;
+}
+
+@keyframes epoch-reveal {
+  from { opacity: 0; transform: scale(.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.epoch-card__face-name {
+  font-size: max(12px, calc(var(--cell) * 0.16));
+  letter-spacing: 0.03em;
+  color: var(--ink);
+}
+
+.epoch-card__face-text {
+  margin: 0;
+  font-size: max(10px, calc(var(--cell) * 0.13));
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+/* The Future Sight preview: the one number the card has handed back. */
+.epoch-card__sight {
+  margin: 0;
+  font-size: max(11px, calc(var(--cell) * 0.15));
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+.epoch-card__outcome {
+  margin: 0;
+  font-size: max(10px, calc(var(--cell) * 0.128));
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.epoch-card__prompt {
+  margin: 0 0 calc(var(--cell) * 0.04);
+  font-size: max(10px, calc(var(--cell) * 0.13));
+  color: var(--ink);
+}
+
+.epoch-card__choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(var(--cell) * 0.08);
+  width: 100%;
+}
+
+/* The two futures, and the one action. Same pill shape and treatment as the
+   Nexus actions, so Epoch reads as the same game. */
+.epoch-card__draw,
+.epoch-card__continue,
+.epoch-card__choice {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: calc(var(--cell) * 0.08) calc(var(--cell) * 0.12);
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 0.35);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  transition: background 160ms ease-out, border-color 160ms ease-out, transform 160ms ease-out;
+}
+
+.epoch-card__draw:hover:not(:disabled),
+.epoch-card__continue:hover:not(:disabled),
+.epoch-card__choice:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.55);
+  border-color: rgb(18 17 16 / 0.28);
+  transform: translateY(-1px);
+}
+
+.epoch-card__draw:disabled,
+.epoch-card__continue:disabled {
+  cursor: default;
+  opacity: 0.42;
+  border-style: dashed;
+}
+
+.epoch-card__choice-name {
+  font-size: max(10px, calc(var(--cell) * 0.128));
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.epoch-card__choice-to {
+  font-size: max(9px, calc(var(--cell) * 0.108));
+  color: var(--ink-soft);
+}
+
+.epoch-card__actions {
+  flex: 0 0 auto;
+  display: grid;
+  gap: calc(var(--cell) * 0.07);
+  width: 100%;
+  margin-top: auto;
+  padding-top: calc(var(--cell) * 0.1);
+}
+
+.epoch-card__waiting {
+  flex: 0 0 auto;
+  margin: calc(var(--cell) * 0.1) 0 0;
+  font-size: max(9.4px, calc(var(--cell) * 0.12));
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 55%, var(--cell-ground));
+}
+
+/* A reader who asked for less motion gets the card, not the reveal. */
+@media (prefers-reduced-motion: reduce) {
+  .epoch-card__face {
+    animation: none;
+  }
+}

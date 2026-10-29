@@ -87,6 +87,7 @@ import {
   drawFightMarks,
   drawFightStage,
 } from "./fight-stage.js";
+import { drawEpochStage } from "./epoch-stage.js";
 
 /**
  * The four corners, and the mark each one carries.
@@ -831,6 +832,15 @@ export function board({
         await dismissCard();
       }
     }
+    if (game.epoch) {
+      openEpochStage();
+    } else if (epochStage) {
+      /* The Epoch visit is over: the middle is the board's again. */
+      epochStage = null;
+      if (holder()?.dataset.cardKind === "epoch") {
+        await dismissCard();
+      }
+    }
 
     // A property decision that has just been answered takes its card away. A
     // chest card closes itself, because it has a reveal to finish first.
@@ -906,6 +916,16 @@ export function board({
           fightStage = null;
           clearFightMarks(frame);
           if (holder()?.dataset.cardKind === "fight") {
+            await dismissCard();
+          }
+        }
+        /* Epoch, on the watching screen: the same shared card, drawn from the
+           same state, with the buttons not theirs to press. */
+        if (game.epoch) {
+          openEpochStage();
+        } else if (epochStage) {
+          epochStage = null;
+          if (holder()?.dataset.cardKind === "epoch") {
             await dismissCard();
           }
         }
@@ -991,6 +1011,23 @@ export function board({
           if (cell) {
             cell.classList.add("is-just-landed");
             setTimeout(() => cell.classList.remove("is-just-landed"), 420);
+          }
+          break;
+        }
+
+        case "epochMoved": {
+          /* A TIME CARD MOVED THE COIN. There was no throw, so there is no die
+             to tumble and no number to display: the coin simply walks the path
+             the card produced, forward or back, and the board repaints. If a
+             card moved without a dice roll, no fabricated throw is animated. */
+          await pieces.walk(event.path, event.seat);
+          paint({ animate: true });
+          const moved = cellAt(
+            ( CELLS.find((c) => c.index === event.to) || {}).id,
+          );
+          if (moved) {
+            moved.classList.add("is-just-landed");
+            setTimeout(() => moved.classList.remove("is-just-landed"), 420);
           }
           break;
         }
@@ -1624,6 +1661,57 @@ export function board({
     paintPhase();
   }
 
+  /* ------------------------------------------------------------- the epoch
+
+     The threshold, drawn from `game.epoch` the same way the chests and the
+     fight are. One shared screen, both devices the same, buttons only on the
+     player who landed. Nothing here decides what a card does - the server has
+     already applied the effect to the real state and ledger; this only draws
+     it. */
+  let epochStage = null;
+
+  /** Draw the Epoch card from the state, and wire its one action. */
+  function openEpochStage() {
+    const epoch = game?.epoch;
+    if (!epoch) return;
+
+    cardMode = isMyTurn() ? "decision" : "read";
+    reading = false;
+    cardKey = `epoch:${epoch.playerId}:${epoch.phase}:${epoch.startedAt || 0}`;
+
+    const mine = isMyTurn();
+    const stageKey = `epoch:${epoch.phase}:${epoch.cardId || ""}:${epoch.startedAt || 0}`;
+    const changed = epochStage !== stageKey;
+    epochStage = stageKey;
+    if (!changed && holder() && !holder().hidden) return;
+
+    const card = drawEpochStage(frame, epoch, {
+      mine,
+      ledger: game.ledger,
+      pieces: game.pieces,
+      viewerSeat: mySeat,
+      playerName: chestName(epoch.playerId),
+    });
+    if (!card) return;
+
+    /* Only the acting player's buttons are live: the server refuses anything
+       from anybody else, and a button that does nothing is worse than one that
+       is not there. Draw is the one action; it cannot be pressed twice because
+       the card leaves the "open" stage the moment the server answers. */
+    if (mine) {
+      card.querySelector('[data-action="draw"]')
+        ?.addEventListener("click", () => void run({ type: "drawTimeCard" }));
+      for (const btn of card.querySelectorAll('[data-action="choice"]')) {
+        btn.addEventListener("click", () =>
+          void run({ type: "epochChoice", option: btn.dataset.option }));
+      }
+      card.querySelector('[data-action="continue"]')
+        ?.addEventListener("click", () => void run({ type: "continue" }));
+    }
+
+    paintPhase();
+  }
+
   /** Ask the server to close the fight, once the board is free.
 
       The war has played to its end on this screen, and the turn ends only
@@ -1695,6 +1783,14 @@ export function board({
          reconnects, or that joined late, reads the same chest out of the
          same state and shows the same screen. Nobody has to refresh. */
       openChestStage();
+      return;
+    }
+
+    if (landing.kind === "epoch") {
+      /* EPOCH IS DRAWN FROM THE STATE, THE SAME WAY. `game.epoch` is the
+         truth; the buttons belong to the player who landed; a device that
+         reconnects or joins late draws the same middle. Nobody refreshes. */
+      openEpochStage();
       return;
     }
 
@@ -1971,6 +2067,9 @@ export function board({
   /* and the Fight is the same kind of fact: whatever stage it is in, it is
      on the screen without a refresh. */
   else if (game.fight) openFightStage();
+  /* and Epoch too: the threshold is a fact in the state, so a board that
+     loads mid-visit draws the same card without a refresh. */
+  else if (game.epoch) openEpochStage();
 
   return frame;
 }

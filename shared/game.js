@@ -76,10 +76,14 @@ import {
 } from "./ledger.js";
 import { FIGHT, isTargetProtected, validTargets } from "./fight.js";
 import { NEXUS, NEXUS_PRAY_COST, drawNexusCard } from "./nexus-cards.js";
+import { NO_EFFECT, NO_TARGET, drawTimeCard, timeCardById } from "./epoch-cards.js";
 import { CELLS } from "./spaces.js";
 import { BAD_LUCK, IMMUNE as IMMUNE_LIST, RAGNAROK, drawWeapon, weaponById } from "./weapons.js";
 
 export { MAX_UPGRADE, STARTING_MONEY };
+
+/** The Epoch tile, matched from the board's own data rather than retyped. */
+const EPOCH = CELLS.find((cell) => cell.id === "epoch") || null;
 
 /** The four phases a turn can be in, plus the two animation phases. */
 export const PHASE = Object.freeze({
@@ -177,6 +181,28 @@ export function createGame(players = [], { opening = STARTING_MONEY, testMode = 
        targetId  the colony the armed strike is aimed at (set at the strike)
        result    what the strike produced, once there has been one */
     fight: null,
+    /* The Epoch visit, or null. Like the chest and the fight it is a SHARED
+       screen: a fact about the game, so both devices draw the same middle from
+       it and neither needed to be told anything. The player who landed acts.
+
+       playerId  the seat that landed
+       phase     open -> revealed (-> choosing, for Alternate Timeline)
+       startedAt when it began, so both devices start any animation together
+       cardId    the Time Card that was drawn, once it has been
+       result    the resolution outcome, once the effect has been applied
+       rewindSteps / fracturePos  the genuine stored facts the two movement
+                 cards read, captured from the roll that landed here */
+    epoch: null,
+    /* Pending extra rolls, per seat. Temporal Loop grants one; Time Theft may
+       transfer one. Consumed by the next `roll` the seat takes. */
+    bonusRolls: { 0: 0, 1: 0 },
+    /* A Frozen Moment laid on a seat, per seat. One-shot: it cancels a pending
+       bonus roll, or nullifies the opponent's next bonus grant within their
+       following turn, and is always cleared by the end of that turn. */
+    frozen: { 0: false, 1: false },
+    /* A Future Sight reservation, per seat: the exact face the next roll must
+       produce. Consumed by that roll. */
+    futureSight: { 0: null, 1: null },
     /* Accepted actions, in order. Phase 2 numbers actions with this so a
        duplicate arriving over a socket can be ignored rather than replayed. */
     seq: 0,
@@ -244,6 +270,10 @@ function cloneGame(state) {
     lastRoll: state.lastRoll ? { ...state.lastRoll } : null,
     chest: state.chest ? { ...state.chest } : null,
     fight: state.fight ? { ...state.fight } : null,
+    epoch: state.epoch ? { ...state.epoch } : null,
+    bonusRolls: { ...(state.bonusRolls || { 0: 0, 1: 0 }) },
+    frozen: { ...(state.frozen || { 0: false, 1: false }) },
+    futureSight: { ...(state.futureSight || { 0: null, 1: null }) },
     testMode: state.testMode,
   };
 }
@@ -411,10 +441,28 @@ export function applyAction(state, action, rng = Math.random) {
       if (!piece) return refused(state, action, "That seat has no piece.");
 
       const drawn = Number(rng());
-      const face = 1 + Math.min(5, Math.floor((Number.isFinite(drawn) ? drawn : 0) * 6));
+      const rolledFace = 1 + Math.min(5, Math.floor((Number.isFinite(drawn) ? drawn : 0) * 6));
+      /* A FUTURE SIGHT reservation is the die now: the number was fixed when
+         the card was drawn and it is consumed exactly here, so the visual die,
+         the recorded roll and the movement can never disagree. Nothing else
+         may change it, and a reload keeps it because it lives in the state. */
+      const reserved = state.futureSight?.[active];
+      const face = Number.isInteger(reserved) ? reserved : rolledFace;
       const from = piece.position;
       const to = advance(from, face);
       const cell = CELLS.find((entry) => entry.index === to) || CELLS[to];
+
+      /* A roll taken with a bonus (Temporal Loop, or a roll Time Theft moved
+         here) is marked so the ledger and the history can tell it apart from
+         the ordinary turn roll. It is one ordinary roll; it cannot grant
+         another bonus through the same card, because the card is not re-drawn. */
+      const bonus = (state.bonusRolls?.[active] || 0) > 0;
+      if (Number.isInteger(reserved)) {
+        next.futureSight = { ...(state.futureSight || { 0: null, 1: null }), [active]: null };
+      }
+      if (bonus) {
+        next.bonusRolls = { ...(state.bonusRolls || { 0: 0, 1: 0 }), [active]: state.bonusRolls[active] - 1 };
+      }
 
       /* Crossing Start EARNS the Redemption, but does not pay it yet. The
          payment belongs to the end of the turn: a player who crosses Start and
@@ -424,7 +472,11 @@ export function applyAction(state, action, rng = Math.random) {
       const crossedStart = from > 0 && from + face >= BOARD_SIZE;
 
       piece.position = to;
-      next.lastRoll = { seat: active, face, from, to, id: cell?.id || "" };
+      next.lastRoll = {
+        seat: active, face, from, to, id: cell?.id || "",
+        ...(bonus ? { bonus: true } : {}),
+        ...(Number.isInteger(reserved) ? { reserved: "future-sight" } : {}),
+      };
 
       next.landing = {
         seat: active,
@@ -578,6 +630,27 @@ export function applyAction(state, action, rng = Math.random) {
           startedAt: now(),
         };
         ok("fightOpened", { seat: active, startedAt: next.fight.startedAt });
+      } else if (EPOCH && cell?.id === EPOCH.id) {
+        /* EPOCH OPENS HERE, IN THE STATE. The same shared screen as the two
+           chests and the fight: the fact lives in the state and every client
+           draws the middle from it. The player who landed acts; the other
+           watches read-only. The two facts the movement cards need - how far
+           the last throw went, and where the coin stood before it - are read
+           from the genuine `lastRoll`, never guessed. */
+        next.landing.kind = "epoch";
+        next.epoch = {
+          playerId: active,
+          phase: "open",
+          startedAt: now(),
+          cardId: null,
+          result: null,
+          /* The two facts the movement cards read: how far this throw went,
+             and where the coin stood before it. Both are the throw that just
+             landed here - the genuine values, never a guess. */
+          rewindSteps: face,
+          fracturePos: from,
+        };
+        ok("epochOpened", { seat: active, startedAt: next.epoch.startedAt });
       } else {
         next.landing.kind = "none";
       }
@@ -754,6 +827,18 @@ export function applyAction(state, action, rng = Math.random) {
           startedAt: now(),
         };
         ok("fightOpened", { seat: active, startedAt: next.fight.startedAt, test: true });
+      } else if (EPOCH && cell?.id === EPOCH.id) {
+        next.landing.kind = "epoch";
+        next.epoch = {
+          playerId: active,
+          phase: "open",
+          startedAt: now(),
+          cardId: null,
+          result: null,
+          rewindSteps: face,
+          fracturePos: from,
+        };
+        ok("epochOpened", { seat: active, startedAt: next.epoch.startedAt, test: true });
       } else {
         next.landing.kind = "none";
       }
@@ -1314,6 +1399,208 @@ export function applyAction(state, action, rng = Math.random) {
       return { state: next, events };
     }
 
+    /* ---------------------------------------------------------------- Epoch
+
+       Epoch is a shared screen, like the two chests and the fight. The player
+       who landed draws exactly one Time Card; the server picks it, applies its
+       effect to the real state, records it in the ledger, and both devices read
+       the outcome from `game.epoch`. Nothing here is decided by a browser.
+
+       EPOCH MOVEMENT IS POSITIONAL. A card that moves the coin changes only
+       the coin's square. It does not open a purchase, charge rent, upgrade, or
+       chain into another special tile - so a card can never strand a turn, buy
+       something by accident, or recurse. This is the explicit landing rule for
+       every Epoch movement card, and it is documented rather than silent. */
+    case "drawTimeCard": {
+      if (state.phase !== PHASE.DECISION || state.landing?.kind !== "epoch" || !state.epoch) {
+        return refused(state, action, "There is no Epoch here.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.epoch.phase !== "open") {
+        return refused(state, action, "A Time Card has already been drawn.");
+      }
+      if (!piece) return refused(state, action, "That seat has no piece.");
+
+      const card = drawTimeCard(rng);
+      const opponent = opponentOf(state, active);
+      const result = { card: card.id, name: card.name, text: card.text, outcome: "", outcomeKind: "" };
+
+      /* Resolve the effect against the real state. Every branch writes the same
+         `result`, so the client always has one outcome to show, and every state
+         change is made here and nowhere else. */
+      switch (card.effect) {
+        case "rewind": {
+          const steps = Number(state.epoch.rewindSteps);
+          if (!Number.isInteger(steps) || steps < 1) {
+            result.outcomeKind = NO_EFFECT;
+            result.outcome = "No completed throw to rewind by.";
+            break;
+          }
+          const from = piece.position;
+          const to = advance(from, -steps);
+          const path = pathFrom(from, -steps);
+          piece.position = to;
+          result.outcomeKind = "moved";
+          result.outcome = `Rewound ${steps} ${steps === 1 ? "space" : "spaces"}.`;
+          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Time Rewind · back ${steps} to ${CELLS.find((c) => c.index === to)?.name || to}`, amount: 0 });
+          ok("epochMoved", { seat: active, from, to, path, steps: -steps, backward: true });
+          break;
+        }
+        case "leap": {
+          const from = piece.position;
+          const to = advance(from, 3);
+          const path = pathFrom(from, 3);
+          piece.position = to;
+          result.outcomeKind = "moved";
+          result.outcome = `Leapt 3 spaces to ${CELLS.find((c) => c.index === to)?.name || to}.`;
+          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Time Leap · forward 3 to ${CELLS.find((c) => c.index === to)?.name || to}`, amount: 0 });
+          ok("epochMoved", { seat: active, from, to, path, steps: 3, backward: false });
+          break;
+        }
+        case "fracture": {
+          const target = Number(state.epoch.fracturePos);
+          if (!Number.isInteger(target)) {
+            result.outcomeKind = NO_EFFECT;
+            result.outcome = "No earlier moment to fracture back to.";
+            break;
+          }
+          const from = piece.position;
+          const to = advance(target, 0);
+          const path = pathFrom(from, to - from);
+          piece.position = to;
+          result.outcomeKind = "moved";
+          result.outcome = `Fractured back to ${CELLS.find((c) => c.index === to)?.name || to}.`;
+          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Time Fracture · back to ${CELLS.find((c) => c.index === to)?.name || to}`, amount: 0 });
+          ok("epochMoved", { seat: active, from, to, path, steps: to - from, backward: to < from });
+          break;
+        }
+        case "sight": {
+          const drawnSight = Number(rng());
+          const sightFace = 1 + Math.min(5, Math.floor((Number.isFinite(drawnSight) ? drawnSight : 0) * 6));
+          next.futureSight = { ...(state.futureSight || { 0: null, 1: null }), [active]: sightFace };
+          result.sight = sightFace;
+          result.outcomeKind = "sight";
+          result.outcome = `Your next throw is already decided: ${sightFace}.`;
+          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Future Sight · next throw is ${sightFace}`, amount: 0 });
+          break;
+        }
+        case "loop": {
+          /* A Frozen Moment on this seat eats the moment before it can grant:
+             the loop is drawn, and it does not repeat. The freeze is spent. */
+          if (state.frozen?.[active]) {
+            next.frozen = { ...(state.frozen || { 0: false, 1: false }), [active]: false };
+            result.outcomeKind = NO_EFFECT;
+            result.outcome = "Your moment is frozen; no bonus roll is granted.";
+            recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: "Temporal Loop · frozen, no bonus roll", amount: 0 });
+            break;
+          }
+          next.bonusRolls = { ...(state.bonusRolls || { 0: 0, 1: 0 }), [active]: (state.bonusRolls?.[active] || 0) + 1 };
+          result.outcomeKind = "loop";
+          result.outcome = "Time repeats. Roll once more.";
+          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: "Temporal Loop · one bonus roll", amount: 0 });
+          break;
+        }
+        case "freeze": {
+          if (!opponent) {
+            result.outcomeKind = NO_TARGET;
+            result.outcome = "No opponent to freeze.";
+            break;
+          }
+          /* One-time protection: the opponent's next earned advantage is held.
+             It is stored authoritatively and always cleared by the end of their
+             next turn, so it can never sit pending for ever. */
+          next.frozen = { ...(state.frozen || { 0: false, 1: false }), [opponent]: true };
+          if ((next.bonusRolls?.[opponent] || 0) > 0) {
+            next.bonusRolls = { ...next.bonusRolls, [opponent]: 0 };
+            result.outcomeKind = "freeze";
+            result.outcome = `${nameOfSeat(next.ledger, opponent)}'s held advantage is spent and lost.`;
+          } else {
+            result.outcomeKind = "freeze";
+            result.outcome = `${nameOfSeat(next.ledger, opponent)}'s next advantage is frozen.`;
+          }
+          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Frozen Moment · ${nameOfSeat(next.ledger, opponent)} frozen`, amount: 0 });
+          break;
+        }
+        case "theft": {
+          if (!opponent || (state.bonusRolls?.[opponent] || 0) < 1) {
+            result.outcomeKind = NO_TARGET;
+            result.outcome = "No unspent advantage to steal.";
+            recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: "Time Theft · no advantage to steal", amount: 0 });
+            break;
+          }
+          next.bonusRolls = {
+            ...(state.bonusRolls || { 0: 0, 1: 0 }),
+            [opponent]: state.bonusRolls[opponent] - 1,
+            [active]: (state.bonusRolls?.[active] || 0) + 1,
+          };
+          result.outcomeKind = "theft";
+          result.outcome = `Stole an advantage from ${nameOfSeat(next.ledger, opponent)}. Roll once more.`;
+          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Time Theft · stole a roll from ${nameOfSeat(next.ledger, opponent)}`, amount: 0 });
+          break;
+        }
+        case "timeline":
+        default: {
+          /* Alternate Timeline: the moment opens into two futures and waits for
+             a choice. Nothing moves yet; the coin stays where it is until the
+             player picks a direction. */
+          result.outcomeKind = "choose";
+          result.outcome = "Two futures open. Choose one.";
+          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: "Alternate Timeline · awaiting a choice", amount: 0 });
+          break;
+        }
+      }
+
+      next.epoch.cardId = card.id;
+      next.epoch.result = result;
+      next.epoch.phase = result.outcomeKind === "choose" ? "choosing" : "revealed";
+      next.phase = PHASE.DECISION;
+
+      recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Drew ${card.name}`, amount: 0 });
+      ok("timeCardDrawn", {
+        seat: active,
+        card: card.id,
+        name: card.name,
+        text: card.text,
+        result,
+        startedAt: state.epoch.startedAt,
+      });
+      return { state: next, events };
+    }
+
+    /* The chosen future of an Alternate Timeline. One press, validated, and the
+       unselected option has no effect at all. */
+    case "epochChoice": {
+      if (state.phase !== PHASE.DECISION || !state.epoch) {
+        return refused(state, action, "There is no Epoch here.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.epoch.phase !== "choosing") {
+        return refused(state, action, "There is no future to choose.");
+      }
+      const option = action.option === "backward" ? "backward" : "forward";
+      const steps = option === "forward" ? 2 : -2;
+      const from = piece.position;
+      const to = advance(from, steps);
+      const path = pathFrom(from, steps);
+      piece.position = to;
+
+      const result = { ...state.epoch.result, outcomeKind: "moved", option, outcome: `${option === "forward" ? "Advanced" : "Fell back"} 2 to ${CELLS.find((c) => c.index === to)?.name || to}.` };
+      next.epoch.result = result;
+      next.epoch.phase = "revealed";
+
+      recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Alternate Timeline · ${option} 2 to ${CELLS.find((c) => c.index === to)?.name || to}`, amount: 0 });
+      ok("epochMoved", { seat: active, from, to, path, steps, backward: steps < 0 });
+      ok("timeCardDrawn", {
+        seat: active,
+        card: state.epoch.cardId,
+        name: timeCardById(state.epoch.cardId)?.name || "",
+        text: timeCardById(state.epoch.cardId)?.text || "",
+        result,
+        startedAt: state.epoch.startedAt,
+      });
+      return { state: next, events };
+    }
+
     /* ------------------------------------------------------------ the chest is
        DONE. The acting player has finished with it - the weapon is collected,
        the card is turned over - and the visit is over. This is the only thing
@@ -1412,6 +1699,19 @@ export function applyAction(state, action, rng = Math.random) {
              turn ends through one of the two exits, or not at all. */
           return refused(state, action, "The fight is still open.");
         }
+        if (kind === "epoch") {
+          /* Epoch is closed by the acting player once the card has resolved.
+             A stray `continue` cannot walk out before the draw, and cannot
+             walk out while an Alternate Timeline is still waiting on a
+             choice - the effect must be settled before the turn carries on. */
+          if (!state.epoch || state.epoch.phase === "open") {
+            return refused(state, action, "Draw a Time Card first.");
+          }
+          if (state.epoch.phase === "choosing") {
+            return refused(state, action, "Choose a future first.");
+          }
+          next.epoch = null;
+        }
         next.phase = PHASE.TURN_END;
         return { state: next, events };
       }
@@ -1439,6 +1739,24 @@ export function applyAction(state, action, rng = Math.random) {
         return refused(state, action, "There is no turn to end.");
       }
 
+      /* A TEMPORAL LOOP OR A STOLEN MOMENT IS STILL WAITING. The turn does not
+         move on while the player holds an unspent bonus roll: the moment
+         repeats, and they throw again. The bonus is spent by the throw itself
+         (in `roll`), so this can only ever grant the rolls that are actually
+         owed - never an endless loop. A Frozen Moment on this seat has already
+         eaten the bonus at the moment it was drawn, so nothing is pending here
+         for a frozen player. */
+      if ((state.bonusRolls?.[state.active] || 0) > 0) {
+        next.phase = PHASE.AWAITING_ROLL;
+        next.landing = null;
+        next.visit = null;
+        next.chest = null;
+        next.fight = null;
+        next.epoch = null;
+        ok("bonusRollDue", { seat: state.active, remaining: state.bonusRolls[state.active] });
+        return { state: next, events };
+      }
+
       /* THE ONLY PLACE THE ACTIVE PLAYER MOVES. */
       const from = state.active;
       const to = seatAfter(state, from);
@@ -1462,6 +1780,11 @@ export function applyAction(state, action, rng = Math.random) {
          the middle at the same moment. */
       next.chest = null;
       next.fight = null;
+      next.epoch = null;
+      /* A Frozen Moment is one-shot and never pending for more than a single
+         turn: whatever it had not already consumed is released here, so a
+         frozen seat cannot be suppressed for ever. */
+      next.frozen = { ...(state.frozen || { 0: false, 1: false }), [from]: false };
       ok("turnChanged", {
         from,
         to,
