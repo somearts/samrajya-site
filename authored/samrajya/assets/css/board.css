@@ -4359,6 +4359,16 @@ button.board__cell--corner:focus-visible {
   overflow: hidden;
 }
 
+/* The holder is the popup's own viewport, and the room queries run against
+   IT rather than the window: its height is the eight-cell middle, which is
+   exactly the space the card has to fill - so the breathing below applies
+   on the phones and desks that actually have it, and never on the 360x640
+   baseline where every spare pixel is already spoken for. */
+.board__card[data-card-kind="hole"] {
+  container-type: size;
+  container-name: hole-popup;
+}
+
 .board__card[data-card-kind="hole"] .hole-card,
 .board__card[data-card-kind="hole-lore"] .hole-card {
   height: 100%;
@@ -4371,16 +4381,27 @@ button.board__cell--corner:focus-visible {
   min-height: 0;
   display: grid;
   gap: calc(var(--cell) * 0.032);
-  /* THE SPREAD: the centre zone now takes every spare pixel of the card's
-     height (see the card's rows), and its blocks are spaced EVENLY through
-     it - identity, myth, Protocol, vessel each given its own air - instead
-     of being piled against the header with the surplus pooling at the foot.
-     At the smallest board there is no surplus and this behaves like a plain
-     start, so the fit never changes. */
-  align-content: space-evenly;
+  /* THREE GROUPS, NOT SIX BLOCKS: the centre zone holds the introduction,
+     the Protocol and the vessel, and the spare height goes BETWEEN those
+     groups - so the introduction sits snug under the title (the title, its
+     emblem, the epithet and the myth read as one opening) and the vessel
+     finishes against the footer, with no uniform scatter and no dead pool
+     at either end. At the smallest board there is no spare height and the
+     gaps fall back to the row gap, so the fit never changes. */
+  align-content: space-between;
   justify-items: center;
   width: 100%;
   overflow: hidden;
+}
+
+/* THE INTRODUCTION AS ONE SECTION: emblem close under the title, epithet
+   close under the emblem, myth close under that - deliberately tight inside
+   the group, in contrast to the section spacing around it. */
+.hole-card__intro {
+  display: grid;
+  justify-items: center;
+  gap: calc(var(--cell) * 0.048);
+  width: 100%;
 }
 
 /* THE EMBLEM: a coin-sized mark under the title and over the epithet -
@@ -4393,7 +4414,7 @@ button.board__cell--corner:focus-visible {
 
 .hole-card__emblem-svg {
   display: block;
-  width: max(22px, calc(var(--cell) * 0.5));
+  width: max(26px, calc(var(--cell) * 0.62));
   height: auto;
   color: var(--ink);
 }
@@ -4444,8 +4465,41 @@ button.board__cell--corner:focus-visible {
   display: grid;
   gap: 0.3em;
   margin-block: 0;
-  padding-top: calc(var(--cell) * 0.03);
+  padding-top: calc(var(--cell) * 0.026);
   border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--cell-ground));
+}
+
+/* ROOM TO BREATHE, ONLY WHERE THERE IS ROOM.
+
+   The centre's spare height (near zero on a 360x640 phone, large on a
+   tall screen) is distributed BETWEEN the three groups by the body's
+   space-between. Where the popup's own viewport holds generous air - a
+   holder over 470px, i.e. bigger than the 1000x700 laptop's - some of
+   that air is deliberately spent INSIDE the groups: a wider intro, deeper
+   section padding, more space around the caption, number and bar, and real
+   foot room above the presses - so the section breaks land as a measured
+   editorial rhythm rather than as two large empty bands. Below 470 it
+   never applies, and the baseline phone is untouched. */
+@container hole-popup (min-height: 470px) {
+  .hole-card__intro {
+    gap: calc(var(--cell) * 0.11);
+  }
+  .hole-card__section {
+    gap: 0.5em;
+    padding-top: calc(var(--cell) * 0.12);
+  }
+  .hole-card__caption {
+    margin-top: calc(var(--cell) * 0.08);
+  }
+  .hole-card__meter-head {
+    margin-top: calc(var(--cell) * 0.055);
+  }
+  .hole-card__meter {
+    margin-top: calc(var(--cell) * 0.055);
+  }
+  .hole-card__footer {
+    padding-top: calc(var(--cell) * 0.5);
+  }
 }
 
 .hole-card__section-name {
@@ -4466,7 +4520,7 @@ button.board__cell--corner:focus-visible {
 .hole-card__notice {
   margin-block: 0;
   font-size: max(8.6px, calc(var(--cell) * 0.112));
-  line-height: 1.3;
+  line-height: 1.26;
   color: color-mix(in srgb, var(--ink) 62%, var(--cell-ground));
   text-align: center;
 }
@@ -4482,7 +4536,9 @@ button.board__cell--corner:focus-visible {
 
 .hole-card__figure-label {
   font-size: max(9px, calc(var(--cell) * 0.12));
-  letter-spacing: 0.16em;
+  /* Tighter tracking so the figure and the Event-Horizon note share ONE
+     line at the baseline phone instead of wrapping to two. */
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--ink-soft);
   margin-right: 0.35em;
@@ -4572,15 +4628,21 @@ button.board__cell--corner:focus-visible {
   margin-top: calc(var(--cell) * 0.015);
 }
 
-/* THE BAR READS AS A BAR: real height, fully rounded ends, a quiet track
-   against a solid gold fill - still the panel's own minimal vocabulary,
-   just no longer a hairline that could be mistaken for a divider. */
+/* THE BAR READS AS A BAR - AND READS AS EMPTY ON PURPOSE.
+
+   A defined shape (real height, fully rounded, a hairline edge against a
+   quiet track) so the zero state is an intentional, framed meter rather
+   than a stray grey line: at zero the only colour is the gold ORIGIN CAP
+   at the track's left edge, saying "start here". The fill then covers that
+   cap as it grows, so the bar never invents progress it does not have. */
 .hole-card__meter {
   height: max(7px, calc(var(--cell) * 0.105));
   margin-top: calc(var(--cell) * 0.02);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--ink) 11%, var(--cell-ground));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 7%, transparent);
+  background: color-mix(in srgb, var(--ink) 13%, var(--cell-ground));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ink) 8%, transparent),
+    inset 2px 0 0 color-mix(in srgb, var(--accent, #c9a24a) 78%, var(--ink));
   overflow: hidden;
 }
 
@@ -4603,23 +4665,23 @@ button.board__cell--corner:focus-visible {
 }
 
 .hole-card__entropy {
-  font-size: max(13px, calc(var(--cell) * 0.2));
+  font-size: max(12px, calc(var(--cell) * 0.19));
   font-weight: 500;
 }
 
 .hole-card__of,
 .hole-card__threshold {
-  font-size: max(10px, calc(var(--cell) * 0.14));
+  font-size: max(9.4px, calc(var(--cell) * 0.13));
   color: var(--ink-soft);
 }
 
+/* The Event-Horizon note shares the figure's line at the baseline phone:
+   kept tight and small so the pair can never wrap to a second row. */
 .hole-card__held {
   margin: 0;
   white-space: nowrap;
-  font-size: max(8.4px, calc(var(--cell) * 0.106));
-  letter-spacing: 0.02em;
-  /* Gold drawn towards the ink, so the note reads as gold and still reads
-     as words on the paper ground. */
+  font-size: max(8px, calc(var(--cell) * 0.1));
+  letter-spacing: 0;
   color: color-mix(in srgb, var(--accent, #c9a24a) 62%, var(--ink));
 }
 

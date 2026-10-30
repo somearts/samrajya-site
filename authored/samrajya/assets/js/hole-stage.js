@@ -108,15 +108,16 @@ const NOTICE_BUILD =
 const NOTICE_ESCAPE =
   "ESCAPE NEXT TURN commits you: your next roll moves you, and the singularity lets you go.";
 
-/* THE EMBLEM: a singularity as a mark, not an illustration. The dark core,
-   the fine event-horizon ring, and one restrained orbit crossing behind -
-   three elements, one stroke weight, sized like a coin. The ink follows the
+/* THE EMBLEM: a singularity as a mark, not an illustration - the dark
+   core, the fine event-horizon ring, and one restrained orbit crossing
+   behind it. Three elements, one deliberate stroke, sized to sit under the
+   title like a logo rather than float beneath it. The ink follows the
    card's own text colour; the orbit takes the panel's gold. */
 const EMBLEM_SVG =
-  '<svg viewBox="0 0 52 34" class="hole-card__emblem-svg" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
-  '<ellipse cx="26" cy="17" rx="22" ry="8.5" transform="rotate(-13 26 17)" fill="none" stroke="var(--accent, #c9a24a)" stroke-width="1.1" opacity="0.75"/>' +
-  '<circle cx="26" cy="17" r="9.5" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
-  '<circle cx="26" cy="17" r="3.8" fill="currentColor"/>' +
+  '<svg viewBox="0 0 56 34" class="hole-card__emblem-svg" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
+  '<ellipse cx="28" cy="17" rx="24" ry="9" transform="rotate(-12 28 17)" fill="none" stroke="var(--accent, #c9a24a)" stroke-width="1.2" stroke-linecap="round" opacity="0.85"/>' +
+  '<circle cx="28" cy="17" r="10" fill="none" stroke="currentColor" stroke-width="1.5"/>' +
+  '<circle cx="28" cy="17" r="4.2" fill="currentColor"/>' +
   "</svg>";
 
 /* ------------------------------------------------------------- the veil */
@@ -291,17 +292,24 @@ export function drawHoleStage(board, hole, {
       text: "\u00d7",
     }),
 
-    /* ZONE 2 - the centre: the emblem and epithet, the myth, the Protocol
-       with its caption and meter inside it, the vessel with its price. One
-       screen's worth, spread across the zone rather than piled at its top. */
+    /* ZONE 2 - the centre: ONE introduction (title's emblem, epithet, myth),
+       then the Protocol with its caption and meter inside it, then the
+       vessel with its price - three groups, spaced as sections rather than
+       as six separate blocks. */
     el("div", { class: "hole-card__body" }, [
-      /* THE EMBLEM, BETWEEN TITLE AND SUBTITLE: a singularity as its own
-         mark - the dark core, the fine event-horizon ring around it, and a
-         single restrained orbit crossing behind. Drawn in one stroke weight,
-         the size of a coin: identity, not illustration. */
-      el("div", { class: "hole-card__emblem", "aria-hidden": "true", html: EMBLEM_SVG }),
-      el("p", { class: "hole-lore__subtitle", text: ACTIVE_SUBTITLE }),
-      el("p", { class: "hole-card__prose", text: ACTIVE_LORE }),
+      /* THE INTRODUCTION, AS ONE UNIFIED SECTION: the emblem sits close
+         under the title, the epithet right beneath the emblem, the myth
+         right beneath that - four elements that read as a single opening
+         rather than four floating parts. */
+      el("div", { class: "hole-card__intro" }, [
+        /* THE EMBLEM: a singularity as its own mark - the dark core, the
+           fine event-horizon ring, and one restrained orbit crossing
+           behind. Drawn in one stroke weight, the width of the title: a
+           logo, not an illustration. */
+        el("div", { class: "hole-card__emblem", "aria-hidden": "true", html: EMBLEM_SVG }),
+        el("p", { class: "hole-lore__subtitle", text: ACTIVE_SUBTITLE }),
+        el("p", { class: "hole-card__prose", text: ACTIVE_LORE }),
+      ]),
       section("Entropy protocol", [
         ACTIVE_PROTOCOL,
         /* THE CAPTION UNDER THE EXPLANATION: the quiet line that says what
