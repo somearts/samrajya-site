@@ -304,61 +304,88 @@ export function clearWeapons(root, seatIndex) {
   return holder;
 }
 
+/* ---------------------------------------------------------- the tile mark */
+
 /**
- * The KRONOS shields standing for a seat, beside that seat's weapon dots.
+ * The KRONOS SHIELD, ON THE COLONY IT PROTECTS.
  *
- * THE SAME ROW AS THE WEAPONS, AND FOR THE SAME REASON: the chip's grid gives
- * the carried things exactly one cell, and a shield is a carried thing - it
- * stands between a weapon and its owner, so the two are read side by side.
- * The paint order does the rest: the weapon dots are redrawn first and these
- * are laid after them, so the marks can never end up under a replaced row.
+ * A shield is never stored, so a chip dot would lie about it: what exists
+ * is a COLONY being protected, and this is where that is shown - a small
+ * shield glyph in the shield's own colour, in the tile's free corner, with
+ * the owner's remaining turns inside it. It is drawn purely from
+ * `game.shields` on every repaint, so both screens carry it, an expiry or a
+ * block removes it on the same repaint everywhere, and nothing stale can
+ * outlive its protection.
  *
- * One mark per shield - a dot in the shield's own colour with the number of
- * its OWNER's turns left beside it, which is the whole of the shield's status
- * in the smallest space the board has. At most three can stand (one per
- * weapon), so nothing here can overflow, and the full sentence is on the
- * mark's title for anyone who wants it.
+ * The three weapons' target lists are disjoint, so a colony carries at most
+ * one shield. The glyph PULSES once when it first appears - the moment of
+ * deployment - and only then; the key set remembers what has already
+ * pulsed, and forgets it when the shield is gone, so a later deployment on
+ * the same tile speaks again.
  */
-export function renderShields(root, seatIndex, shields = []) {
-  const chip = root.querySelectorAll(".who")[seatIndex];
-  if (!chip) return null;
+const pulsedTiles = new Set();
 
-  // Cleared first: a shield that has blocked or expired is gone from the
-  // state, and its mark goes with the next paint rather than lingering.
-  for (const stale of chip.querySelectorAll(".who__shield")) stale.remove();
-  if (!shields.length) return null;
-
-  const host = chip.querySelector(".who__weapons") || chip;
-  host.append(
-    ...shields.map((shield) => {
-      const data = shieldById(shield.id);
-      const stops = weaponById(data?.counters)?.name || "";
-      const turns = Math.max(0, Number(shield.turnsLeft) || 0);
-      return el("span", {
-        class: "who__shield",
-        "data-shield": shield.id,
-        "data-turns": String(turns),
-        title: stops
-          ? `${data?.name || shield.id} - stops the ${stops} - ${turns} turn${turns === 1 ? "" : "s"} left`
-          : `${data?.name || shield.id} - ${turns} turn${turns === 1 ? "" : "s"} left`,
-        "aria-hidden": "true",
-      }, [
-        el("span", {
-          class: "who__shield-dot",
-          style: { "--shield": shieldColor(shield.id) },
-        }),
-        el("span", { class: "who__shield-turns", text: String(turns) }),
-      ]);
-    }),
+/** The glyph: a heraldic outline with the remaining turns inside it. */
+function shieldGlyph(colour, turns) {
+  return (
+    '<svg viewBox="0 0 14 16" class="cell-shield__svg" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true">' +
+    `<path d="M7 1 L12.5 3 v4.5 c0 3.6 -2.6 5.9 -5.5 7 -2.9 -1.1 -5.5 -3.4 -5.5 -7 V3 Z" fill="var(--cell-ground)" stroke="${colour}" stroke-width="1.4" stroke-linejoin="round"/>` +
+    `<text x="7" y="9.8" text-anchor="middle" font-size="6.2" font-weight="600" fill="${colour}" font-family="Jost, sans-serif">${turns}</text>` +
+    "</svg>"
   );
-  return host;
 }
 
-/** Clear a seat's shield marks. Used by a new game. */
-export function clearShields(root, seatIndex) {
-  const chip = root.querySelectorAll(".who")[seatIndex];
-  if (!chip) return;
-  for (const stale of chip.querySelectorAll(".who__shield")) stale.remove();
+export function renderShieldTiles(board, shields = []) {
+  const byColony = new Map();
+  for (const shield of shields) {
+    if (!shield.colony) continue; // a shield that stands nowhere shows nowhere
+    const list = byColony.get(shield.colony) || [];
+    list.push(shield);
+    byColony.set(shield.colony, list);
+  }
+
+  // A mark whose shield has blocked or expired goes with this repaint.
+  for (const stale of board.querySelectorAll(".cell-shield")) {
+    const id = stale.closest(".board__cell")?.dataset?.id;
+    if (!id || !byColony.has(id)) stale.remove();
+  }
+
+  const standing = new Set();
+  for (const [colonyId, list] of byColony) {
+    const cell = board.querySelector(`.board__cell[data-id="${colonyId}"]`);
+    if (!cell) continue;
+    standing.add(colonyId);
+    const shield = list[0];
+    const key = `${shield.id}@${colonyId}`;
+    let mark = cell.querySelector(".cell-shield");
+    if (!mark) {
+      mark = el("span", { class: "cell-shield", "aria-hidden": "true" });
+      cell.append(mark);
+    }
+    mark.title = `${shieldById(shield.id)?.name || shield.id} protects this colony`;
+    const turns = Math.max(0, Number(shield.turnsLeft) || 0);
+    const glyph = shieldGlyph(shieldColor(shield.id), turns);
+    if (mark.dataset.glyph !== glyph) {
+      mark.innerHTML = glyph;
+      mark.dataset.glyph = glyph;
+    }
+    if (!pulsedTiles.has(key)) {
+      pulsedTiles.add(key);
+      // One restrained pulse at the moment of deployment, never again on a
+      // plain repaint.
+      mark.classList.remove("is-new");
+      void mark.offsetHeight;
+      mark.classList.add("is-new");
+    }
+  }
+
+  // Forget what no longer stands, so a later deployment on that tile pulses.
+  for (const key of [...pulsedTiles]) {
+    const colonyId = key.split("@")[1];
+    if (!standing.has(colonyId) || !shields.some((s) => `${s.id}@${s.colony}` === key)) {
+      pulsedTiles.delete(key);
+    }
+  }
 }
 
 /* -------------------------------------------------------------- the flow */

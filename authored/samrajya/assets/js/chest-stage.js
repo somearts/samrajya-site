@@ -238,20 +238,68 @@ function ragnarokCard({ drawable, phase, caption }) {
   return card;
 }
 
+/* THE DEPLOYMENT EXPLANATION - shown under the revealed card, in the same
+   popup. The three facts it leans on are the data's own: a shield counters
+   exactly one weapon, it stands for two of its owner's turns, and it is
+   spent on the block it makes. */
+const HOW_TO_DEPLOY =
+  "This shield must be assigned to a compatible colony. Tap COLLECT to reveal your protected colonies, then select a highlighted colony to activate the shield. Once deployed, the shield protects that colony against its designated weapon for its full duration.";
+
 /**
- * The chest of shields: three faces, one per shield, and a draw.
+ * THE ONE PILLOW, EVERY STATE.
  *
- * THE SAME CARD AS RAGNAROK'S, WEARING ITS OWN DATA. The same shell, the same
- * three faces, the same shuffle and the same separate reveal - so nothing here
- * is a second card architecture to keep in step with the first. What is its
- * own is what the faces hold: the three shields, each in the shield's own
- * colour with the EMBLEM of the one weapon it answers, and that weapon named
- * under the shield's name so the counter is read rather than guessed.
+ * The same button the DRAW pill was built as, told what it is at each stage:
+ * DRAW while open; a greyed DRAW through the shuffle (the card may already
+ * be in its reveal stage while the shuffle runs, so the shuffle itself is
+ * remembered on the card); COLLECT the moment the face is up; "Select a
+ * colony" while the board is offering one; and gone for good once the shield
+ * stands. `mine` comes from the card, so the stage can re-sync it after the
+ * shuffle without knowing anything except the state.
+ */
+function syncDrawButton(card, chest) {
+  const btn = card.querySelector('[data-action="draw"]');
+  if (!btn) return;
+  const mine = card.dataset.mine === "true";
+  const phase = chest.phase;
+  const none = Boolean(chest.result?.none);
+  const faceShown = card.dataset.faceShown === "true";
+
+  let label = "Draw";
+  let disabled = !mine;
+  if (phase === "drawing" || (phase === "revealed" && !none && !faceShown)) {
+    disabled = true; // visibly greyed through the shuffle, never hidden
+  } else if (phase === "revealed") {
+    if (none) disabled = true;
+    else label = "Collect";
+  } else if (phase === "targeting") {
+    label = "Select a colony";
+    disabled = true;
+  } else if (phase === "deployed") {
+    btn.style.display = "none"; // Done is the only press left
+    return;
+  }
+
+  btn.style.display = "";
+  btn.textContent = label;
+  btn.disabled = disabled;
+  btn.setAttribute("aria-disabled", String(disabled));
+}
+
+/**
+ * The chest of shields: three faces, one draw, and a deployment.
  *
- * THERE IS NO COLLECT PILL. A shield deploys the moment it is drawn - it is
- * already standing before the face turns over - so a press that would only
- * confirm what has already happened is not offered. The visit's last press is
- * Done, appended by the board the same way Nexus's is.
+ * THE SAME CARD AS RAGNAROK'S, WEARING ITS OWN DATA - the same shell, the
+ * same three faces, the same shuffle - but its own little story: DRAW
+ * shuffles and reveals one shield in THIS popup; the card then explains
+ * itself (how to deploy, which weapon it counters, how long it stands);
+ * and the draw pill becomes COLLECT, which - with the board - highlights
+ * the colonies the shield can legally stand on. Nothing here opens a
+ * second screen, and nothing deploys at the draw: the shield exists only
+ * once a highlighted colony is tapped.
+ *
+ * The pill's label and availability are owned by `syncDrawButton`, which
+ * the stage calls for every state - DRAW while open, greyed DRAW during
+ * the shuffle, COLLECT once revealed, "Select a colony" while picking.
  */
 function kronosCard({ drawable, phase, caption }) {
   const slot = (shield, index) => {
@@ -580,6 +628,15 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
   } else {
     card.dataset.phase = chest.phase;
   }
+  /* KRONOS'S PILL FOLLOWS ITS PHASE: the kept card's button must become
+     COLLECT when the card is revealed and grey itself through the shuffle -
+     ragnarok's pill is hidden by the stylesheet at those stages and is
+     untouched here. `mine` rides on the card so the stage can re-sync after
+     the shuffle by itself. */
+  if (chest.kind === "kronos") {
+    card.dataset.mine = String(mine);
+    syncDrawButton(card, chest);
+  }
   holder.hidden = false;
 
   /* The buttons. They are wired to the actions, and the server decides what
@@ -860,86 +917,105 @@ export async function playKronosStage(board, chest) {
   const shield = chest.result?.shield ? shieldById(chest.result.shield) : null;
   const slots = [...card.querySelectorAll(".chest-card__slot")];
 
-  if (chest.phase !== "revealed") return card;
+  if (chest.phase === "open") return card;
 
-  /* THE SHUFFLE, ONCE PER CARD. The answer was decided when the button was
-     pressed; nothing about it is SHOWN until these three seconds are over.
-     The flag keeps the entrance to one run per card even if a repaint asks
-     again, and a card that is drawn fresh (a reload, a late join) plays it
-     in full. */
+  /* THE SHUFFLE - STAGE A, INSIDE THIS POPUP. The answer was decided when
+     the button was pressed; nothing about it is SHOWN until these three
+     seconds are over, and the pill stays a greyed DRAW while they run (the
+     stage calls syncDrawButton the moment the face is up). The flag keeps
+     the entrance to one run per card even if a repaint asks again. */
   if (!card.dataset.shuffled) {
     card.dataset.shuffled = "true";
     await shuffleFaces(card);
   }
 
-  /* THE REVEAL, AND NOTHING AFTER IT. One face turns over and keeps its
-     answer; the other two step aside. The card is stable from here until
-     Done closes the chest. */
+  /* THE FACE TURNS OVER - STAGE B. Idempotent: the reveal runs again harmlessly
+     on the targeting and deployed stages, so a card that is redrawn for any
+     of them keeps its face. The title is the card's whole description - the
+     weapon, the rules and the duration are the information area's job. */
   const chosenIndex = Number(chest.result?.slot ?? 1);
   const chosen = slots[chosenIndex] || slots[1] || slots[0];
   for (const slot of slots) {
     if (!none && shield && slot === chosen) {
-      /* The face that turns over shows the shield that was drawn, in the
-         shield's own colour, with the emblem of the weapon it answers. */
       slot.dataset.shield = shield.id;
       slot.style.setProperty("--weapon", shieldColor(shield.id));
       slot.classList.add("is-drawn");
       const face = slot.querySelector(".chest-card__face");
       if (face) face.innerHTML = emblem(shield, shieldColor(shield.id));
       const name = slot.querySelector(".chest-card__slot-name");
-      if (name) {
-        /* Filtered, for the reason the weapon card's own copy is: a trailing
-           null is not a Node, and replaceChildren would refuse it. */
-        name.replaceChildren(
-          ...[
-            el("span", { text: shield.name }),
-            weaponById(shield.counters)
-              ? el("span", {
-                  class: "chest-card__slot-stops",
-                  text: `Stops ${weaponById(shield.counters).name}`,
-                })
-              : null,
-          ].filter(Boolean),
-        );
-      }
+      if (name) name.replaceChildren(el("span", { text: shield.name }));
       const pill = slot.querySelector(".chest-card__pill");
       if (pill) pill.style.removeProperty("background");
     } else {
       slot.hidden = true;
     }
   }
+  if (!card.dataset.faceShown) {
+    card.dataset.faceShown = "true";
+    /* The pill becomes COLLECT exactly here - the moment the card is
+       readable - never during the shuffle and never before. */
+    syncDrawButton(card, chest);
+  }
+
+  /* STAGE C - THE INFORMATION AREA beneath the card: the whole explanation,
+     the targeting prompt, the decline, or the deployment confirmation - all
+     inside this popup, all derived from the state. */
   if (result) {
     result.hidden = false;
-    /* THE REVEALED SHIELD, IN FULL: its name, what it is, the one weapon it
-       stops, and the two owned turns it stands for. Everything the player
-       needs to know about what just happened is on the card they are
-       already reading - no second screen, no splash. */
-    const stops = shield ? weaponById(shield.counters)?.name : "";
-    result.replaceChildren(
-      ...[
-        el("p", {
-          class: "chest-card__drew",
-          text: none
-            ? KRONOS_CHEST.badLuck
-            : `You drew the ${shield?.name || "shield"}.`,
-        }),
-        !none && shield?.blurb
-          ? el("p", { class: "chest-card__weapon-blurb", text: shield.blurb })
-          : null,
-        stops
-          ? el("p", { class: "chest-card__weapon-targets", text: `Stops: ${stops}` })
-          : null,
-        !none
-          ? el("p", {
-              class: "chest-card__weapon-targets",
-              text: "Deployed now. Stands for two of your turns.",
-            })
-          : null,
-      ].filter(Boolean),
-    );
+    result.replaceChildren(...shieldInfo(chest, shield));
   }
 
   return card;
+}
+
+/** What the area under the revealed card says, at each stage. */
+function shieldInfo(chest, shield) {
+  const none = Boolean(chest.result?.none);
+  if (chest.phase === "deployed") {
+    const colony = CELLS.find((c) => c.id === chest.result?.colony)?.name || "its colony";
+    const weapon = shield ? weaponById(shield.counters) : null;
+    return [
+      el("p", { class: "chest-card__drew", text: "Shield deployed" }),
+      el("p", {
+        class: "chest-card__weapon-blurb",
+        text: `${shield?.name || "The shield"} now protects ${colony} against the ${weapon?.name || "its weapon"} for two of your turns, and is spent the moment it blocks it.`,
+      }),
+    ];
+  }
+  if (chest.phase === "targeting") {
+    const compatible = chest.result?.compatible || [];
+    if (!compatible.length) {
+      return [
+        el("p", { class: "chest-card__drew", text: "No compatible colony found" }),
+        el("p", {
+          class: "chest-card__weapon-blurb",
+          text: "Deployment declined. You do not currently own a colony that can receive this shield.",
+        }),
+      ];
+    }
+    return [
+      el("p", { class: "chest-card__drew", text: shield?.name || "Shield" }),
+      el("p", {
+        class: "chest-card__prompt",
+        text: "Your compatible colonies are highlighted. Tap one to deploy the shield there.",
+      }),
+    ];
+  }
+  if (none) {
+    return [el("p", { class: "chest-card__drew", text: KRONOS_CHEST.badLuck })];
+  }
+  const weapon = shield ? weaponById(shield.counters) : null;
+  return [
+    el("p", { class: "chest-card__drew", text: `You drew the ${shield?.name || "shield"}.` }),
+    el("div", { class: "chest-card__howto" }, [
+      el("h4", { class: "chest-card__howto-name", text: "How to deploy" }),
+      el("p", { class: "chest-card__howto-p", text: HOW_TO_DEPLOY }),
+      el("p", {
+        class: "chest-card__howto-fact",
+        text: `Counters the ${weapon?.name || "its weapon"} - stands for two of your turns on the colony it protects, and is spent on a successful block.`,
+      }),
+    ]),
+  ];
 }
 
 /**

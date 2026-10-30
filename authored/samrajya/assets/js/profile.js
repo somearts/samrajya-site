@@ -29,8 +29,8 @@ import {
 import { priceOf, rupees, upgradeAt } from "./shared/economy.js";
 import { propertyFor } from "./shared/properties.js";
 import { CELLS, SETS } from "./shared/spaces.js";
-import { emblem, weaponColor } from "./chest-card.js";
-import { weaponById } from "./shared/weapons.js";
+import { emblem, shieldColor, weaponColor } from "./chest-card.js";
+import { shieldById, weaponById } from "./shared/weapons.js";
 import { signed } from "./shared/announcements.js";
 
 /** The properties in the order the board walks them. */
@@ -185,18 +185,67 @@ function weaponsSection(piece) {
   ]);
 }
 
+/* ----------------------------------------------------------------- shields */
+
+/**
+ * The active KRONOS shields, read from the same state both devices share.
+ *
+ * Nothing here is remembered or inferred: `game.shields` is what stands at
+ * this moment, so the record can never list a shield that has blocked or
+ * expired, and an empty profile says the neutral truth - "No active
+ * shields" - instead of a row of dashes standing in for missing data.
+ */
+function shieldRow(shield) {
+  const data = shieldById(shield.id);
+  const stops = weaponById(data?.counters)?.name || "";
+  const colony = CELLS.find((c) => c.id === shield.colony)?.name || "";
+  const turns = Math.max(0, Number(shield.turnsLeft) || 0);
+  return el("article", {
+    class: "profile-shield",
+    "data-shield": shield.id,
+    style: { "--shield": shieldColor(shield.id) },
+  }, [
+    el("span", { class: "profile-shield__emblem", html: emblem(data, shieldColor(shield.id)) }),
+    el("div", { class: "profile-shield__text" }, [
+      el("h4", { class: "profile-shield__name", text: data?.name || shield.id }),
+      el("p", { class: "profile-shield__line", text: `Protects ${colony || "an unplaced colony"}` }),
+      stops
+        ? el("p", { class: "profile-shield__line", text: `Counters ${stops}` })
+        : null,
+      el("p", {
+        class: "profile-shield__line profile-shield__line--turns",
+        text: `${turns} turn${turns === 1 ? "" : "s"} of protection left`,
+      }),
+    ].filter(Boolean)),
+  ]);
+}
+
+function shieldsSection(game, seat) {
+  const shields = (game?.shields || []).filter((s) => s.owner === Number(seat));
+  return el("section", { class: "profile__section", "data-section": "shields" }, [
+    el("h3", { class: "profile__label", text: "SHIELDS" }),
+    shields.length
+      ? el("div", { class: "profile-shields" }, shields.map(shieldRow))
+      : el("p", { class: "profile__empty", text: "No active shields." }),
+  ]);
+}
+
 /* ------------------------------------------------------------------ ledger */
 
 function ledgerRow(entry) {
   const turn = Number.isInteger(entry.turn) ? `T${entry.turn + 1}` : "T\u2014";
   const amount = Math.trunc(Number(entry.amount) || 0);
+  /* A SHIELD ROW CARRIES NO MONEY, and an em-dash in its place read as a
+     missing value. The sentence is the whole of what happened - the dash is
+     only shown where money is genuinely part of the story. */
+  const money = entry.kind === "shield" ? "" : amount === 0 ? "\u2014" : signed(amount);
   return el("div", { class: "profile-ledger__row", "data-kind": entry.kind || "" }, [
     el("span", { class: "profile-ledger__turn", text: turn }),
     el("p", { class: "profile-ledger__text", text: entry.text || "" }),
     el("div", { class: "profile-ledger__money" }, [
       el("span", {
         class: `profile-ledger__amount profile-ledger__amount--${amount < 0 ? "spend" : amount > 0 ? "earn" : "even"}`,
-        text: amount === 0 ? "\u2014" : signed(amount),
+        text: money,
       }),
       el("span", { class: "profile-ledger__balance", text: rupees(entry.balance || 0) }),
     ]),
@@ -242,6 +291,7 @@ export function profilePanel({ ledger, game, players = [], seat, onClose = null 
     ]),
     propertiesSection(ledger, Number(seat)),
     weaponsSection(piece),
+    shieldsSection(game, Number(seat)),
     ledgerSection(ledger, Number(seat)),
   ]);
 }

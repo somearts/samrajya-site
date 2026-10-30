@@ -1541,6 +1541,65 @@
   display: none;
 }
 
+/* KRONOS KEEPS ITS PILL WHERE RAGNAROK HIDES ITS OWN.
+
+   Ragnarok's pill is finished the moment its card is answered - Collect is
+   a separate element and the draw disappears. Kronos's SAME pill BECOMES
+   the next action (COLLECT, then "Select a colony"), so it stays on the
+   card through those stages - greyed by its disabled state, never hidden.
+   And from the reveal onward the card stays in its answer state: the
+   welcome copy, the body and the header do not pop back at targeting or
+   deployment. Scoped to --kronos; the ragnarok rules above are untouched. */
+.chest-card--kronos[data-phase="revealed"] .chest-card__draw,
+.chest-card--kronos[data-phase="targeting"] .chest-card__draw {
+  display: inline-flex;
+}
+
+.chest-card--kronos[data-phase="targeting"] .chest-card__tagline,
+.chest-card--kronos[data-phase="targeting"] .chest-card__body,
+.chest-card--kronos[data-phase="targeting"] .property-card__head,
+.chest-card--kronos[data-phase="deployed"] .chest-card__tagline,
+.chest-card--kronos[data-phase="deployed"] .chest-card__body,
+.chest-card--kronos[data-phase="deployed"] .property-card__head {
+  display: none;
+}
+
+/* THE AREA UNDER THE REVEALED CARD: the instructions that turn a card into
+   a deployment - what it does, which weapon it answers, how it stands. The
+   same quiet type as the rest of the chest's writing, on the same measure. */
+.chest-card__howto {
+  display: grid;
+  gap: 0.35em;
+  width: 100%;
+  text-align: left;
+}
+
+.chest-card__howto-name {
+  margin: 0;
+  font-size: max(9px, calc(var(--cell) * 0.12));
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.chest-card__howto-p,
+.chest-card__prompt {
+  margin: 0;
+  font-size: max(9.4px, calc(var(--cell) * 0.126));
+  line-height: 1.45;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+.chest-card__howto-fact {
+  margin: 0;
+  font-size: max(8.8px, calc(var(--cell) * 0.116));
+  line-height: 1.4;
+  color: color-mix(in srgb, var(--ink) 60%, var(--cell-ground));
+}
+
 .chest-card__slot.is-drawn .chest-card__back {
   opacity: 0;
 }
@@ -3047,38 +3106,9 @@ button.board__cell--corner:focus-visible {
   min-width: 0;
 }
 
-/* A KRONOS SHIELD, and the turns left on it.
-
-   The mark lives inside the weapon-dots cell - the one place the chip has for
-   what a player carries - as a dot in the shield's own colour with the number
-   of its OWNER's turns beside it. The numeral is set in the ink rather than
-   knocked out of the dot: at six pixels a reversed digit is a smudge, and
-   this way it reads at the same size the weapon dots already do. */
-.who__shield {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  flex: 0 0 auto;
-  height: 8px;
-}
-
-.who__shield-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--shield, var(--ink));
-  box-shadow: 0 0 0 1px rgb(18 17 16 / 0.2);
-}
-
-.who__shield-turns {
-  align-self: center;
-  font-size: max(6.5px, 0.46rem);
-  line-height: 1;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-soft);
-}
+/* (The chip's shield dot is gone with the mechanism it misrepresented: a
+   shield is never stored in a hand - it stands on a colony, and that is
+   shown on the tile. See .cell-shield below the board's marks.) */
 
 .who--active {
   border-color: color-mix(in srgb, var(--coin, var(--ink)) 58%, var(--line));
@@ -3536,6 +3566,67 @@ button.board__cell--corner:focus-visible {
   font-size: 10.5px;
   line-height: 1.35;
   color: var(--ink-soft);
+}
+
+/* ------------------------------------------------------------------ shields
+
+   The STANDING shields, as their own rows: the glyph in the shield's own
+   colour on the left, and the three facts on the right - what it protects,
+   what it counters, how long it stands - every one of them read from
+   game.shields at the moment the panel is drawn, so the record can never
+   list a shield that has blocked or expired. */
+.profile-shields {
+  display: grid;
+  gap: 6px;
+}
+
+.profile-shield {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid rgb(18 17 16 / 0.08);
+  border-radius: 6px;
+  background: var(--card-inset);
+}
+
+.profile-shield__emblem {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 34px;
+}
+
+.profile-shield__emblem .chest-card__emblem {
+  width: 100%;
+  height: 100%;
+}
+
+.profile-shield__text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.profile-shield__name {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.profile-shield__line {
+  margin: 0;
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.profile-shield__line--turns {
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--shield, var(--ink)) 70%, var(--ink));
 }
 
 .profile-ledger__row {
@@ -4784,6 +4875,65 @@ button.board__cell--corner:focus-visible {
     /* The notice takes its own step below the pills, as in the reference,
        rather than hugging them. */
     gap: calc(var(--cell) * 0.16);
+  }
+}
+
+/* ----------------------------------------------------- the protected tile
+
+   A STANDING SHIELD'S OWN MARK: a small glyph in the shield's colour, in
+   the tile's free top-right corner (where the build pips used to sit), with
+   the owner's remaining turns inside the shield's body. It changes no
+   dimension of the cell - it is absolutely placed over a cell that already
+   has room - and it sits above the ownership ring so a protected colony
+   reads as protected whoever holds it. Both screens paint it from the same
+   state, so it cannot appear on one phone and not the other, and it is
+   removed on the same repaint that removes the shield. */
+.cell-shield {
+  position: absolute;
+  top: max(3px, calc(var(--cell) * 0.07));
+  right: max(3px, calc(var(--cell) * 0.07));
+  z-index: 3;
+  display: block;
+  line-height: 0;
+  width: max(12px, calc(var(--cell) * 0.2));
+  height: auto;
+  pointer-events: none;
+}
+
+.cell-shield__svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* One restrained ring at the moment of deployment: a halo that widens and
+   fades once, then leaves the glyph standing plain. Re-triggered by class,
+   never by repaint. */
+.cell-shield.is-new::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border: 1.5px solid currentColor;
+  border-radius: 6px;
+  color: var(--ink);
+  opacity: 0;
+  animation: cell-shield-halo 900ms ease-out 1;
+}
+
+@keyframes cell-shield-halo {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.7);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.7);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cell-shield.is-new::after {
+    animation: none;
   }
 }
 

@@ -1329,11 +1329,21 @@ export function applyAction(state, action, rng = Math.random) {
 
     /* -------------------------------------------------------------- Kronos
 
-       The shield chest. The same little story as Ragnarok - a draw the server
-       decides, a shuffle the clients play, a face turned over at its own
-       moment - with one press fewer, because a shield DEPLOYS the moment it is
-       drawn. There is nothing to collect: the shield is already standing, and
-       Collect would be a press that changes nothing. */
+       The shield chest, as ONE POPUP with a deployment inside it.
+
+       Draw (the server decides, the clients shuffle and reveal in the same
+       card) -> the shield's explanation in the same popup -> COLLECT, which
+       highlights the colonies the shield can actually stand on -> a tap on
+       a highlighted colony deploys it there. Nothing deploys at the draw,
+       nothing is stored in an inventory, and the chip says nothing about a
+       card that is merely revealed: a shield exists only once it stands on
+       a colony.
+
+       COMPATIBILITY comes from the data and nothing else: a shield counters
+       one weapon (its `counters`), and the colonies it can defend are
+       exactly the colonies that weapon reaches, owned by the deploying
+       player. The three weapons' target lists are disjoint, so two shields
+       can never stand on the same colony. */
 
     case "drawShield": {
       if (
@@ -1357,13 +1367,11 @@ export function applyAction(state, action, rng = Math.random) {
 
       /* WHAT MAY BE OFFERED, AND WHAT MAY NOT.
 
-         A player stands behind AT MOST ONE SHIELD PER WEAPON, and the draw is
-         where that rule is held: it never offers a shield the player already
-         stands behind. So a shield cannot be refreshed by drawing a second
-         copy, cannot be stacked, and cannot be silently overwritten - the only
-         thing a draw can do is add a shield that is not yet held. With all
-         three already held the draw is a miss, recorded as "none", and the
-         visit is answered either way. */
+         One shield per weapon, per player: the draw never offers a shield
+         the player already has STANDING on a colony. With all three
+         standing the draw is a miss ("none"), and the visit is answered
+         either way. Nothing is deployed here - the card is merely revealed;
+         deployment is COLLECT, then a colony. */
       const standing = (state.shields || [])
         .filter((entry) => entry.owner === active)
         .map((entry) => entry.id);
@@ -1371,34 +1379,14 @@ export function applyAction(state, action, rng = Math.random) {
       const shield = outcome ? shieldById(outcome) : null;
       const none = !shield;
 
-      /* DEPLOYED AT THE DRAW, IN THE SAME ACTION.
-
-         The shield enters the shared state here, with its full two turns: the
-         turn it is drawn in IS the owner's first of the two, and TURN_END below
-         takes one off. From this moment both screens hold the same fact, a
-         strike is answered from that fact, and there is no separate activation
-         - nothing to press, nothing to forget, nothing one device knows that
-         the other does not. */
-      if (shield) {
-        next.shields = [
-          ...(state.shields || []),
-          { id: shield.id, owner: active, weapon: shield.counters, turnsLeft: SHIELD_TURNS },
-        ];
-      }
-
       next.visit.shieldDrawn = none ? "none" : outcome;
       next.phase = PHASE.DECISION;
-      /* ONE POST-DRAW PHASE, AND IT IS THIS ONE.
-
-         The shield is already standing and the face is already decided, so
-         the state says "revealed" from this moment: there is no second
-         action the confirmation waits on. The clients play the shuffle as an
+      /* ONE POST-DRAW PHASE, AND IT IS THE REVEAL: the face is decided the
+         moment the button is pressed, so the clients play the shuffle as an
          entrance and then show the face the state is ALREADY holding - the
          same "a device that arrives late sees the whole shuffle" design the
-         Nexus deck works by. A reveal round-trip used to sit between the
-         draw and the confirmation, and when it was interrupted the chest was
-         left at a "drawing" phase that had no Done pill and no way out: the
-         shield stood, and the player never saw it. */
+         Nexus deck works by, with no reveal round-trip to strand. The card
+         then waits, explanation and COLLECT visible, until the player acts. */
       next.chest.phase = "revealed";
       next.chest.startedAt = now();
       next.chest.choice = "draw";
@@ -1408,23 +1396,124 @@ export function applyAction(state, action, rng = Math.random) {
         /* The face the player touched. Both devices turn over the same one. */
         slot: Number.isInteger(action.slot) ? Math.max(0, Math.min(2, action.slot)) : 1,
       };
-      if (shield) {
-        recordEntry(next.ledger, {
-          turn: state.turn,
-          seat: active,
-          kind: "shield",
-          text: `Deployed ${shield.name}`,
-          amount: 0,
-        });
-      }
       ok("shieldDrawn", {
         seat: active,
         shield: none ? null : outcome,
         none,
         weapon: shield?.counters || null,
-        turnsLeft: SHIELD_TURNS,
         slot: next.chest.result.slot,
         startedAt: next.chest.startedAt,
+      });
+      return { state: next, events };
+    }
+
+    /* COLLECT - the press that BEGINS deployment.
+
+       It does not take the shield anywhere: it computes, here on the server,
+       which colonies could legally receive this shield - the countered
+       weapon's own reach, intersected with what this player owns - and puts
+       the board into targeting with that list. An empty list is not a
+       refusal: it is the answer the card shows as the decline message, and
+       the player stays inside the popup with Done still available. */
+    case "collectShield": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "chest" ||
+        !(KRONOS && state.landing?.id === KRONOS.id)
+      ) {
+        return refused(state, action, "There is no chest to draw from.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (!state.chest || state.chest.kind !== "kronos") {
+        return refused(state, action, "There is no chest to draw from.");
+      }
+      if (state.chest.phase !== "revealed") {
+        return refused(state, action, "The colonies are already highlighted.");
+      }
+      const shieldId = state.chest.result?.shield;
+      if (!shieldId || state.chest.result?.none) {
+        return refused(state, action, "There is no shield to deploy.");
+      }
+      const shield = shieldById(shieldId);
+      const weapon = shield ? weaponById(shield.counters) : null;
+      if (!shield || !weapon) return refused(state, action, "There is no shield to deploy.");
+
+      const compatible = (weapon.targets || []).filter(
+        (id) => ownerOf(next.ledger, id) === active,
+      );
+      next.chest.phase = "targeting";
+      next.chest.startedAt = now();
+      next.chest.result = { ...state.chest.result, compatible };
+      ok("shieldTargeting", {
+        seat: active,
+        shield: shield.id,
+        weapon: shield.counters,
+        compatible: [...compatible],
+      });
+      return { state: next, events };
+    }
+
+    /* THE COLONY TAP: deployment, validated against a fresh computation of
+       compatibility (ownership may have changed since COLLECT), happening in
+       the same action that records it - so a repeated tap finds the phase
+       already moved and deploys nothing twice. */
+    case "deployShield": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "chest" ||
+        !(KRONOS && state.landing?.id === KRONOS.id)
+      ) {
+        return refused(state, action, "There is no chest to draw from.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (!state.chest || state.chest.kind !== "kronos") {
+        return refused(state, action, "There is no chest to draw from.");
+      }
+      if (state.chest.phase !== "targeting") {
+        return refused(state, action, "There is no colony to deploy to.");
+      }
+      const shieldId = state.chest.result?.shield;
+      const shield = shieldId ? shieldById(shieldId) : null;
+      const weapon = shield ? weaponById(shield.counters) : null;
+      if (!shield || !weapon) return refused(state, action, "There is no shield to deploy.");
+
+      const colonyId = String(action.colonyId ?? "");
+      const compatible = (weapon.targets || []).filter(
+        (id) => ownerOf(next.ledger, id) === active,
+      );
+      if (!compatible.includes(colonyId)) {
+        return refused(state, action, "That colony cannot receive this shield.");
+      }
+      const colonyName = CELLS.find((c) => c.id === colonyId)?.name || colonyId;
+
+      next.shields = [
+        ...(state.shields || []),
+        {
+          id: shield.id,
+          owner: active,
+          weapon: shield.counters,
+          colony: colonyId,
+          turnsLeft: SHIELD_TURNS,
+        },
+      ];
+      next.chest.phase = "deployed";
+      next.chest.startedAt = now();
+      /* The colony joins the result so the card - on both screens, from the
+         state alone - can say where the shield now stands. */
+      next.chest.result = { ...state.chest.result, colony: colonyId };
+      recordEntry(next.ledger, {
+        turn: state.turn,
+        seat: active,
+        kind: "shield",
+        text: `Deployed ${shield.name} on ${colonyName} - stops ${weapon.name}`,
+        amount: 0,
+      });
+      ok("shieldDeployed", {
+        seat: active,
+        shield: shield.id,
+        colony: colonyId,
+        weapon: shield.counters,
+        turnsLeft: SHIELD_TURNS,
       });
       return { state: next, events };
     }
@@ -1803,30 +1892,28 @@ export function applyAction(state, action, rng = Math.random) {
 
       /* KRONOS ANSWERS HERE, BEFORE ANYTHING MOVES.
 
-         The defender is whoever holds the colony under the strike. If one of
-         their shields names this weapon, the strike is spent against it:
+          A STANDS ON THE COLONY, not in a player's hand: a strike meets the
+          shield when the TARGET is the colony it was deployed to and the
+          weapon is the one it counters. Who owns the colony at this moment
+          is beside the point - the shield protects the ground it stands on.
 
-         - the shield is removed in the SAME action that read it, so it can be
-           consumed only once - there is no second read and no second press;
-         - this returns BEFORE the colony changes hands and BEFORE the weapon
-           is spent, which is what stops the destructive effect from reaching
-           the target through any other path: no capture, no rent shift, no
-           weapon lost by the attacker;
-         - only the shield's OWN weapon is answered. The other two pass by,
-           because the match is on the exact weapon id.
+          - the shield is removed in the SAME action that read it, so it can
+            be consumed only once - no second read, no second press;
+          - this returns BEFORE the colony changes hands and BEFORE the
+            weapon is spent, which is what stops the destructive effect from
+            reaching the target through any other path;
+          - only the shield's OWN weapon is answered; the other two pass by,
+            and a strike on any other colony passes this shield entirely.
 
-         The weapon stays with its owner. A block denies the strike; it does
-         not delete the weapon, so a shield buys its owner a turn rather than
-         handing them the attacker's arsenal. */
-      const defender = ownerOf(next.ledger, targetId);
-      const shield = defender === null || defender === active
-        ? null
-        : (state.shields || []).find(
-            (entry) => entry.owner === defender && entry.weapon === weapon.id,
-          );
+          The weapon stays with its owner: a block denies the strike, it
+          does not delete the weapon. */
+      const shield = (state.shields || []).find(
+        (entry) => entry.colony === targetId && entry.weapon === weapon.id,
+      );
       if (shield) {
         next.shields = (state.shields || []).filter((entry) => entry !== shield);
         const shieldName = shieldById(shield.id)?.name || shield.id;
+        const protector = shield.owner;
 
         next.fight.phase = "resolving";
         next.fight.armed = false;
@@ -1835,7 +1922,7 @@ export function applyAction(state, action, rng = Math.random) {
           id: targetId,
           weapon: weapon.id,
           name: cell.name,
-          from: defender,
+          from: protector,
           to: active,
           blocked: true,
           shield: shield.id,
@@ -1850,18 +1937,19 @@ export function applyAction(state, action, rng = Math.random) {
         });
         recordEntry(next.ledger, {
           turn: state.turn,
-          seat: defender,
-          kind: "fight",
+          seat: protector,
+          kind: "shield",
           text: `${shieldName} spent at ${cell.name}`,
           amount: 0,
         });
 
         ok("shieldBlocked", {
           seat: active,
-          owner: defender,
+          owner: protector,
           shield: shield.id,
           weapon: weapon.id,
           id: targetId,
+          colony: targetId,
           name: cell.name,
         });
         return { state: next, events };
@@ -2367,10 +2455,24 @@ export function applyAction(state, action, rng = Math.random) {
           aged.push({ ...shield, turnsLeft: left });
           continue;
         }
+        /* ITS TWO OWNED RUNS ARE UP: it leaves the state and the ledger
+           says so, so no screen can show it as standing after this. */
+        const expiredName = shieldById(shield.id)?.name || shield.id;
+        const expiredColony = CELLS.find((c) => c.id === shield.colony)?.name || "";
+        recordEntry(next.ledger, {
+          turn: state.turn,
+          seat: shield.owner,
+          kind: "shield",
+          text: expiredColony
+            ? `${expiredName} expired at ${expiredColony}`
+            : `${expiredName} expired`,
+          amount: 0,
+        });
         ok("shieldExpired", {
           seat: shield.owner,
           shield: shield.id,
           weapon: shield.weapon,
+          colony: shield.colony || null,
         });
       }
       next.shields = aged;

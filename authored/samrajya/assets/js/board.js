@@ -46,7 +46,7 @@ import { DICE_DELAY_MS, DICE_HOLD_MS, DICE_ROLL_MS, pause } from "./timing.js";
 // The layer draws the coins; the rules they obey - including the name a seat
 // goes by - are in coins.js, which imports nothing and is tested on its own.
 import { coins } from "./coin-layer.js";
-import { renderShields, renderWeapons } from "./chest-card.js";
+import { renderShieldTiles, renderWeapons } from "./chest-card.js";
 import { squareCard } from "./square-card.js";
 import { KRONOS_CHEST, RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
 import { NEXUS } from "./shared/nexus-cards.js";
@@ -501,14 +501,14 @@ export function board({
     syncActive(root(), game.active);
     for (const piece of game.pieces) {
       renderWeapons(root(), piece.seat, piece.weapons);
-      /* The same place, the same reason: a KRONOS shield is carried, so its
-         mark - and the turns its owner has left on it - live on the chip next
-         to the weapons it stands against. */
-      renderShields(root(), piece.seat, shieldsOf(game, piece.seat));
       /* And the hole: one seat can be held, and the chip is what says so
          between the held seat's turns, when the middle is the opponent's. */
       renderHole(root(), piece.seat, game.hole);
     }
+    /* THE KRONOS SHIELD LIVES ON THE TILE, not in a chip: a chip dot said
+       "stored", and a shield is never stored - it is standing on a colony.
+       This mark is the standing. */
+    renderShieldTiles(frame, game.shields || []);
     syncCard(frame, context());
     paintPhase();
     renderProfile();
@@ -852,6 +852,8 @@ export function board({
         await dismissCard();
       }
     }
+    /* Whether the chest stayed or went, the glow answers the same state. */
+    syncShieldTargets();
     if (game.fight) {
       openFightStage();
     } else if (fightStage) {
@@ -965,6 +967,8 @@ export function board({
             await dismissCard();
           }
         }
+        /* Whether the chest stayed or went, the glow answers the same state. */
+        syncShieldTargets();
         if (game.fight) {
           openFightStage();
         } else if (fightStage) {
@@ -1197,11 +1201,21 @@ export function board({
         }
 
         case "shieldDrawn": {
-          /* The shield was deployed the moment it was drawn, and the chest
-             card draws itself from the state; what this adds is the CHIP, so
-             the mark is standing beside the owner's name while the shuffle
-             still runs. No splash: the deployment confirmation is the card
-             the player is already reading, and the mark on the chip. */
+          /* The card was REVEALED, not deployed: the popup draws itself from
+             the state, and the repaint here keeps the board in step. Nothing
+             is stored anywhere and no chip appears - a shield exists only
+             once a colony takes it. */
+          paint({ animate: false });
+          break;
+        }
+
+        case "shieldTargeting":
+        case "shieldDeployed": {
+          /* COLLECT moved the chest into targeting (the glow is drawn with
+             the stage in the step's tail) and the colony tap stood the
+             shield up (the tile mark is drawn by this repaint). Same rule
+             as every chest: the event animates nothing the state has not
+             already said. */
           paint({ animate: false });
           break;
         }
@@ -1393,6 +1407,10 @@ export function board({
     const chest = game?.chest;
     if (!chest) return;
 
+    /* The glow follows the chest's own list, refreshed on every stage - and
+       cleared here too when the chest has moved out of targeting. */
+    syncShieldTargets();
+
     cardMode = isMyTurn() ? "decision" : "read";
     reading = false;
     cardKey = `chest:${chest.kind}:${chest.phase}:${chest.startedAt || 0}`;
@@ -1435,10 +1453,10 @@ export function board({
           };
         } else if (chest.kind === "kronos") {
           /* KRONOS OFFERS THREE SHIELD FACES, and the player touches one of
-             them. The Draw pill is the same draw said once more. Both answer
-             ONLY at the "open" stage, exactly as Ragnarok's do - and there is
-             no Collect pill, because a shield deploys the moment it is drawn:
-             the press that follows the reveal is Done, which ends the visit. */
+             them - or the pill, which is the same draw said once more. After
+             the shuffle the SAME PILL becomes COLLECT, so its handler
+             dispatches on the state's own phase: open draws, revealed
+             collects. Only the server decides what either action means. */
           for (const slot of [0, 1, 2]) {
             handlers[`.chest-card__slot[data-slot="${slot}"]`] = () => {
               if (game.chest?.phase !== "open") return;
@@ -1446,8 +1464,12 @@ export function board({
             };
           }
           handlers['[data-action="draw"]'] = () => {
-            if (game.chest?.phase !== "open") return;
-            void run({ type: "drawShield", slot: 1 });
+            const phase = game.chest?.phase;
+            if (phase === "open") {
+              void run({ type: "drawShield", slot: 1 });
+            } else if (phase === "revealed" && !game.chest?.result?.none) {
+              void run({ type: "collectShield" });
+            }
           };
         } else {
           /* Ragnarok offers three faces, and the player touches one of them.
@@ -1476,22 +1498,24 @@ export function board({
       card = drawChestStage(frame, chest, { mine, handlers, playerName: name });
       if (!card) return;
 
-      /* THE CLOSING - AND RAGNAROK HAS NONE.
+      /* THE CLOSING.
 
-         A real Ragnarok draw ends at Collect: the server awards the weapon
-         and the board closes the chest behind it (closeChestWhenFree), so
-         there is no Done pill and nothing after the reveal. Done survives
-         only where there is no collect to make (a bad-luck draw) and where
-         the chest's own rules already asked for it: an answered Nexus, an
-         offering. KRONOS IS ALWAYS DONE: a shield deploys at the draw, so
-         there is no Collect to press - Done is the one press that lets the
-         player acknowledge what now stands for them before the visit ends. */
+         A real Ragnarok draw ends at Collect. Done survives where there is
+         no collect to make (a bad-luck draw), where the chest's own rules
+         asked for it (an answered Nexus, an offering), and at KRONOS
+         throughout: after the reveal (the explanation and COLLECT are on
+         the card, and Done is the way out), during targeting (the player
+         may decline to place and simply leave), and once the shield stands
+         (Done closes the visit that deployed it). */
       const ragnarokRevealed =
         chest.kind === "ragnarok" && chest.phase === "revealed";
       const needsDone =
         chest.phase === "praying" ||
         (chest.kind === "nexus" && chest.phase === "revealed") ||
-        (chest.kind === "kronos" && chest.phase === "revealed") ||
+        (chest.kind === "kronos" &&
+          (chest.phase === "revealed" ||
+            chest.phase === "targeting" ||
+            chest.phase === "deployed")) ||
         (ragnarokRevealed && Boolean(chest.result?.badLuck));
       if (needsDone) {
         if (mine) {
@@ -1609,6 +1633,25 @@ export function board({
         }
       })
       .catch(() => {});
+  }
+
+  /* THE COMPATIBLE COLONIES, GLOWING - the fight's own selection
+     treatment, reused.
+
+     The glow is drawn from the chest's AUTHORITATIVE compatible list on
+     every stage of the chest - the same soft target glow a weapon shows
+     while armed - and cleared the moment there is no chest or no
+     targeting. Both screens run this from the same state, so both see the
+     same colonies offered, and no colony can look selectable when the
+     server would refuse it. */
+  function syncShieldTargets() {
+    clearFightMarks(frame);
+    const chest = game?.chest;
+    if (chest?.kind === "kronos" && chest.phase === "targeting") {
+      for (const id of chest.result?.compatible || []) {
+        frame.querySelector(`.board__cell[data-id="${id}"]`)?.classList.add("is-fight-glow");
+      }
+    }
   }
 
   /* Ask the server to turn the Nexus card over, once the board is free.
@@ -2314,6 +2357,23 @@ export function board({
       if (fight && fight.phase === "armed" && isMyTurn()) {
         if (cell.classList.contains("is-fight-blink")) {
           void run({ type: "fightAttack", targetId: id });
+        } else {
+          void shake(cell);
+        }
+        return;
+      }
+      /* THE SHIELD IS ASSIGNED AT THE TILE, THE WAY A STRIKE IS ARMED.
+
+          While COLLECT has put the chest into targeting, a tap on the board
+          is not a request to read a card - it is the assignment, or it is
+          nothing. A glowing colony is compatible and takes the shield at
+          once; everything else gets the same very small shake, and no card
+          opens underneath the targeting. */
+      const chest = game.chest;
+      if (chest && chest.kind === "kronos" && chest.phase === "targeting" && isMyTurn()) {
+        const compatible = chest.result?.compatible || [];
+        if (compatible.includes(id)) {
+          void run({ type: "deployShield", colonyId: id });
         } else {
           void shake(cell);
         }
