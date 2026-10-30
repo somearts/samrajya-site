@@ -4469,39 +4469,6 @@ button.board__cell--corner:focus-visible {
   border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--cell-ground));
 }
 
-/* ROOM TO BREATHE, ONLY WHERE THERE IS ROOM.
-
-   The centre's spare height (near zero on a 360x640 phone, large on a
-   tall screen) is distributed BETWEEN the three groups by the body's
-   space-between. Where the popup's own viewport holds generous air - a
-   holder over 470px, i.e. bigger than the 1000x700 laptop's - some of
-   that air is deliberately spent INSIDE the groups: a wider intro, deeper
-   section padding, more space around the caption, number and bar, and real
-   foot room above the presses - so the section breaks land as a measured
-   editorial rhythm rather than as two large empty bands. Below 470 it
-   never applies, and the baseline phone is untouched. */
-@container hole-popup (min-height: 470px) {
-  .hole-card__intro {
-    gap: calc(var(--cell) * 0.11);
-  }
-  .hole-card__section {
-    gap: 0.5em;
-    padding-top: calc(var(--cell) * 0.12);
-  }
-  .hole-card__caption {
-    margin-top: calc(var(--cell) * 0.08);
-  }
-  .hole-card__meter-head {
-    margin-top: calc(var(--cell) * 0.055);
-  }
-  .hole-card__meter {
-    margin-top: calc(var(--cell) * 0.055);
-  }
-  .hole-card__footer {
-    padding-top: calc(var(--cell) * 0.5);
-  }
-}
-
 .hole-card__section-name {
   margin: 0;
   font-size: max(8.7px, calc(var(--cell) * 0.116));
@@ -4764,6 +4731,60 @@ button.board__cell--corner:focus-visible {
   text-transform: none;
   line-height: 1.25;
   color: color-mix(in srgb, var(--ink) 55%, var(--cell-ground));
+}
+
+/* THE REFERENCE LAYOUT - the popup's own viewport, given its own rules.
+
+   These sit LAST among the hole-card rules on purpose: every value here
+   overrides the compact base above it by cascade order, so there is exactly
+   one place that describes the reference composition and no rule fighting
+   it.
+
+   The compact base exists for the 360x640 baseline, where the content
+   already fills the middle and there is no air to allocate. Above a 470px
+   holder - the actual mobile viewport the reference was drawn on, and
+   larger - the air is allocated deliberately, the way the reference reads:
+
+     - the introduction takes a breath under the title (emblem ~11px
+       below it, tight inside its own group);
+     - each section opens on its divider with a measured step, and the
+       caption, number and bar keep a little more air of their own;
+     - the footer sits a proper step below the vessel paragraph;
+     - the card's bottom padding gives the notice its tail - the space
+       below the CTAs the reference shows - instead of dumping the spare
+       height into two large bands.
+
+   The body's space-between then absorbs whatever is left between the
+   three groups, so the gaps equalise to the reference's modest section
+   breaks rather than growing with the screen. */
+@container hole-popup (min-height: 470px) {
+  .hole-card {
+    padding-bottom: calc(var(--cell) * 0.62);
+  }
+  .hole-card__intro {
+    gap: calc(var(--cell) * 0.15);
+    margin-top: calc(var(--cell) * 0.14);
+  }
+  .hole-card__section {
+    gap: 0.75em;
+    padding-top: calc(var(--cell) * 0.16);
+  }
+  .hole-card__caption {
+    margin-top: calc(var(--cell) * 0.1);
+  }
+  .hole-card__meter-head {
+    margin-top: calc(var(--cell) * 0.1);
+  }
+  /* The number sits immediately on the bar, as in the reference. */
+  .hole-card__meter {
+    margin-top: calc(var(--cell) * 0.045);
+  }
+  .hole-card__footer {
+    padding-top: calc(var(--cell) * 0.33);
+    /* The notice takes its own step below the pills, as in the reference,
+       rather than hugging them. */
+    gap: calc(var(--cell) * 0.16);
+  }
 }
 
 /* THE MARK.
