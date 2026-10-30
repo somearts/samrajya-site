@@ -449,7 +449,7 @@ test("rent follows the upgrade level", () => {
   );
 });
 
-test("a rent that cannot be fully paid takes everything the payer holds and records the short", () => {
+test("a rent the payer cannot cover pushes them into debt - the full rent is charged", () => {
   const before = game();
   buy(before.ledger, "moon", 0);
   before.active = 1;
@@ -458,19 +458,17 @@ test("a rent that cannot be fully paid takes everything the payer holds and reco
   const { state, events } = applyAction(before, { type: "roll" }, face(1));
 
   const rent = baseRentOf("moon");
-  assert.equal(moneyOf(state.ledger, 1), 0, "the payer hands over everything they hold");
-  assert.equal(moneyOf(state.ledger, 0), 2000 - priceOf("moon") + 5, "the owner takes it");
-  assert.equal(state.ledger.players[1].short, rent - 5, "the short is recorded on the payer");
+  assert.equal(moneyOf(state.ledger, 1), 5 - rent, "the full rent is charged - the purse may go negative");
+  assert.equal(moneyOf(state.ledger, 0), 2000 - priceOf("moon") + rent, "the owner takes the whole rent");
+  assert.equal(state.ledger.players[1].short, 0, "no short accrues any more");
 
-  const short = events.find((e) => e.type === "rentShort");
-  assert.ok(short, "a short rent is its own event");
-  assert.equal(short.amount, 5);
-  assert.equal(short.shortfall, rent - 5);
-  assert.equal(short.short, rent - 5);
+  assert.equal(events.find((e) => e.type === "rentShort"), undefined, "no shortfall event exists now");
+  assert.equal(events.find((e) => e.type === "rentPaid").amount, rent);
   assert.equal(events.find((e) => e.type === "refused"), undefined, "it is not a refusal");
+  assert.equal(state.over, null, "this debt is nowhere near OBLIVION");
 
   const opened = take(state, { type: "continue" }).state;
-  assert.equal(opened.phase, PHASE.RESOLVING, "a short rent also resolves on its own, no card");
+  assert.equal(opened.phase, PHASE.RESOLVING, "a rent also resolves on its own, no card");
   assert.equal(opened.landing.kind, "rent");
   // The visit can still be acknowledged; nothing is owed at TURN_END.
   assert.equal(take(opened, { type: "continue" }).state.phase, PHASE.TURN_END);

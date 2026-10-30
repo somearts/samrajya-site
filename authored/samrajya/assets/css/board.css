@@ -90,6 +90,11 @@
   --corner-outer-space: #4a7fa8;
   --corner-black-hole: #b97626;
   --corner-icon: #faf4ef;
+
+  /* THE ONE ENDING. OBLIVION red and VICTORY green - the only two colours
+     on these screens, deep and cinematic, with cream type over them. */
+  --ending-lost: #7a1216;
+  --ending-won: #0e6b3d;
   --centre-ground: #fbf9f5;
   --chest-wash: #000000;
   --wash-strength: 7%;
@@ -5998,6 +6003,86 @@ button.board__cell--corner:focus-visible {
 
 .space-popup--notice {
   padding-top: 10%;
+}
+
+/* ================================================== OBLIVION / VICTORY
+
+   The whole viewport, once: a fixed sheet above everything the board owns
+   (z over the board, the announcements and the singularity's veil) that
+   swallows every pointer event, so nothing beneath it can be pressed. One
+   solid token colour per outcome with an inset vignette deepening the
+   edges - no gradient, no ornament - and cream type in the established
+   caps: OBLIVION over YOUR EMPIRE HAS FALLEN in red, VICTORY over YOU
+   CONQUERED THE UNIVERSE in green. */
+
+.ending {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 8vh 8vw;
+  text-align: center;
+  color: var(--cell-ground);
+  box-shadow: inset 0 0 40vmax rgb(0 0 0 / 0.5);
+  animation: ending-in 700ms ease-out both;
+}
+
+.ending--lost {
+  background: var(--ending-lost);
+}
+
+.ending--won {
+  background: var(--ending-won);
+}
+
+.ending__inner {
+  display: grid;
+  justify-items: center;
+  gap: clamp(12px, 3vmin, 26px);
+}
+
+.ending__inner::before,
+.ending__inner::after {
+  content: "";
+  width: clamp(120px, 40vw, 340px);
+  height: 1px;
+  background: rgb(255 255 255 / 0.55);
+}
+
+.ending__title {
+  margin: 0;
+  font-size: clamp(34px, 10vmin, 72px);
+  font-weight: 300;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--cell-ground);
+}
+
+.ending__sub {
+  margin: 0;
+  font-size: clamp(11px, 3.2vmin, 20px);
+  font-weight: 400;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--cell-ground);
+  opacity: 0.9;
+}
+
+@keyframes ending-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* A reader who asked for less motion gets the ending, plainly. */
+@media (prefers-reduced-motion: reduce) {
+  .ending {
+    animation: none;
+  }
 }
 
 /* ----------------------------------------------- the struck list price

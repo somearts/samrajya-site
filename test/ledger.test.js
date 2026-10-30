@@ -408,17 +408,17 @@ test("a rent the payer cannot fully meet takes everything they hold and records 
   const rent = rentAt(game, "quasar");
   const verdict = payRent(game, "quasar", 1);
 
-  assert.equal(verdict.ok, true, "a short rent is not refused and is not borrowed");
+  assert.equal(verdict.ok, true, "an unaffordable rent is not refused");
   assert.equal(verdict.rent, rent, "the rent charged is the full rent the square carries");
-  assert.equal(verdict.amount, 10, "the payer hands over everything they hold");
-  assert.equal(verdict.paid, false);
-  assert.equal(verdict.shortfall, rent - 10);
-  assert.equal(moneyOf(game, 1), 0, "the purse is never allowed below zero");
-  assert.equal(moneyOf(game, 0), 410, "the owner takes what was actually paid");
-  assert.equal(game.players[1].short, rent - 10, "the short is recorded on the payer");
+  assert.equal(verdict.amount, rent, "the whole rent moves");
+  assert.equal(verdict.paid, true);
+  assert.equal(verdict.shortfall, 0, "nothing is left unpaid");
+  assert.equal(moneyOf(game, 1), 10 - rent, "the purse goes negative - debt, not a floor");
+  assert.equal(moneyOf(game, 0), 400 + rent, "the owner takes the whole rent");
+  assert.equal(game.players[1].short, 0, "no short accrues any more");
 });
 
-test("a short rent is not a penalty: nothing else is taken or owed", () => {
+test("an unaffordable rent is charged as debt, not clipped at zero", () => {
   const game = twoPlayers();
   buy(game, "moon", 0);
   game.players[1].money = 5;
@@ -426,33 +426,32 @@ test("a short rent is not a penalty: nothing else is taken or owed", () => {
   const rent = baseRentOf("moon");
   const verdict = payRent(game, "moon", 1);
 
-  assert.equal(verdict.shortfall, rent - 5);
-  assert.equal(moneyOf(game, 0), STARTING_MONEY - priceOf("moon") + 5, "the owner got the 5");
-  assert.equal(moneyOf(game, 1), 0);
-  assert.equal(game.players[1].short, rent - 5);
-  // The game does not end and no other player's purse moved.
-  assert.equal(moneyOf(game, 0) + moneyOf(game, 1), STARTING_MONEY - priceOf("moon") + 5);
+  assert.equal(verdict.ok, true);
+  assert.equal(verdict.shortfall, 0, "there is no unpaid remainder any more");
+  assert.equal(moneyOf(game, 0), STARTING_MONEY - priceOf("moon") + rent, "the owner got the whole rent");
+  assert.equal(moneyOf(game, 1), 5 - rent, "the payer is in debt - the purse crossed zero");
+  assert.equal(game.players[1].short, 0, "no short accrues");
 });
 
-test("a short accumulates across visits, and a full rent leaves none", () => {
+test("debt keeps accumulating charge after charge and never ends the ledger", () => {
   const game = twoPlayers();
   buy(game, "moon", 0);
   const rent = baseRentOf("moon");
 
   game.players[1].money = 5;
   payRent(game, "moon", 1);
-  assert.equal(game.players[1].short, rent - 5);
+  assert.equal(game.players[1].short, 0);
+  assert.equal(moneyOf(game, 1), 5 - rent);
 
   game.players[1].money = 3;
   payRent(game, "moon", 1);
-  assert.equal(game.players[1].short, (rent - 5) + (rent - 3));
-  assert.equal(moneyOf(game, 1), 0);
+  assert.equal(game.players[1].short, 0, "charged rent never becomes a short");
+  assert.equal(moneyOf(game, 1), 3 - rent, "each charge pushes deeper - the game continues until OBLIVION decides");
 
   game.players[1].money = rent;
   const full = payRent(game, "moon", 1);
   assert.equal(full.shortfall, 0);
-  assert.equal(full.short, (rent - 5) + (rent - 3), "a full rent does not clear an older short");
-  assert.equal(moneyOf(game, 1), 0);
+  assert.equal(moneyOf(game, 1), 0, "a covered rent simply lands on zero");
 });
 
 test("the rent charged is the rent the square carries right now", () => {

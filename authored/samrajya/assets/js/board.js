@@ -495,8 +495,52 @@ export function board({
   const isMyTurn = () => mySeat !== null && game.active === Number(mySeat);
 
   /** Everything on screen that the game decides, repainted from the game. */
+  /* ---------------------------------------------------- OBLIVION / VICTORY
+
+     THE ONE ENDING, PAINTED FROM `game.over` - the same authoritative fact
+     both devices read, so the loser's screen turns red and the winner's
+     green in the same moment, and a reconnect or refresh simply paints it
+     again from the persisted state. The overlay owns the viewport: fixed
+     above everything (over the board, the announcements and even the
+     singularity's veil), swallowing every pointer event, so nothing under
+     it can be pressed - the game's own server-side refusal is the second
+     net. Declared before `paint` because paint is what calls it, and its
+     element is kept so a repaint updates rather than rebuilds. */
+  let endingCard = null;
+
+  function syncEnding() {
+    const over = game?.over;
+    if (!over) {
+      if (endingCard) {
+        endingCard.remove();
+        endingCard = null;
+      }
+      return;
+    }
+    if (mySeat === null || mySeat === undefined) return; // painted the moment this board knows its seat
+    const lost = Number(mySeat) === Number(over.loser);
+    const side = lost ? "lost" : "won";
+    if (endingCard && endingCard.dataset.side === side && endingCard.isConnected) return;
+    endingCard?.remove();
+    endingCard = el(
+      "div",
+      { class: `ending ending--${side}`, "role": "alertdialog", "aria-modal": "true" },
+      [
+        el("div", { class: "ending__inner" }, [
+          el("h1", { class: "ending__title", text: lost ? "OBLIVION" : "VICTORY" }),
+          el("p", {
+            class: "ending__sub",
+            text: lost ? "YOUR EMPIRE HAS FALLEN" : "YOU CONQUERED THE UNIVERSE",
+          }),
+        ]),
+      ],
+    );
+    document.body.append(endingCard);
+  }
+
   const paint = ({ animate = true } = {}) => {
     if (!game) return;
+    syncEnding(); // the ending screen answers the state before anything else
     syncPurses(root(), game.ledger, { animate });
     markBoard(frame, game.ledger);
     syncActive(root(), game.active);

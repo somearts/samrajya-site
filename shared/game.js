@@ -124,6 +124,16 @@ export const HOLE_THRESHOLD_HELD = 5;
 export const VESSEL_PRICE = 500;
 
 /**
+ * THE ONE ENDING. A purse that reaches this figure - inclusive, so exactly
+ * -500 counts - sends its seat to OBLIVION and gives the game to the other
+ * seat. Zero is not special: a seat at ₹0 plays on, and debt between zero
+ * and this figure is part of the game. `applyAction` re-checks the threshold
+ * after every accepted action, so the end is always the server's own verdict
+ * on a real transaction, written once into `state.over`.
+ */
+export const OBLIVION_AT = -500;
+
+/**
  * The escape threshold for a confinement, read fresh every time.
  *
  * It is a pure read of the ledger rather than a number stored at capture:
@@ -196,6 +206,12 @@ export function createGame(players = [], { opening = STARTING_MONEY, testMode = 
     phase: PHASE.AWAITING_ROLL,
     active: ledger.players[0]?.seat ?? null,
     testMode,
+    /* THE GAME'S END, or null - and OBLIVION is the only end there is: the
+       first seat whose purse reaches OBLIVION_AT (-500, inclusive) loses,
+       the other seat wins. Written once, by applyAction, in the same action
+       that carried the transaction; persisted with the state, so a refresh
+       repaints the ending instead of restarting the match. */
+    over: null,
     /* What the active player landed on, and what this visit has already done.
        Both are cleared when the turn ends. */
     landing: null,
@@ -503,7 +519,41 @@ const now = () => Date.now();
  * single `refused` event carrying a sentence for the player; an acceptance
  * returns a new state and the events the screen should animate.
  */
+/**
+ * One move, decided by the server - the exported entry point everything
+ * (worker, tests) plays through.
+ *
+ * THE OBLIVION GATE lives here, around the rules themselves: once the game
+ * has an `over`, every action is refused without touching the state, and
+ * after each accepted action the purses are re-read - the first seat at or
+ * below OBLIVION_AT ends the game in the same action that pushed it there.
+ * `over` is written exactly once and an `oblivion` event carries it to both
+ * screens; a refused press returns the original state object and is never
+ * re-checked, so an end can neither be duplicated nor faked.
+ */
 export function applyAction(state, action, rng = Math.random) {
+  if (state?.over) return refused(state, action, "This game has ended.");
+
+  const result = applyActionInner(state, action, rng);
+  const next = result.state;
+  if (!next || next.over) return result;
+  // A refusal hands back the untouched state - nothing moved, nothing to check.
+  if (result.events.some((e) => e.type === "refused")) return result;
+
+  for (const p of next.ledger.players) {
+    if ((p.money ?? 0) <= OBLIVION_AT) {
+      const loser = p.seat;
+      const winner = next.ledger.players.find((q) => q.seat !== loser)?.seat;
+      if (winner === undefined || winner === null) break;
+      next.over = { winner, loser, kind: "oblivion", at: next.turn };
+      result.events.push({ type: "oblivion", seq: next.seq, winner, loser, at: next.turn });
+      break;
+    }
+  }
+  return result;
+}
+
+function applyActionInner(state, action, rng = Math.random) {
   if (!state || !action || typeof action.type !== "string") {
     return refused(state, action, "That is not something the game can do.");
   }

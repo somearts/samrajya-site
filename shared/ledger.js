@@ -467,12 +467,12 @@ export function rentPayer(ledger, id, seat) {
  * nothing went wrong.
  *
  * A payment the payer cannot fully make is not refused and is not borrowed
- * either. The payer hands over **everything they hold** and the owner takes it;
- * the part of the rent that is left over is recorded against the payer as a
- * `short`. The purse is never allowed below zero, and a short is not a penalty:
- * nothing else happens because of it, and there is no bankruptcy yet. The short
- * is the ledger's way of remembering that the rent was not met, so a later rule
- * (or a card, or a test) can ask about it.
+ * either: the FULL rent is charged every time, and the purse is allowed to go
+ * negative. Debt is part of the game - a seat between ₹0 and the OBLIVION
+ * threshold keeps playing - and only the threshold, checked by the game itself
+ * after every transaction, ends anything. `shortfall` stays in the verdict as
+ * zero: no unpaid remainder exists anymore, so nothing accrues against the
+ * payer and no rent can be charged twice.
  */
 export function payRent(ledger, id, seat) {
   const owner = rentPayer(ledger, id, seat);
@@ -485,24 +485,20 @@ export function payRent(ledger, id, seat) {
   const holder = playerAt(ledger, owner);
   if (!payer || !holder) return no("That seat is not playing.");
 
-  // What can actually move is the smaller of the rent and the purse. When the two
-  // are equal this is the whole rent; when the purse is smaller it is the whole
-  // purse, and the difference is the short.
-  const paid = Math.max(0, Math.min(payer.money, rent));
-  payer.money -= paid;
-  holder.money += paid;
-  const shortfall = rent - paid;
-  if (shortfall > 0) payer.short += shortfall;
+  // The whole rent, always: the purse may cross zero into debt, and the
+  // owner receives exactly what the square charges.
+  payer.money -= rent;
+  holder.money += rent;
 
   return yes({
     rent,
     from: seat,
     to: owner,
-    paid: rent > 0 && paid === rent,
-    amount: paid,
+    paid: rent > 0,
+    amount: rent,
     payer: payer.money,
     holder: holder.money,
     short: payer.short,
-    shortfall,
+    shortfall: 0,
   });
 }

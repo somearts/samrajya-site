@@ -291,16 +291,17 @@ test("f. redemption is earned for crossing or landing on Start, never for the fi
 
 /* ------------------------------------------------------- the audit, item g */
 
-test("g. a payer who cannot cover the rent hands over everything and is short", () => {
+test("g. a payer who cannot cover the rent is charged the full rent as debt", () => {
   const state = game();
   sheetFor(state.ledger, "moon").owner = 1;
   state.ledger.players[0].money = 5;
+  const rent = baseRentOf("moon");
   const verdict = payRent(state.ledger, "moon", 0);
-  assert.equal(verdict.amount, 5, "everything they held");
-  assert.equal(verdict.shortfall, baseRentOf("moon") - 5);
-  assert.equal(moneyOf(state.ledger, 0), 0, "the purse never goes below zero");
-  assert.equal(moneyOf(state.ledger, 1), 2005);
-  assert.equal(state.ledger.players[0].short, verdict.shortfall, "the short is recorded");
+  assert.equal(verdict.amount, rent, "the whole rent moves");
+  assert.equal(verdict.shortfall, 0, "nothing is left unpaid");
+  assert.equal(moneyOf(state.ledger, 0), 5 - rent, "the purse crosses zero into debt");
+  assert.equal(moneyOf(state.ledger, 1), 2000 + rent, "the owner takes the whole rent");
+  assert.equal(state.ledger.players[0].short, 0, "no short accrues");
 });
 
 /* ------------------------------------------------------- the audit, item i */
