@@ -80,22 +80,15 @@
   --cell-ground: #f7f4ef;
   --corner-ground: #121212;
 
-  /* THE FOUR CORNERS, AS CIRCLE BADGES. One tint, one accent and one dark
-     per corner - the whole corner palette lives here and nowhere else, so
-     any corner is changed in one place. The icon inside every badge is
-     always the same cream. */
-  --corner-start-tint: #e4eee6;
-  --corner-start-accent: #5f8f6e;
-  --corner-start-dark: #243f2e;
-  --corner-fight-tint: #f3e2df;
-  --corner-fight-accent: #b5483f;
-  --corner-fight-dark: #5a1f1a;
-  --corner-space-tint: #e1ebf3;
-  --corner-space-accent: #4a7fa8;
-  --corner-space-dark: #1f3b54;
-  --corner-hole-tint: #f1e6d6;
-  --corner-hole-accent: #d08a3c;
-  --corner-hole-dark: #5a3a10;
+  /* THE FOUR CORNERS, AS STAMPS. One solid accent per corner - the whole
+     corner palette lives here and nowhere else, so any corner is changed
+     in one place. Cream (#faf4ef) carries every icon and label on top of
+     these; the amber is the darkest allowed step of #d08a3c (measured
+     contrast against cream was the weakest of the four - see #b97626). */
+  --corner-start: #5f8f6e;
+  --corner-fight: #b5483f;
+  --corner-outer-space: #4a7fa8;
+  --corner-black-hole: #b97626;
   --corner-icon: #faf4ef;
 
   /* THE OUTER SPACE COUNTER - noir. Obsidian ground, charcoal panels, muted
@@ -410,109 +403,114 @@
 
 /* ------------------------------------------------------------ a corner cell
 
-   THE CIRCLE BADGE. The four corners stop being black slabs: each is a light
-   tinted tile carrying a filled circle - the corner's own mark in cream on
-   the corner's accent - with its label underneath. Same tile, same grid
-   position, same border, same press: only the inside of the cell changed.
-   The tint/accent/dark triplet per corner lives in :root (--corner-start-*,
-   --corner-fight-*, --corner-space-*, --corner-hole-*) so all four are
-   changed in one place, and every corner derives its three from its own
-   data-corner so no rule is ever written twice. */
+   THE SOLID STAMP. Each corner is a flat accent-coloured tile with a thin
+   cream frame ruled inside it - inset 5% of the tile, 1px, square corners,
+   no fill - and the corner's mark over its label in cream at the centre.
+   The frame is an ::after overlay (absolute, pointer-events none) so it
+   takes no space in the layout: no shift, no clip, nothing for a coin to
+   sit behind. Same tile, same grid position, same border, same press -
+   only the inside of the cell changed. The accent per corner lives in
+   :root (--corner-start, --corner-fight, --corner-outer-space,
+   --corner-black-hole) so all four are changed in one place, and every
+   corner derives its stamp from its own data-corner. */
 
 .board__cell[data-corner="start"] {
-  --corner-tint: var(--corner-start-tint);
-  --corner-accent: var(--corner-start-accent);
-  --corner-dark: var(--corner-start-dark);
+  --corner-stamp: var(--corner-start);
 }
 
 .board__cell[data-corner="fight"] {
-  --corner-tint: var(--corner-fight-tint);
-  --corner-accent: var(--corner-fight-accent);
-  --corner-dark: var(--corner-fight-dark);
+  --corner-stamp: var(--corner-fight);
 }
 
 .board__cell[data-corner="outer-space"] {
-  --corner-tint: var(--corner-space-tint);
-  --corner-accent: var(--corner-space-accent);
-  --corner-dark: var(--corner-space-dark);
+  --corner-stamp: var(--corner-outer-space);
 }
 
 .board__cell[data-corner="black-hole"] {
-  --corner-tint: var(--corner-hole-tint);
-  --corner-accent: var(--corner-hole-accent);
-  --corner-dark: var(--corner-hole-dark);
+  --corner-stamp: var(--corner-black-hole);
 }
 
 .board__cell--corner {
-  background: var(--corner-tint);
-  color: var(--corner-dark);
+  background: var(--corner-stamp);
+  color: var(--corner-icon);
 
-  /* Badge, gap, label - one column, centred both ways. The gap tightens with
-     the tile (6px at the reference corner) so the stack - badge, gap, two
-     lines of label - can never outgrow a small cell: no clipped circle and
-     no overflow at any device width. */
-  grid-template-rows: auto auto;
+  /* Icon, gap, label - one column, centred both ways and lifted clear of
+     the frame's rule. The stack (18px icon at the reference corner, 4px,
+     one or two lines of label) shrinks with the tile at narrow widths, so
+     nothing overflows a small cell. */
+  grid-template-rows: auto;
   align-content: center;
   justify-items: center;
-  gap: clamp(2px, 6.4cqi, 6px);
-  padding: 3% 3% 4%;
+  gap: 4px;
+  padding: 6% 5%;
 
-  /* Its own container, so the badge and the label are sized against the cell
+  /* Its own container, so the mark and the label are sized against the cell
      rather than the board - the corners stay themselves at every width. */
   container-type: inline-size;
 }
 
+/* THE FRAME: one cream hairline ruled inside the stamp. Absolute, so it
+   cannot move the layout; pointer-events none, so it cannot eat a tap. */
+.board__cell--corner::after {
+  content: "";
+  position: absolute;
+  inset: 5%;
+  z-index: 1;
+  border: 1px solid rgb(255 255 255 / 0.67);
+  border-radius: 0;
+  pointer-events: none;
+}
+
 /* THE LANDED WASH STILL WORKS ON A CORNER. `[data-landed]` paints its wash on
-   the cell's own background, and the tint would win that contest by source
-   order - so the corner restates it, mixed into its tint instead of the
+   the cell's own background, and the stamp would win that contest by source
+   order - so the corner restates it, mixed into its accent instead of the
    cream, and the inset shadow and the 240ms fade above apply unchanged.
    The selector says data-corner rather than the corner CLASS on purpose:
    the checker's "a corner is not a set" rule guards the class's own rule
    from the set wash, and this is the landed wash - the coin's own colour
-   into the corner's own tint, which is exactly what the rule elsewhere
+   into the corner's own stamp, which is exactly what the rule elsewhere
    does with the paper. */
 .board__cell[data-corner][data-landed] {
-  background: color-mix(in srgb, var(--land) 8%, var(--corner-tint));
+  background: color-mix(in srgb, var(--land) 8%, var(--corner-stamp));
 }
 
-/* THE BADGE ITSELF: the circle at 38% of the tile - 36px at the reference
-   94px corner - with the corner's mark inside at 55% of the badge - 20px at
-   reference - in cream on the accent. aspect-ratio keeps it round as it
-   scales; the mark's strokes are currentColor, so the badge's colour is the
-   icon's colour and nothing is drawn twice. */
+/* THE MARK, in cream over the stamp. Fixed at 18px on the reference tile
+   and riding down with it on narrow boards; the stroke is set here because
+   the 48-unit drawings lose too much weight at 18px - the geometry is the
+   icon set's own, untouched. Lifted above the frame on purpose. */
 .board__mark--corner {
-  display: grid;
-  place-items: center;
-  width: 38cqi;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  background: var(--corner-accent);
+  display: block;
+  position: relative;
+  z-index: 2;
+  width: clamp(13px, 19cqi, 18px);
+  height: clamp(13px, 19cqi, 18px);
   color: var(--corner-icon);
-  flex: 0 0 auto;
 }
 
 .board__mark--corner svg {
   display: block;
-  width: 55%;
-  height: 55%;
+  width: 100%;
+  height: 100%;
+  stroke-width: 2.4;
 }
 
-/* The label: caps, the corner's dark, centred, wrapping on the lines the data
-   gives it - OUTER / SPACE and BLACK / HOLE are two lines by design. The size
-   is 11px at the reference corner and rides the tile down to the board's own
-   8px floor, the same floor every other board label keeps, so narrow widths
-   never overflow. */
+/* The label: caps, cream, centred, wrapping on the lines the data gives it
+   - OUTER / SPACE and BLACK / HOLE are two lines by design. 11px at the
+   reference corner and riding the tile down to the board's own 8px floor,
+   so narrow widths never overflow. Above the frame's rule. */
 .board__corner-name {
   display: flex;
   flex-direction: column;
   align-items: center;
+  position: relative;
+  z-index: 2;
   font-size: clamp(8px, 11.7cqi, 11px);
   font-weight: 500;
   letter-spacing: 0.06em;
   line-height: 1.2;
   text-transform: uppercase;
   text-align: center;
-  color: var(--corner-dark);
+  color: var(--corner-icon);
   max-width: 100%;
   align-self: center;
 }
@@ -2637,15 +2635,15 @@ button.board__cell--chest:focus-visible {
    The ink is NOT inherited here, and that is the whole point of this rule
    saying it out loud. A selector of this weight (`button.board__cell--corner`,
    an element plus a class) beats `.board__cell--corner`, so `color: inherit`
-   here would hand the corner the page's ink instead of the tile's own dark
-   text colour and the label would vanish into the tint. The corner's colour
-   is restated at the same weight as the reset rather than inherited. */
+   here would hand the corner the page's ink instead of the stamp's cream
+   and the label would vanish into the accent. The corner's colour is
+   restated at the same weight as the reset rather than inherited. */
 button.board__cell--corner {
   appearance: none;
   -webkit-appearance: none;
   margin: 0;
   font: inherit;
-  color: var(--corner-dark, var(--cell-ground));
+  color: var(--corner-icon, var(--cell-ground));
   cursor: pointer;
   border: 0;
 }
