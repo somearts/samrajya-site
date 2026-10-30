@@ -1541,18 +1541,32 @@
   display: none;
 }
 
-/* KRONOS KEEPS ITS PILL WHERE RAGNAROK HIDES ITS OWN.
+/* KRONOS KEEPS ITS PILL - AND ITS WELCOME - WHERE RAGNAROK HIDES ITS OWN.
 
    Ragnarok's pill is finished the moment its card is answered - Collect is
    a separate element and the draw disappears. Kronos's SAME pill BECOMES
-   the next action (COLLECT, then "Select a colony"), so it stays on the
-   card through those stages - greyed by its disabled state, never hidden.
-   And from the reveal onward the card stays in its answer state: the
-   welcome copy, the body and the header do not pop back at targeting or
-   deployment. Scoped to --kronos; the ragnarok rules above are untouched. */
+   the next action and then the result (DEPLOY, then "Select a colony",
+   then SHIELD DEPLOYED), so it stays on the card through every stage of
+   the one flow - greyed by its disabled state, never hidden, never joined
+   by a second button. And where Ragnarok's card stops being a welcome the
+   moment it is answered, the shield's reveal keeps the welcome over it:
+   heading, tagline and body sit above the revealed shield as they do on
+   the reference layout. From targeting onward - when the player's eyes are
+   on the blinking board - the welcome makes room for the prompt and the
+   confirmation. Scoped to --kronos; the ragnarok rules above are untouched. */
 .chest-card--kronos[data-phase="revealed"] .chest-card__draw,
-.chest-card--kronos[data-phase="targeting"] .chest-card__draw {
+.chest-card--kronos[data-phase="targeting"] .chest-card__draw,
+.chest-card--kronos[data-phase="deployed"] .chest-card__draw {
   display: inline-flex;
+}
+
+.chest-card--kronos[data-phase="revealed"] .property-card__head {
+  display: grid;
+}
+
+.chest-card--kronos[data-phase="revealed"] .chest-card__tagline,
+.chest-card--kronos[data-phase="revealed"] .chest-card__body {
+  display: block;
 }
 
 .chest-card--kronos[data-phase="targeting"] .chest-card__tagline,
@@ -1564,40 +1578,116 @@
   display: none;
 }
 
-/* THE AREA UNDER THE REVEALED CARD: the instructions that turn a card into
-   a deployment - what it does, which weapon it answers, how it stands. The
-   same quiet type as the rest of the chest's writing, on the same measure. */
-.chest-card__howto {
+/* THE KRONOS PILL, A SIZE SMALLER. Same component, same family, same caps -
+   just drawn tighter so the longer words it carries now (DEPLOY, SHIELD
+   DEPLOYED) sit inside the popup comfortably instead of crowding it. Only
+   the kronos card's pill; ragnarok's is untouched. */
+.chest-card--kronos .chest-card__draw {
+  min-height: max(24px, calc(var(--cell) * 0.33));
+  padding: 0 1.15em;
+  font-size: max(10.2px, calc(var(--cell) * 0.132));
+  letter-spacing: 0.15em;
+  white-space: nowrap;
+}
+
+/* THE AREA UNDER THE REVEALED CARD: the four sections that turn a card into
+   a deployment - where it comes from, how it works, the three approved
+   facts, the colonies that can receive it. The same quiet type as the rest
+   of the chest's writing, on the same measure, each heading a caps line
+   with a hairline rule running off to its right - the reference layout's
+   section rule, drawn in the card's own language. */
+.chest-card__section {
   display: grid;
-  gap: 0.35em;
+  gap: 0.32em;
   width: 100%;
   text-align: left;
 }
 
-.chest-card__howto-name {
+.chest-card__section-name {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
   margin: 0;
-  font-size: max(9px, calc(var(--cell) * 0.12));
+  font-size: max(9px, calc(var(--cell) * 0.118));
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink);
-  text-wrap: balance;
 }
 
-.chest-card__howto-p,
-.chest-card__prompt {
+.chest-card__section-name::after {
+  content: "";
+  flex: 1;
+  min-width: 1.5em;
+  border-top: 1px solid rgb(18 17 16 / 0.16);
+}
+
+.chest-card__section-p {
   margin: 0;
-  font-size: max(9.4px, calc(var(--cell) * 0.126));
-  line-height: 1.45;
+  font-size: max(9.6px, calc(var(--cell) * 0.126));
+  line-height: 1.42;
   color: var(--ink-soft);
   text-wrap: pretty;
 }
 
-.chest-card__howto-fact {
+/* The prompt takes the slot the instructions left once the board is
+   offering colonies: one line in full ink rather than soft ink, because it
+   is the thing to do now rather than something to read. */
+.chest-card__prompt {
   margin: 0;
-  font-size: max(8.8px, calc(var(--cell) * 0.116));
+  font-size: max(10px, calc(var(--cell) * 0.13));
   line-height: 1.4;
-  color: color-mix(in srgb, var(--ink) 60%, var(--cell-ground));
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* THE THREE FACTS, as their own little box: Counters, Duration, Spent -
+   the approved trio, kept out of the prose so they read at a glance, keyed
+   to the shield's own colour down the left edge. */
+.chest-card__facts {
+  display: grid;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: 1px solid rgb(18 17 16 / 0.08);
+  border-left: 2px solid var(--shield, var(--ink));
+  border-radius: 6px;
+  background: var(--card-inset);
+}
+
+.chest-card__fact {
+  margin: 0;
+  font-size: max(9.4px, calc(var(--cell) * 0.122));
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.chest-card__fact b {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* THE COLONIES, as chips: every name in the shield's reach, wrapped to the
+   width the popup has, named exactly as the board names them. Which of
+   them the player OWNS is the board's answer at the DEPLOY press - this
+   is the shield's reach, always the same list for this shield. */
+.chest-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+}
+
+.chest-card__chip {
+  padding: 2px 7px;
+  border: 1px solid rgb(18 17 16 / 0.14);
+  border-radius: 999px;
+  background: var(--card-inset);
+  font-size: max(9px, calc(var(--cell) * 0.116));
+  line-height: 1.35;
+  color: var(--ink-soft);
+  white-space: nowrap;
 }
 
 .chest-card__slot.is-drawn .chest-card__back {
@@ -5023,6 +5113,12 @@ button.board__cell--corner:focus-visible {
 }
 
 .board--fight-armed .board__cell.is-fight-blink {
+  cursor: pointer;
+}
+
+/* The shield's offering reads as pressable the same way - a lit colony is
+   one the chest is asking for, while it is asking. */
+.board--shield-targeting .board__cell.is-fight-blink {
   cursor: pointer;
 }
 

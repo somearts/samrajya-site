@@ -1454,9 +1454,10 @@ export function board({
         } else if (chest.kind === "kronos") {
           /* KRONOS OFFERS THREE SHIELD FACES, and the player touches one of
              them - or the pill, which is the same draw said once more. After
-             the shuffle the SAME PILL becomes COLLECT, so its handler
+             the shuffle the SAME PILL becomes DEPLOY, so its handler
              dispatches on the state's own phase: open draws, revealed
-             collects. Only the server decides what either action means. */
+             collects (the server's targeting pass behind the DEPLOY press).
+             Only the server decides what either action means. */
           for (const slot of [0, 1, 2]) {
             handlers[`.chest-card__slot[data-slot="${slot}"]`] = () => {
               if (game.chest?.phase !== "open") return;
@@ -1503,10 +1504,10 @@ export function board({
          A real Ragnarok draw ends at Collect. Done survives where there is
          no collect to make (a bad-luck draw), where the chest's own rules
          asked for it (an answered Nexus, an offering), and at KRONOS
-         throughout: after the reveal (the explanation and COLLECT are on
-         the card, and Done is the way out), during targeting (the player
-         may decline to place and simply leave), and once the shield stands
-         (Done closes the visit that deployed it). */
+         throughout: after the reveal (the DEPLOY pill and the shield's
+         explanation are on the card, and Done is the way out), during
+         targeting (the player may decline to place and simply leave), and
+         once the shield stands (Done closes the visit that deployed it). */
       const ragnarokRevealed =
         chest.kind === "ragnarok" && chest.phase === "revealed";
       const needsDone =
@@ -1635,21 +1636,25 @@ export function board({
       .catch(() => {});
   }
 
-  /* THE COMPATIBLE COLONIES, GLOWING - the fight's own selection
-     treatment, reused.
+  /* THE COMPATIBLE COLONIES, BLINKING RED - the fight's own selection
+     treatment, reused at its strongest.
 
-     The glow is drawn from the chest's AUTHORITATIVE compatible list on
-     every stage of the chest - the same soft target glow a weapon shows
-     while armed - and cleared the moment there is no chest or no
-     targeting. Both screens run this from the same state, so both see the
-     same colonies offered, and no colony can look selectable when the
-     server would refuse it. */
+     The blink is drawn from the chest's AUTHORITATIVE compatible list on
+     every stage of the chest - the same strong outline a weapon's target
+     wears while a strike is armed, unmistakable rather than subtle - and
+     cleared the moment there is no chest or no targeting. Both screens run
+     this from the same state, so both see the same colonies offered, and
+     no colony can look selectable when the server would refuse it. The
+     frame class is only for the cursor: a lit colony is a colony that can
+     be pressed. */
   function syncShieldTargets() {
     clearFightMarks(frame);
     const chest = game?.chest;
-    if (chest?.kind === "kronos" && chest.phase === "targeting") {
+    const targeting = chest?.kind === "kronos" && chest.phase === "targeting";
+    frame.classList.toggle("board--shield-targeting", targeting);
+    if (targeting) {
       for (const id of chest.result?.compatible || []) {
-        frame.querySelector(`.board__cell[data-id="${id}"]`)?.classList.add("is-fight-glow");
+        frame.querySelector(`.board__cell[data-id="${id}"]`)?.classList.add("is-fight-blink");
       }
     }
   }
@@ -2364,9 +2369,9 @@ export function board({
       }
       /* THE SHIELD IS ASSIGNED AT THE TILE, THE WAY A STRIKE IS ARMED.
 
-          While COLLECT has put the chest into targeting, a tap on the board
+          While DEPLOY has put the chest into targeting, a tap on the board
           is not a request to read a card - it is the assignment, or it is
-          nothing. A glowing colony is compatible and takes the shield at
+          nothing. A blinking colony is compatible and takes the shield at
           once; everything else gets the same very small shake, and no card
           opens underneath the targeting. */
       const chest = game.chest;

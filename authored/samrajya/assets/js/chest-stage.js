@@ -239,22 +239,24 @@ function ragnarokCard({ drawable, phase, caption }) {
 }
 
 /* THE DEPLOYMENT EXPLANATION - shown under the revealed card, in the same
-   popup. The three facts it leans on are the data's own: a shield counters
-   exactly one weapon, it stands for two of its owner's turns, and it is
-   spent on the block it makes. */
-const HOW_TO_DEPLOY =
-  "This shield must be assigned to a compatible colony. Tap COLLECT to reveal your protected colonies, then select a highlighted colony to activate the shield. Once deployed, the shield protects that colony against its designated weapon for its full duration.";
+   popup, in four short sections: where the shield comes from, how it works,
+   the three approved facts (Counters / Duration / Spent), and the colonies
+   that can receive it. The facts it leans on are the data's own: a shield
+   counters exactly one weapon, it stands for two of its owner's turns, and
+   it is spent on the block it makes. */
 
 /**
  * THE ONE PILLOW, EVERY STATE.
  *
- * The same button the DRAW pill was built as, told what it is at each stage:
- * DRAW while open; a greyed DRAW through the shuffle (the card may already
- * be in its reveal stage while the shuffle runs, so the shuffle itself is
- * remembered on the card); COLLECT the moment the face is up; "Select a
- * colony" while the board is offering one; and gone for good once the shield
- * stands. `mine` comes from the card, so the stage can re-sync it after the
- * shuffle without knowing anything except the state.
+ * The same button the DRAW pill was built as, told what it is at each stage,
+ * in the progression the flow promises: DRAW while open; a greyed DRAW
+ * through the shuffle (the card may already be in its reveal stage while the
+ * shuffle runs, so the shuffle itself is remembered on the card); DEPLOY the
+ * moment the face is up; "Select a colony" while the board is offering one
+ * (or DEPLOY again, greyed, when there is nothing to select); and SHIELD
+ * DEPLOYED - kept visible as the result - once the shield stands. `mine`
+ * comes from the card, so the stage can re-sync it after the shuffle without
+ * knowing anything except the state.
  */
 function syncDrawButton(card, chest) {
   const btn = card.querySelector('[data-action="draw"]');
@@ -269,14 +271,21 @@ function syncDrawButton(card, chest) {
   if (phase === "drawing" || (phase === "revealed" && !none && !faceShown)) {
     disabled = true; // visibly greyed through the shuffle, never hidden
   } else if (phase === "revealed") {
-    if (none) disabled = true;
-    else label = "Collect";
+    if (none) disabled = true; // a miss: nothing to deploy, Done is the way out
+    else {
+      label = "Deploy";
+      disabled = !mine;
+    }
   } else if (phase === "targeting") {
-    label = "Select a colony";
+    /* Selection state: the colonies are lit and the pill says what to do
+       next. With no compatible colony the press already happened and the
+       decline message carries the answer, so the pill stays on DEPLOY and
+       greyed rather than promising a selection that does not exist. */
+    label = (chest.result?.compatible || []).length ? "Select a colony" : "Deploy";
     disabled = true;
   } else if (phase === "deployed") {
-    btn.style.display = "none"; // Done is the only press left
-    return;
+    label = "Shield deployed"; // the result, not an action: visible and done
+    disabled = true;
   }
 
   btn.style.display = "";
@@ -291,15 +300,17 @@ function syncDrawButton(card, chest) {
  * THE SAME CARD AS RAGNAROK'S, WEARING ITS OWN DATA - the same shell, the
  * same three faces, the same shuffle - but its own little story: DRAW
  * shuffles and reveals one shield in THIS popup; the card then explains
- * itself (how to deploy, which weapon it counters, how long it stands);
- * and the draw pill becomes COLLECT, which - with the board - highlights
- * the colonies the shield can legally stand on. Nothing here opens a
- * second screen, and nothing deploys at the draw: the shield exists only
- * once a highlighted colony is tapped.
+ * itself (where it comes from, how it works, what it counters, how long it
+ * stands, and which colonies can receive it); and the draw pill becomes
+ * DEPLOY, which - with the board - highlights the colonies the shield can
+ * legally stand on. Nothing here opens a second screen, and nothing
+ * deploys at the draw: the shield exists only once a highlighted colony
+ * is tapped.
  *
  * The pill's label and availability are owned by `syncDrawButton`, which
  * the stage calls for every state - DRAW while open, greyed DRAW during
- * the shuffle, COLLECT once revealed, "Select a colony" while picking.
+ * the shuffle, DEPLOY once revealed, "Select a colony" while picking,
+ * SHIELD DEPLOYED when it stands.
  */
 function kronosCard({ drawable, phase, caption }) {
   const slot = (shield, index) => {
@@ -931,8 +942,9 @@ export async function playKronosStage(board, chest) {
 
   /* THE FACE TURNS OVER - STAGE B. Idempotent: the reveal runs again harmlessly
      on the targeting and deployed stages, so a card that is redrawn for any
-     of them keeps its face. The title is the card's whole description - the
-     weapon, the rules and the duration are the information area's job. */
+     of them keeps its face. The face carries the shield's name and the one
+     weapon it answers - everything beyond that (origin, rules, duration,
+     the compatible colonies) is the information area's job. */
   const chosenIndex = Number(chest.result?.slot ?? 1);
   const chosen = slots[chosenIndex] || slots[1] || slots[0];
   for (const slot of slots) {
@@ -943,7 +955,17 @@ export async function playKronosStage(board, chest) {
       const face = slot.querySelector(".chest-card__face");
       if (face) face.innerHTML = emblem(shield, shieldColor(shield.id));
       const name = slot.querySelector(".chest-card__slot-name");
-      if (name) name.replaceChildren(el("span", { text: shield.name }));
+      if (name) {
+        const stops = weaponById(shield.counters)?.name || "";
+        name.replaceChildren(
+          ...[
+            el("span", { text: shield.name }),
+            stops
+              ? el("span", { class: "chest-card__slot-stops", text: `Stops ${stops}` })
+              : null,
+          ].filter(Boolean),
+        );
+      }
       const pill = slot.querySelector(".chest-card__pill");
       if (pill) pill.style.removeProperty("background");
     } else {
@@ -952,14 +974,16 @@ export async function playKronosStage(board, chest) {
   }
   if (!card.dataset.faceShown) {
     card.dataset.faceShown = "true";
-    /* The pill becomes COLLECT exactly here - the moment the card is
+    /* The pill becomes DEPLOY exactly here - the moment the card is
        readable - never during the shuffle and never before. */
     syncDrawButton(card, chest);
   }
 
-  /* STAGE C - THE INFORMATION AREA beneath the card: the whole explanation,
-     the targeting prompt, the decline, or the deployment confirmation - all
-     inside this popup, all derived from the state. */
+  /* STAGE C - THE INFORMATION AREA beneath the card: the shield's story,
+     how deployment works, the three approved facts, the colonies that can
+       receive it - then, at the later stages, the targeting prompt, the
+       decline, or the deployment confirmation. All inside this popup, all
+       derived from the state. */
   if (result) {
     result.hidden = false;
     result.replaceChildren(...shieldInfo(chest, shield));
@@ -971,17 +995,24 @@ export async function playKronosStage(board, chest) {
 /** What the area under the revealed card says, at each stage. */
 function shieldInfo(chest, shield) {
   const none = Boolean(chest.result?.none);
+  const weapon = shield ? weaponById(shield.counters) : null;
+
+  /* DEPLOYED - THE CONFIRMATION: the four facts of what just happened -
+     shield, colony, weapon, duration - under one line, in the same popup. */
   if (chest.phase === "deployed") {
     const colony = CELLS.find((c) => c.id === chest.result?.colony)?.name || "its colony";
-    const weapon = shield ? weaponById(shield.counters) : null;
     return [
       el("p", { class: "chest-card__drew", text: "Shield deployed" }),
       el("p", {
         class: "chest-card__weapon-blurb",
-        text: `${shield?.name || "The shield"} now protects ${colony} against the ${weapon?.name || "its weapon"} for two of your turns, and is spent the moment it blocks it.`,
+        text: `${shield?.name || "The shield"} now protects ${colony.replace(/\n/g, " ")} against the ${weapon?.name || "its weapon"} for two of your turns.`,
       }),
     ];
   }
+
+  /* TARGETING - CHOOSING: the decline when nothing is compatible (the
+     answer where the instructions were), otherwise the prompt in their
+     place with the facts and the colonies still under it. */
   if (chest.phase === "targeting") {
     const compatible = chest.result?.compatible || [];
     if (!compatible.length) {
@@ -994,28 +1025,82 @@ function shieldInfo(chest, shield) {
       ];
     }
     return [
-      el("p", { class: "chest-card__drew", text: shield?.name || "Shield" }),
       el("p", {
         class: "chest-card__prompt",
-        text: "Your compatible colonies are highlighted. Tap one to deploy the shield there.",
+        text: "Your compatible colonies are blinking on the board. Tap one to deploy the shield there.",
       }),
-    ];
+      shieldFacts(shield, weapon),
+      shieldColonies(shield, weapon),
+    ].filter(Boolean);
   }
+
   if (none) {
     return [el("p", { class: "chest-card__drew", text: KRONOS_CHEST.badLuck })];
   }
-  const weapon = shield ? weaponById(shield.counters) : null;
+
+  /* REVEALED - THE REVEAL: four short sections in the approved order -
+     where it comes from, how it works, the three facts, the colonies -
+     each a caps heading over one small paragraph, all fitting the space
+     the popup already has. */
   return [
-    el("p", { class: "chest-card__drew", text: `You drew the ${shield?.name || "shield"}.` }),
-    el("div", { class: "chest-card__howto" }, [
-      el("h4", { class: "chest-card__howto-name", text: "How to deploy" }),
-      el("p", { class: "chest-card__howto-p", text: HOW_TO_DEPLOY }),
-      el("p", {
-        class: "chest-card__howto-fact",
-        text: `Counters the ${weapon?.name || "its weapon"} - stands for two of your turns on the colony it protects, and is spent on a successful block.`,
-      }),
-    ]),
-  ];
+    shieldSection(
+      "About this shield",
+      shield?.myth || shield?.blurb || "",
+    ),
+    shieldSection(
+      "How it works",
+      `Tap DEPLOY, then choose a highlighted colony. It protects that one colony against the ${weapon?.name || "its weapon"} for two of your turns.`,
+    ),
+    shieldFacts(shield, weapon),
+    shieldColonies(shield, weapon),
+  ].filter(Boolean);
+}
+
+/** One section: a caps heading with a rule running off to the right, and a
+    short paragraph in the card's quiet type. */
+function shieldSection(name, text) {
+  if (!text) return null;
+  return el("div", { class: "chest-card__section" }, [
+    el("h4", { class: "chest-card__section-name", text: name }),
+    el("p", { class: "chest-card__section-p", text }),
+  ]);
+}
+
+/** The three approved facts - Counters, Duration, Spent - in a small box
+    keyed to the shield's own colour, so the box reads as THIS shield's
+    rules without a paragraph around them. */
+function shieldFacts(shield, weapon) {
+  const row = (label, value) =>
+    el("p", { class: "chest-card__fact" }, [
+      el("b", { text: label }),
+      el("span", { text: ` ${value}` }),
+    ]);
+  return el("div", {
+    class: "chest-card__facts",
+    style: { "--shield": shieldColor(shield?.id) },
+  }, [
+    row("Counters:", weapon?.name || "its weapon"),
+    row("Duration:", "Two of your turns"),
+    row("Spent:", "When it successfully blocks the weapon"),
+  ]);
+}
+
+/** Every colony that can receive this shield, named as the board names it,
+    as a wrap of small chips. The board decides which of them the player
+    OWNS at the DEPLOY press - this list is the shield's reach. */
+function shieldColonies(shield, weapon) {
+  const names = (weapon?.targets || [])
+    .map((id) => CELLS.find((c) => c.id === id)?.name || id)
+    .filter(Boolean);
+  if (!names.length) return null;
+  return el("div", { class: "chest-card__section" }, [
+    el("h4", { class: "chest-card__section-name", text: "Compatible colonies" }),
+    el("div", { class: "chest-card__chips" },
+      names.map((name) =>
+        el("span", { class: "chest-card__chip", text: name.replace(/\n/g, " ") }),
+      ),
+    ),
+  ]);
 }
 
 /**
