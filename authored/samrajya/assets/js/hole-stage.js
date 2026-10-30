@@ -81,11 +81,39 @@ const VESSEL_MYTH = [
   "The fuel decays almost as quickly as it is produced, and every launch consumes an irreplaceable charge. The vessel does not defeat the Black Hole - it forces a narrow corridor through the event horizon and carries its passenger out before the corridor collapses.",
 ];
 
-/* The two presses, with what each one costs - visible BEFORE the choice. */
-const BUILD_NOTE =
-  "Free passage. Costs your current turn: your next turn converts your roll into escape energy instead of movement. You stay trapped until the threshold is reached.";
-const VESSEL_NOTE =
-  "Pay \u20b9500 for a fuel-powered breach of the event horizon. Escape immediately, with no entropy required; you move again on your next eligible turn. The \u20b9500 is the whole of the price - no further charge.";
+/* --------------------------------------------------- the active popup copy
+
+   THREE ZONES, ONE SCREEN, NO SCROLL - so every word here is budgeted
+   against the smallest board the game draws: the design baseline of a
+   360x640 phone, where the popup is four cells wide and eight cells tall.
+   What survives is the whole of what a player needs: the epithet, the best
+   line of the myth, the Protocol and its meter, the vessel and its price.
+   Anything longer moves to the inspection card, where there is room. */
+
+const ACTIVE_SUBTITLE = "The Wound of Kaalchakra";
+
+const ACTIVE_LORE =
+  "Born from a fracture in the cosmic cycle, the Black Hole devours light, matter, and time itself. Astronomers called it the Wound of Kaalchakra. Those caught within must bend entropy to escape - or pay for passage beyond the event horizon.";
+
+const ACTIVE_PROTOCOL =
+  "Your turn ends now. On your next turn your roll becomes entropy, not movement. Build enough to breach the singularity, then commit and escape on your next turn.";
+
+const ACTIVE_VESSEL =
+  "Rare radioactive fuel forces a passage through the event horizon. Pay \u20b9500 to escape without building entropy - you move again next turn.";
+
+/* The notice under the presses: what the LEFT press costs, said before the
+   press. It must agree with the server, word for word. */
+const NOTICE_BUILD =
+  "BUILD ENTROPY ends your current turn. You begin building entropy on your next turn.";
+const NOTICE_ESCAPE =
+  "ESCAPE NEXT TURN commits you: your next roll moves you, and the singularity lets you go.";
+
+/* A small, quiet star for above the left press - one stroke, in the button's
+   own ink, never larger than the words it sits over. */
+const STAR_SVG =
+  '<svg viewBox="0 0 10 10" class="hole-card__star" aria-hidden="true" focusable="false">' +
+  '<path d="M5 0.7 L6.2 3.6 L9.3 3.9 L7 6.1 L7.7 9.2 L5 7.6 L2.3 9.2 L3 6.1 L0.7 3.9 L3.8 3.6 Z" fill="currentColor"/>' +
+  "</svg>";
 
 /* ------------------------------------------------------------- the veil */
 
@@ -138,11 +166,6 @@ function fillOf(entropy, threshold) {
   return Math.max(0, Math.min(100, Math.round((entropy / threshold) * 100)));
 }
 
-/** One lore paragraph, on the measure the card gives it. */
-function prose(text) {
-  return el("p", { class: "hole-card__prose", text });
-}
-
 /** A titled block of gameplay writing: heading, then its paragraphs. */
 function section(name, paragraphs) {
   return el("section", { class: "hole-card__section" }, [
@@ -154,14 +177,22 @@ function section(name, paragraphs) {
 /**
  * The confinement panel, drawn from the state.
  *
- * The board's OWN card, on the board's own paper: the property card's
- * ivory ground, the same ink, the same pill and head - only the meter, the
- * gold accent and the two presses are the confinement's own. It is full of
- * what the place IS and what each choice costs, because a player must
- * understand the singularity, the Protocol and the vessel before they
- * press anything, not learn the price afterwards.
+ * THREE FIXED ZONES, ONE SCREEN, NO SCROLL: a header (title left, close
+ * right), a centre that says everything (epithet, the best of the myth, the
+ * Protocol with its meter, the vessel with its price), and a footer that
+ * holds the two presses side by side with what the left one costs written
+ * beneath them. The content is budgeted to the smallest board the game
+ * draws - the 360x640 baseline - so nothing is clipped, nothing scrolls,
+ * and nothing essential is hidden. The close button closes the SCREEN
+ * only: the confinement is the server's fact and does not notice.
  */
-export function drawHoleStage(board, hole, { mine = false, ledger = null, handlers = {}, playerName = "" } = {}) {
+export function drawHoleStage(board, hole, {
+  mine = false,
+  ledger = null,
+  handlers = {},
+  playerName = "",
+  onClose = null,
+} = {}) {
   const holder = board.querySelector(".board__card");
   if (!holder || !hole) return null;
 
@@ -178,6 +209,49 @@ export function drawHoleStage(board, hole, { mine = false, ledger = null, handle
   const armed = Boolean(hole.entropyRoll);
   const released = hole.phase === "released";
 
+  /* THE FOOTER: the presses, and what the left one costs. The states that
+     have no press to offer (committed, armed, released) say their line in
+     the same slot, so the footer never changes the card's height. */
+  const footerRow = released
+    ? el("p", { class: "hole-card__released", text: "Released" })
+    : committed
+      ? el("p", {
+          class: "hole-card__waiting",
+          "data-role": "waiting",
+          text: "Escape committed. The next roll sets you free.",
+        })
+      : armed
+        ? el("p", {
+            class: "hole-card__waiting",
+            "data-role": "waiting",
+            text: "Entropy roll ready. Throw the die.",
+          })
+        : el("div", { class: "hole-card__footer-row" }, [
+            el("button", {
+              type: "button",
+              class: "hole-card__action hole-card__action--primary",
+              "data-action": atEase ? "escape" : "build",
+              disabled: !mine,
+              "aria-disabled": String(!mine),
+            }, [
+              /* THE STAR, ABOVE THE WORDS - one quiet mark over the free
+                 passage, small enough to stay under the label rather than
+                 competing with it. */
+              el("span", { class: "hole-card__star-slot", html: STAR_SVG, "aria-hidden": "true" }),
+              el("span", { class: "hole-card__action-label", text: atEase ? "Escape next turn" : "Build entropy" }),
+            ]),
+            el("button", {
+              type: "button",
+              class: "hole-card__action hole-card__action--vessel",
+              "data-action": "vessel",
+              disabled: !mine,
+              "aria-disabled": String(!mine),
+            }, [
+              el("span", { class: "hole-card__action-label", text: "Acquire vessel" }),
+              el("span", { class: "hole-card__action-price", text: "\u20b9500" }),
+            ]),
+          ]);
+
   const card = el("article", {
     class: "property-card hole-card",
     "data-property": "black-hole",
@@ -188,29 +262,44 @@ export function drawHoleStage(board, hole, { mine = false, ledger = null, handle
     style: { "--accent": "#C9A24A" },
     "aria-live": "polite",
   }, [
+    /* ZONE 1 - the header: the title on the left, the close on the right. */
     el("div", { class: "property-card__head" }, [
       el("div", { class: "property-card__title" }, [
         el("span", { class: "property-card__pill", "aria-hidden": "true" }),
         el("h3", { class: "property-card__name", text: "Black Hole" }),
       ]),
     ]),
-    /* THE MIDDLE, AS ONE REGION: everything that is said rather than
-       pressed. It takes whatever height is left and scrolls inside itself,
-       so the presses at the foot stay pinned at every screen size. */
+    el("button", {
+      type: "button",
+      class: "property-card__close",
+      "aria-label": "Close",
+      title: "Close",
+      "data-action": "close",
+      text: "\u00d7",
+    }),
+
+    /* ZONE 2 - the centre: epithet, myth, the Protocol with its meter, the
+       vessel with its price. One screen's worth, written to fit it. */
     el("div", { class: "hole-card__body" }, [
-      el("p", {
-        class: "hole-card__tag",
-        text: released
-          ? "The vessel breaks the hold."
-          : "Gravitational confinement active",
-      }),
-      ...LORE.map((text) => el("p", { class: "hole-card__prose", text })),
-      section(PROTOCOL_HEADING, [
-        ...PROTOCOL,
-        "Normal threshold: 10 entropy - halved to 5 while you hold Event Horizon.",
-      ]),
+      el("p", { class: "hole-lore__subtitle", text: ACTIVE_SUBTITLE }),
+      el("p", { class: "hole-card__prose", text: ACTIVE_LORE }),
+      section("Entropy protocol", [ACTIVE_PROTOCOL]),
       el("div", { class: "hole-card__meter-block" }, [
-        el("p", { class: "hole-card__label", text: "Entropy accumulation" }),
+        /* The figure and the hold's note on ONE line: the live amount
+           against the live threshold, and - when the ledger halves it -
+           the reason right beside the number it changed, in the row the
+           figure already occupies instead of a row of its own. */
+        el("div", { class: "hole-card__meter-head" }, [
+          el("p", { class: "hole-card__figure" }, [
+            el("span", { class: "hole-card__figure-label", text: "Entropy\u00a0" }),
+            el("span", { class: "hole-card__entropy", text: String(entropy) }),
+            el("span", { class: "hole-card__of", text: " / " }),
+            el("span", { class: "hole-card__threshold", text: String(threshold) }),
+          ]),
+          held
+            ? el("p", { class: "hole-card__held", text: "Event Horizon: 5" })
+            : null,
+        ].filter(Boolean)),
         el("div", {
           class: "hole-card__meter",
           role: "progressbar",
@@ -224,81 +313,38 @@ export function drawHoleStage(board, hole, { mine = false, ledger = null, handle
             style: { width: `${fillOf(entropy, threshold)}%` },
           }),
         ]),
-        /* The figure says the whole thing in one line: what is held against
-           what is needed, at whatever threshold the ledger gives. */
-        el("p", { class: "hole-card__figure" }, [
-          el("span", { class: "hole-card__figure-label", text: "Entropy: " }),
-          el("span", { class: "hole-card__entropy", text: String(entropy) }),
-          el("span", { class: "hole-card__of", text: " / " }),
-          el("span", { class: "hole-card__threshold", text: String(threshold) }),
-        ]),
-        /* THE HOLD'S OWN NOTE. The threshold is halved while this seat holds
-           Event Horizon, and the card says so where the number is - the same
-           fact the meter is drawn from, never a second count. */
-        held
-          ? el("p", { class: "hole-card__held", text: "Event Horizon held \u2014 threshold halved to 5." })
-          : null,
-        el("p", {
-          class: "hole-card__compact",
-          text: "Your next roll fuels the breach. Movement is suspended while you generate entropy.",
-        }),
-      ].filter(Boolean)),
-      section(VESSEL_HEADING, VESSEL_MYTH),
-      el("p", {
-        class: "hole-card__prose hole-card__prose--facts",
-        text: "Cost \u20b9500 - the whole of the price, with no further charge. It releases you immediately, without the Protocol; you roll and move again on your next eligible turn.",
-      }),
+      ]),
+      section("Relativistic escape vessel \u00b7 \u20b9500", [ACTIVE_VESSEL]),
+    ]),
+
+    /* ZONE 3 - the footer: both presses side by side, the consequence of
+       the left one beneath them, and the watcher's line when the panel is
+       read. */
+    el("div", { class: "hole-card__footer" }, [
+      footerRow,
+      released || committed || armed || !mine
+        ? null
+        : el("p", {
+            class: "hole-card__notice",
+            text: atEase ? NOTICE_ESCAPE : NOTICE_BUILD,
+          }),
       !mine && !released
         ? el("p", { class: "hole-card__watcher", text: `Waiting for ${playerName}` })
         : null,
     ].filter(Boolean)),
-    /* THE TWO PRESSES, EACH WITH ITS PRICE NAMED BENEATH IT - visible
-       before the player commits, not discovered after. */
-    el("div", { class: "hole-card__actions" }, [
-      released
-        ? el("p", { class: "hole-card__released", text: "Released" })
-        : committed
-          ? el("p", {
-              class: "hole-card__waiting",
-              "data-role": "waiting",
-              text: "Escape committed. The next roll sets you free.",
-            })
-          : armed
-            ? el("p", {
-                class: "hole-card__waiting",
-                "data-role": "waiting",
-                text: "Entropy roll ready. Throw the die.",
-              })
-            : [
-                el("button", {
-                  type: "button",
-                  class: "hole-card__action hole-card__action--primary",
-                  "data-action": atEase ? "escape" : "build",
-                  disabled: !mine,
-                  "aria-disabled": String(!mine),
-                  text: atEase ? "Escape next turn" : "Build entropy",
-                }),
-                el("p", { class: "hole-card__action-note", text: atEase
-                  ? "Free passage. Your escape completes on your next turn: roll, move, and leave the singularity behind."
-                  : BUILD_NOTE }),
-              ],
-      released || committed
-        ? null
-        : [
-            el("button", {
-              type: "button",
-              class: "hole-card__action hole-card__action--vessel",
-              "data-action": "vessel",
-              disabled: !mine,
-              "aria-disabled": String(!mine),
-            }, [
-              el("span", { class: "hole-card__action-name", text: "Acquire escape vessel" }),
-              el("span", { class: "hole-card__action-price", text: "\u20b9500" }),
-            ]),
-            el("p", { class: "hole-card__action-note", text: VESSEL_NOTE }),
-          ],
-    ].flat(Infinity).filter(Boolean)),
   ]);
+
+  /* THE CLOSE BUTTON CLOSES THE SCREEN AND NOTHING ELSE: no action, no
+     state, no turn - the confinement is the server's fact and goes on
+     regardless of whether this card is showing it. The board remembers the
+     dismissal by stage so the next repaint does not put the card straight
+     back up; tapping the tile brings the SAME live state again. */
+  const close = card.querySelector('[data-action="close"]');
+  if (close) {
+    close.addEventListener("click", () => {
+      if (typeof onClose === "function") onClose();
+    });
+  }
 
   if (mine) {
     for (const [selector, handler] of Object.entries(handlers)) {

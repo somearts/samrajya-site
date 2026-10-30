@@ -4364,22 +4364,30 @@ button.board__cell--corner:focus-visible {
   height: 100%;
 }
 
-/* The middle row: everything that is said rather than pressed. It takes
-   whatever height is left and scrolls inside itself, so the presses at the
-   foot are pinned at every screen size. */
+/* THE CENTRE REGION: it fits the space it is given and does NOT scroll -
+   the popup is one screen, and the copy was written to that screen. `hidden`
+   overflow is the enforcement; the fit is measured, not hoped for. */
 .hole-card__body {
   min-height: 0;
   display: grid;
-  gap: calc(var(--cell) * 0.16);
+  gap: calc(var(--cell) * 0.042);
   align-content: start;
   justify-items: center;
   width: 100%;
+  overflow: hidden;
+}
+
+/* THE READING CARD KEEPS THE ONE THING THE ACTIVE POPUP REFUSES: its body
+   may scroll. A tile's full lore is a page of reading, not a decision to
+   fit on one screen - the no-scroll rule belongs to the escape screen and
+   to the press that ends a turn. */
+.hole-lore .hole-card__body {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
 }
 
-.hole-card__body::-webkit-scrollbar {
+.hole-lore .hole-card__body::-webkit-scrollbar {
   display: none;
 }
 
@@ -4391,8 +4399,7 @@ button.board__cell--corner:focus-visible {
    card's own width; on a wide screen it stops at forty-six characters. */
 .hole-card__prose,
 .hole-card__section,
-.hole-card__compact,
-.hole-card__action-note,
+.hole-card__notice,
 .hole-lore__warning {
   width: min(100%, 46ch);
   margin-inline: auto;
@@ -4403,30 +4410,27 @@ button.board__cell--corner:focus-visible {
 
 .hole-card__prose {
   margin-block: 0;
-  font-size: max(9.8px, calc(var(--cell) * 0.128));
-  line-height: 1.5;
+  /* The density of the middle: a slightly smaller floor and a tighter
+     leading, still inside the sizes the board prints elsewhere - and at
+     larger cells it scales up with the card, as everything here does. */
+  font-size: max(9px, calc(var(--cell) * 0.125));
+  line-height: 1.36;
   color: var(--ink-soft);
 }
 
-.hole-card__prose--facts {
-  color: var(--ink);
-}
-
-/* A titled block of gameplay writing: its own hairline, its own heading,
-   its own paragraphs - the hierarchy the empty card never had. */
 .hole-card__section {
   display: grid;
-  gap: 0.5em;
-  margin-block: calc(var(--cell) * 0.05);
-  padding-top: calc(var(--cell) * 0.11);
+  gap: 0.35em;
+  margin-block: calc(var(--cell) * 0.012);
+  padding-top: calc(var(--cell) * 0.042);
   border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--cell-ground));
 }
 
 .hole-card__section-name {
   margin: 0;
-  font-size: max(9px, calc(var(--cell) * 0.12));
+  font-size: max(8.8px, calc(var(--cell) * 0.116));
   font-weight: 500;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink);
   /* Balanced, so a long heading breaks across two even lines instead of
@@ -4434,19 +4438,13 @@ button.board__cell--corner:focus-visible {
   text-wrap: balance;
 }
 
-.hole-card__compact {
+/* WHAT THE LEFT PRESS COSTS - under the presses, before they are pressed,
+   in a size that stays legible at the smallest board. */
+.hole-card__notice {
   margin-block: 0;
-  font-size: max(8.8px, calc(var(--cell) * 0.116));
-  line-height: 1.45;
-  color: color-mix(in srgb, var(--ink) 55%, var(--cell-ground));
-}
-
-/* What a press costs, under the press, before it is pressed. */
-.hole-card__action-note {
-  margin-block: calc(var(--cell) * 0.055);
   font-size: max(8.6px, calc(var(--cell) * 0.112));
-  line-height: 1.45;
-  color: color-mix(in srgb, var(--ink) 58%, var(--cell-ground));
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--ink) 62%, var(--cell-ground));
   text-align: center;
 }
 
@@ -4462,8 +4460,10 @@ button.board__cell--corner:focus-visible {
    and the warning that closes the reading. */
 .hole-lore__subtitle {
   margin: 0;
-  font-size: max(9.2px, calc(var(--cell) * 0.122));
-  letter-spacing: 0.26em;
+  font-size: max(9px, calc(var(--cell) * 0.118));
+  /* Tracking that keeps the epithet on ONE line at the baseline phone, where
+     a wider one wrapped it to two and cost the centre zone a row. */
+  letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink);
   text-wrap: balance;
@@ -4479,39 +4479,63 @@ button.board__cell--corner:focus-visible {
   color: var(--ink);
 }
 
-.hole-card__actions {
+/* ZONE 3 - THE FOOTER: both presses side by side at the bottom, with the
+   consequence line beneath them. Fixed enough padding that neither the
+   buttons nor the notice ever touch the card's edge. */
+.hole-card__footer {
   display: grid;
-  gap: calc(var(--cell) * 0.09);
+  gap: calc(var(--cell) * 0.045);
   width: 100%;
   justify-items: center;
-  padding-top: calc(var(--cell) * 0.08);
+  padding-top: calc(var(--cell) * 0.065);
+  border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--cell-ground));
+}
+
+.hole-card__footer-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: calc(var(--cell) * 0.12);
+  width: 100%;
+}
+
+/* THE CARD'S OWN FIT: the property card's padding and row gap are generous
+   for a card with room; this one carries three zones and a fixed budget, so
+   it takes slightly less air at the edges and between its rows - the same
+   proportions, at the density the middle can hold. */
+.hole-card {
+  padding: calc(var(--cell) * 0.13) calc(var(--cell) * 0.18);
+  row-gap: calc(var(--cell) * 0.042);
+}
+
+/* The head sits tight against its own row: every pixel the header saves is
+   a pixel the centre zone keeps. */
+.hole-card .property-card__head {
+  margin: 0;
 }
 
 .hole-card .property-card__pill {
   background: var(--accent, #c9a24a);
 }
 
-.hole-card__tag {
-  margin: 0;
-  font-size: max(9.6px, calc(var(--cell) * 0.128));
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
+/* The title keeps its distance from the close button at the right edge. */
+.hole-card .property-card__name {
+  padding-right: max(24px, calc(var(--cell) * 0.42));
 }
 
 .hole-card__meter-block {
   display: grid;
-  gap: calc(var(--cell) * 0.1);
+  gap: calc(var(--cell) * 0.045);
   width: 100%;
   align-content: start;
 }
 
-.hole-card__label {
-  margin: 0;
-  font-size: max(8.8px, calc(var(--cell) * 0.115));
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--ink) 55%, var(--cell-ground));
+/* The number and the reason on one line - no second row for the note. */
+.hole-card__meter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
 }
 
 .hole-card__meter {
@@ -4551,8 +4575,9 @@ button.board__cell--corner:focus-visible {
 
 .hole-card__held {
   margin: 0;
-  font-size: max(8.8px, calc(var(--cell) * 0.115));
-  letter-spacing: 0.06em;
+  white-space: nowrap;
+  font-size: max(8.4px, calc(var(--cell) * 0.106));
+  letter-spacing: 0.02em;
   /* Gold drawn towards the ink, so the note reads as gold and still reads
      as words on the paper ground. */
   color: color-mix(in srgb, var(--accent, #c9a24a) 62%, var(--ink));
@@ -4575,26 +4600,33 @@ button.board__cell--corner:focus-visible {
   color: color-mix(in srgb, var(--ink) 58%, var(--cell-ground));
 }
 
+/* THE PRESSES: a stacked cell that fills its half of the footer row - the
+   star over the words on the left, the name over the price on the right -
+   so both sit at exactly one height whatever line they break onto. */
 .hole-card__action {
-  display: inline-flex;
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.7em;
-  align-self: center;
-  min-height: max(23px, calc(var(--cell) * 0.32));
-  padding: 0 1.25em;
+  gap: 2px;
+  align-self: stretch;
+  width: 100%;
+  min-height: max(36px, calc(var(--cell) * 0.58));
+  padding: 0.34em 0.5em;
   margin: 0;
   border: 1px solid color-mix(in srgb, var(--ink) 30%, transparent);
   border-radius: 999px;
   background: transparent;
   font: inherit;
-  /* SLENDER, NOT BULKY: a smaller, lighter label with quieter tracking -
-     deliberate rather than loud - while staying above the legibility floor
-     the board holds everywhere else. */
-  font-size: max(9.6px, calc(var(--cell) * 0.126));
+  /* SLENDER, NOT BULKY: small, light labels with quiet tracking - above
+     the legibility floor the board holds everywhere else, and allowed to
+     break onto two lines rather than overflowing its half. */
+  font-size: max(9.4px, calc(var(--cell) * 0.124));
   font-weight: 400;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.1em;
+  line-height: 1.22;
   text-transform: uppercase;
+  text-align: center;
   color: inherit;
   cursor: pointer;
 }
@@ -4612,9 +4644,25 @@ button.board__cell--corner:focus-visible {
   opacity: 0.38;
 }
 
-.hole-card__action-name {
+.hole-card__action-label {
   font-weight: 500;
-  letter-spacing: 0.13em;
+  letter-spacing: 0.1em;
+}
+
+/* THE STAR, ABOVE THE WORDS: the smallest mark that can be a star, in the
+   gold the panel already speaks, centred over the free passage. */
+.hole-card__star-slot {
+  display: block;
+  line-height: 0;
+  margin-bottom: 1px;
+}
+
+.hole-card__star {
+  display: block;
+  width: max(7px, calc(var(--cell) * 0.115));
+  height: max(7px, calc(var(--cell) * 0.115));
+  color: color-mix(in srgb, var(--accent, #c9a24a) 72%, var(--ink));
+  opacity: 0.92;
 }
 
 .hole-card__action-price {

@@ -1874,12 +1874,15 @@ export function board({
 
   let holeStage = null;
 
-  /* THE GATE THE BLACKOUT USES (`cinematic`, declared with the board's
-     flags): while it is up, nothing draws the panel, no action leaves the
-     board, and the die is not offered - so the panel cannot open behind
-     the blackout, during the fade, or before the message has been shown.
-     It falls when the cinematic has completely finished, and THAT is when
-     the panel opens - exactly once, from the same state, on both screens. */
+  /* THE PANEL'S OWN DISMISSAL, BY STAGE.
+
+     The close button hides the SCREEN and remembers which stage it hid:
+     the next repaint of that same stage stays hidden (so the card does not
+     pop straight back), a NEW stage - committed, released, a fresh capture -
+     shows again because the state has moved on, and tapping the tile clears
+     it so the same live panel can be brought back at will. The confinement
+     itself is never touched: this is a screen key, not a game fact. */
+  let holeDismissedKey = null;
 
   /** Draw the confinement panel from the state, and wire its presses. */
   function openHoleStage() {
@@ -1887,12 +1890,15 @@ export function board({
     if (!hole) return;
     if (cinematic) return; // never behind the blackout, never during it
 
+    const stageKey = `hole:${hole.playerId}:${hole.phase}:${hole.startedAt || 0}`;
+    if (holeDismissedKey && holeDismissedKey !== stageKey) holeDismissedKey = null;
+    if (holeDismissedKey === stageKey) return; // closed by the ×; the tile reopens it
+
     cardMode = isMyTurn() ? "decision" : "read";
     reading = false;
-    cardKey = `hole:${hole.playerId}:${hole.phase}:${hole.startedAt || 0}`;
+    cardKey = stageKey;
 
     const mine = isMyTurn() && hole.playerId === game.active;
-    const stageKey = `hole:${hole.playerId}:${hole.phase}:${hole.startedAt || 0}`;
     const changed = holeStage !== stageKey;
     holeStage = stageKey;
     if (!changed && holder() && !holder().hidden) return;
@@ -1918,6 +1924,12 @@ export function board({
       ledger: game.ledger,
       handlers,
       playerName: chestName(hole.playerId),
+      onClose: () => {
+        holeDismissedKey = stageKey;
+        const box = holder();
+        if (box) box.hidden = true;
+        paintPhase();
+      },
     });
     paintPhase();
   }
@@ -2144,14 +2156,32 @@ export function board({
        Everything else waits for the board to be at rest, because a card in
        the middle during a turn would cover the thing being decided. */
     const isChestTile = cell.id === NEXUS.id || cell.id === RAGNAROK.id;
-    /* BLACK HOLE ANSWERS A TAP ON ANY TURN, when nobody is held: it is a
-       reading card, not a decision, so the "only at rest" guards - which
-       exist so a card cannot cover a decision in progress - must not keep
-       the tile's own explanation from the player. */
+    /* BLACK HOLE ANSWERS A TAP ON ANY TURN. While nobody is held it is a
+       reading card, not a decision - so the "only at rest" guards, which
+       exist so a card cannot cover a decision in progress, must not keep
+       the tile's own explanation from the player. While somebody IS held,
+       a tap brings back the LIVE panel - never the lore card, never the
+       landing cinematic. */
     const isLoreTile = cell.id === "black-hole" && !game.hole;
-    if (!isChestTile && !isLoreTile) {
+    const isHoleReopen = cell.id === "black-hole" && Boolean(game.hole);
+    if (!isChestTile && !isLoreTile && !isHoleReopen) {
       if (game.phase !== PHASE.AWAITING_ROLL) return;
       if (isDecision()) return;
+    }
+
+    /* THE LIVE PANEL, BROUGHT BACK. Tap, and the same active popup returns
+       from the same state - current entropy, current threshold, the presses
+       that apply right now - with no cinematic (that belongs to the capture
+       alone) and no state change of any kind. A tap while it is already up
+       is swallowed before any bookkeeping runs, so nothing flickers and the
+       panel keeps its own reading of the middle. */
+    if (isHoleReopen) {
+      const box = frame.querySelector(".board__card");
+      if (box && box.dataset.cardKind === "hole" && !box.hidden) return;
+      holeDismissedKey = null;
+      openHoleStage();
+      paintPhase();
+      return;
     }
 
     const wantedKey = `${game.turn}:${id}:read`;
