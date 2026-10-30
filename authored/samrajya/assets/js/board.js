@@ -333,6 +333,11 @@ export function board({
   let cardMode = "read";
   let reading = false;
   let busy = false;
+  /* TRUE WHILE THE BLACK HOLE'S FIVE-SECOND BLACKOUT HOLDS THIS SCREEN.
+     Declared with the other board-wide flags because everything that draws
+     or acts reads it: no panel opens, no action leaves, the die is not
+     offered - see playHoleVeilOnce, the one place it rises. */
+  let cinematic = false;
   /* The number of the last action this board applied. The socket repeats the
      state an action produced; the number is how a board knows that repetition
      from a genuinely new turn. */
@@ -538,7 +543,12 @@ export function board({
     // The die belongs to the board, not to one player: both phones watch the
     // same throw. Only the right to press it is the active seat's.
     const rollable =
-      game.phase === PHASE.AWAITING_ROLL && !reading && !busy && isMyTurn() && !testPanelOpen;
+      game.phase === PHASE.AWAITING_ROLL &&
+      !reading &&
+      !busy &&
+      !cinematic &&
+      isMyTurn() &&
+      !testPanelOpen;
     die?.setAttribute("tabindex", rollable ? "0" : "-1");
     die?.setAttribute("aria-hidden", String(!rollable));
     frame.dataset.rollable = rollable ? "true" : "false";
@@ -678,7 +688,10 @@ export function board({
    * not each take and release the lock.
    */
   async function run(action, { rng } = {}) {
-    if (busy) return null;
+    /* NOTHING LEAVES THE BOARD WHILE THE BLACKOUT HOLDS IT. The veil
+       swallows every pointer event; this is the keyboard's door, and the
+       server-side rules remain the final word whatever arrives. */
+    if (busy || cinematic) return null;
     busy = true;
     paintPhase();
     try {
@@ -817,6 +830,13 @@ export function board({
     // card is there - otherwise the die sits behind it.
     paintPhase();
 
+    /* THE BLACKOUT IS OFFERED THE MOMENT THE WALK HAS ENDED - after the
+       coin has landed, before anything is drawn for this state. Everything
+       downstream (the panels, the cards) is gated on its flag, so a capture
+       at the corner falls to black first and shows its panel only when the
+       five seconds are completely over. */
+    playHoleVeilOnce();
+
     /* THE CHEST IS REDRAWN FROM THE STATE, EVERY TIME IT MOVES.
 
        The chest is a shared screen, so both devices redraw it the moment the
@@ -853,13 +873,13 @@ export function board({
       }
     }
 
-    /* THE BLACK HOLE, ON BOTH SCREENS.
-
-       The panel is up only while the held seat's own turn is being played -
-       its DECISION turn (the panel's) and the RESOLVING beat that shows an
-       entropy gain. On the two die turns - the entropy throw and the
-       committed escape - the middle belongs to the die, and the chip is
-       what carries the confinement. */
+    /* THE BLACK HOLE, ON BOTH SCREENS - the flag from the call above is
+       already up, so the panel here is gated and opens only once the five
+       seconds have finished. It is drawn while the held seat's own turn is
+       being played - its DECISION turn (the panel's) and the RESOLVING
+       beat that shows an entropy gain. On the two die turns - the entropy
+       throw and the committed escape - the middle belongs to the die, and
+       the chip is what carries the confinement. */
     if (
       game.hole &&
       game.hole.playerId === game.active &&
@@ -872,7 +892,6 @@ export function board({
         await dismissCard();
       }
     }
-    playHoleVeilOnce();
 
     // A property decision that has just been answered takes its card away. A
     // chest card closes itself, because it has a reveal to finish first.
@@ -917,6 +936,10 @@ export function board({
         await playEvents(snapshot.events || []);
         pieces.sync(game.pieces);
         paint({ animate: true });
+        /* The blackout is offered the moment the walk has been played -
+           before any drawing below - so the panel every path is about to
+           ask for is gated, and opens only after the five seconds. */
+        playHoleVeilOnce();
         // A decision the other player is making is shown here as a read-only
         // card. Their own board is the one with the buttons.
         if (game.phase === PHASE.DECISION && !isMyTurn()) {
@@ -961,9 +984,10 @@ export function board({
             await dismissCard();
           }
         }
-        /* The Black Hole, on both screens - the same rule as the step's own
-           tail: the panel where the held seat's panel turn is being played,
-           the chip everywhere else. */
+        /* The Black Hole, on both screens - the flag from the call above is
+           already up, so the panel here is gated: it opens only after the
+           five seconds, and the chip carries the confinement everywhere
+           else. */
         if (
           game.hole &&
           game.hole.playerId === game.active &&
@@ -976,7 +1000,6 @@ export function board({
             await dismissCard();
           }
         }
-        playHoleVeilOnce();
       } finally {
         busy = false;
         paintPhase();
@@ -1851,10 +1874,18 @@ export function board({
 
   let holeStage = null;
 
+  /* THE GATE THE BLACKOUT USES (`cinematic`, declared with the board's
+     flags): while it is up, nothing draws the panel, no action leaves the
+     board, and the die is not offered - so the panel cannot open behind
+     the blackout, during the fade, or before the message has been shown.
+     It falls when the cinematic has completely finished, and THAT is when
+     the panel opens - exactly once, from the same state, on both screens. */
+
   /** Draw the confinement panel from the state, and wire its presses. */
   function openHoleStage() {
     const hole = game?.hole;
     if (!hole) return;
+    if (cinematic) return; // never behind the blackout, never during it
 
     cardMode = isMyTurn() ? "decision" : "read";
     reading = false;
@@ -1891,21 +1922,55 @@ export function board({
     paintPhase();
   }
 
-  /* THE CINEMATIC, ONCE PER CAPTURE.
+  /* THE CINEMATIC, ONCE PER CAPTURE, AND THE PANEL ONLY AFTER IT.
 
      Keyed by the capture's own moment: a repaint, a re-render or a snapshot
-     carrying the same `startedAt` cannot play it twice, and a client that
-     reloads mid-confinement - past the capture - never sees it at all,
-     because the moment it was played for is no longer the moment being
-     shown. It carries no effect whatsoever: nothing in the state waits on
-     it, no rule depends on it having been seen, and the panel beneath it is
-     already the state's own truth. */
+     carrying the same `startedAt` cannot play it twice, and the capture is
+     remembered in this tab's session - so a refresh or a reconnect during
+     the five seconds neither replays the fade nor withholds the panel: what
+     has been seen stays seen, and the panel simply opens.
+
+     THE SEQUENCE, IN ORDER: the veil goes up and the flag freezes the
+     board; five seconds later the veil is gone, the flag falls, and the
+     panel opens from the same state - once, because the stage key below
+     only ever draws a stage that has changed. It carries no game effect:
+     nothing in the state waits on it. */
   let veilAt = null;
   function playHoleVeilOnce() {
     const hole = game?.hole;
     if (!hole || veilAt === hole.startedAt) return;
     veilAt = hole.startedAt;
-    void playHoleCinematic(hole);
+
+    /* A refresh mid-capture has seen this one already: no replay, and the
+       panel opens at once (the `cinematic` flag never rises). */
+    const seenKey = `samrajya:hole:${hole.startedAt}`;
+    try {
+      if (sessionStorage.getItem(seenKey)) return;
+      sessionStorage.setItem(seenKey, "1");
+    } catch {
+      /* A browser that withholds session storage still gets one play per
+         mount of this capture - the key above stops the repeats we control. */
+    }
+
+    cinematic = true;
+    paintPhase();
+    void playHoleCinematic(hole)
+      .catch(() => {})
+      .finally(() => {
+        cinematic = false;
+        paintPhase();
+        /* THE PANEL OPENS HERE, AND ONLY HERE - after the blackout has
+           completely finished. Both screens run this same sequence from
+           the same state, so both show the panel at the same moment, and
+           neither ever shows it during or behind the fade. */
+        if (
+          game?.hole &&
+          game.hole.playerId === game.active &&
+          (game.phase === PHASE.DECISION || game.phase === PHASE.RESOLVING)
+        ) {
+          openHoleStage();
+        }
+      });
   }
 
   /** Ask the server to close the fight, once the board is free.
@@ -2064,7 +2129,7 @@ export function board({
    * under the player's finger.
    */
   function openRead(id) {
-    if (busy) return;
+    if (busy || cinematic) return;
 
     const cell = CELLS.find((entry) => entry.id === id);
     if (!cell) return;

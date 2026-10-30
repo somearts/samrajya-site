@@ -38,28 +38,32 @@ import { prefersStill } from "./dice.js";
 import { EVENT_HORIZON, holeThreshold } from "./shared/game.js";
 import { ownerOf } from "./shared/ledger.js";
 
-/** How long the cinematic holds: collapse, the line, and the restoration. */
-export const CINEMATIC_MS = 6000;
+/** How long the cinematic runs: the fade in, five seconds of black, the fade out. */
+export const CINEMATIC_MS = 5500;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
 /* ------------------------------------------------------------- the veil */
 
 /**
- * The capture itself: the interface falls to black, the singularity speaks,
- * and the board comes back.
+ * The capture itself: the interface falls to black, the singularity speaks
+ * for five held seconds, and the board comes back.
  *
  * It is one element with one keyframe sequence, so the timing lives in the
  * stylesheet beside the rest of the board's motion and cannot drift from
- * it. A reader who asked for less motion gets the line without the fades -
- * the same three beats, plainly.
+ * it. The message is a child of the blackout - painted ON the black, in the
+ * paper colour, dead centre - so it sits above the overlay by construction
+ * and nothing can slip between them. A reader who asked for less motion
+ * gets the same five seconds with the message plainly shown and no fades.
  *
  * The veil covers the whole document, because the whole document is what
- * the singularity takes: board, header, die and every control.
+ * the singularity takes: board, header, die and every control. It also
+ * swallows every pointer event, so no press can reach anything beneath it;
+ * the board adds its own gate on top (see `cinematic` in board.js).
  */
 export async function playHoleCinematic(hole) {
   if (!hole) return;
-  const veil = el("div", { class: "hole-veil", "aria-hidden": "true" }, [
+  const veil = el("div", { class: "hole-veil", role: "status" }, [
     el("p", { class: "hole-veil__line" }, [
       el("span", { class: "hole-veil__title", text: "CAUGHT IN THE SINGULARITY" }),
       el("span", { class: "hole-veil__sub", text: "Escape velocity required." }),
@@ -68,9 +72,9 @@ export async function playHoleCinematic(hole) {
   document.body.append(veil);
 
   if (prefersStill()) {
-    // The line, plainly, and then the board again.
+    // The line, plainly, for the same five seconds, and then the board.
     veil.classList.add("hole-veil--still");
-    await wait(2000);
+    await wait(5000);
   } else {
     /* Two frames are needed for the transition to run: the element is laid
        out at zero, and the class that takes it to full black is what the
@@ -93,10 +97,11 @@ function fillOf(entropy, threshold) {
 /**
  * The confinement panel, drawn from the state.
  *
- * Dark because the place is dark: the card inverts the board's own paper -
- * the same ink, the same type, the same pill and head - rather than
- * inventing a second vocabulary. What it says, in order: where the seat is,
- * what the meter holds, and what the seat may press.
+ * The board's own card, on the board's own paper: the same ivory ground,
+ * the same ink, the same pill and head as every other card - only the
+ * meter, the gold accent and the two presses are the confinement's own.
+ * What it says, in order: where the seat is, what the meter holds, and
+ * what the seat may press.
  */
 export function drawHoleStage(board, hole, { mine = false, ledger = null, handlers = {}, playerName = "" } = {}) {
   const holder = board.querySelector(".board__card");
