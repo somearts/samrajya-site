@@ -108,11 +108,15 @@ const NOTICE_BUILD =
 const NOTICE_ESCAPE =
   "ESCAPE NEXT TURN commits you: your next roll moves you, and the singularity lets you go.";
 
-/* A small, quiet star for above the left press - one stroke, in the button's
-   own ink, never larger than the words it sits over. */
-const STAR_SVG =
-  '<svg viewBox="0 0 10 10" class="hole-card__star" aria-hidden="true" focusable="false">' +
-  '<path d="M5 0.7 L6.2 3.6 L9.3 3.9 L7 6.1 L7.7 9.2 L5 7.6 L2.3 9.2 L3 6.1 L0.7 3.9 L3.8 3.6 Z" fill="currentColor"/>' +
+/* THE EMBLEM: a singularity as a mark, not an illustration. The dark core,
+   the fine event-horizon ring, and one restrained orbit crossing behind -
+   three elements, one stroke weight, sized like a coin. The ink follows the
+   card's own text colour; the orbit takes the panel's gold. */
+const EMBLEM_SVG =
+  '<svg viewBox="0 0 52 34" class="hole-card__emblem-svg" xmlns="http://www.w3.org/2000/svg" focusable="false">' +
+  '<ellipse cx="26" cy="17" rx="22" ry="8.5" transform="rotate(-13 26 17)" fill="none" stroke="var(--accent, #c9a24a)" stroke-width="1.1" opacity="0.75"/>' +
+  '<circle cx="26" cy="17" r="9.5" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
+  '<circle cx="26" cy="17" r="3.8" fill="currentColor"/>' +
   "</svg>";
 
 /* ------------------------------------------------------------- the veil */
@@ -166,11 +170,17 @@ function fillOf(entropy, threshold) {
   return Math.max(0, Math.min(100, Math.round((entropy / threshold) * 100)));
 }
 
-/** A titled block of gameplay writing: heading, then its paragraphs. */
-function section(name, paragraphs) {
+/** A titled block of gameplay writing: heading, then its items - strings
+    become lore paragraphs, and nodes (captions, meters) pass through as
+    themselves. */
+function section(name, items) {
   return el("section", { class: "hole-card__section" }, [
     el("h4", { class: "hole-card__section-name", text: name }),
-    ...paragraphs.map((text) => el("p", { class: "hole-card__prose", text })),
+    ...items.map((item) =>
+      typeof item === "string"
+        ? el("p", { class: "hole-card__prose", text: item })
+        : item,
+    ),
   ]);
 }
 
@@ -234,11 +244,14 @@ export function drawHoleStage(board, hole, {
               disabled: !mine,
               "aria-disabled": String(!mine),
             }, [
-              /* THE STAR, ABOVE THE WORDS - one quiet mark over the free
-                 passage, small enough to stay under the label rather than
-                 competing with it. */
-              el("span", { class: "hole-card__star-slot", html: STAR_SVG, "aria-hidden": "true" }),
+              /* TWO LINES IN THE PILL: the label, and beneath it a small
+                 quiet tagline saying when the press takes effect - the cost
+                 read before the press, inside the button itself. */
               el("span", { class: "hole-card__action-label", text: atEase ? "Escape next turn" : "Build entropy" }),
+              el("span", {
+                class: "hole-card__action-tag",
+                text: atEase ? "Roll and move next turn" : "Start in next turn",
+              }),
             ]),
             el("button", {
               type: "button",
@@ -248,7 +261,7 @@ export function drawHoleStage(board, hole, {
               "aria-disabled": String(!mine),
             }, [
               el("span", { class: "hole-card__action-label", text: "Acquire vessel" }),
-              el("span", { class: "hole-card__action-price", text: "\u20b9500" }),
+              el("span", { class: "hole-card__action-tag", text: "\u20b9500" }),
             ]),
           ]);
 
@@ -278,17 +291,28 @@ export function drawHoleStage(board, hole, {
       text: "\u00d7",
     }),
 
-    /* ZONE 2 - the centre: epithet, myth, the Protocol with its meter, the
-       vessel with its price. One screen's worth, written to fit it. */
+    /* ZONE 2 - the centre: the emblem and epithet, the myth, the Protocol
+       with its caption and meter inside it, the vessel with its price. One
+       screen's worth, spread across the zone rather than piled at its top. */
     el("div", { class: "hole-card__body" }, [
+      /* THE EMBLEM, BETWEEN TITLE AND SUBTITLE: a singularity as its own
+         mark - the dark core, the fine event-horizon ring around it, and a
+         single restrained orbit crossing behind. Drawn in one stroke weight,
+         the size of a coin: identity, not illustration. */
+      el("div", { class: "hole-card__emblem", "aria-hidden": "true", html: EMBLEM_SVG }),
       el("p", { class: "hole-lore__subtitle", text: ACTIVE_SUBTITLE }),
       el("p", { class: "hole-card__prose", text: ACTIVE_LORE }),
-      section("Entropy protocol", [ACTIVE_PROTOCOL]),
-      el("div", { class: "hole-card__meter-block" }, [
+      section("Entropy protocol", [
+        ACTIVE_PROTOCOL,
+        /* THE CAPTION UNDER THE EXPLANATION: the quiet line that says what
+           the meter below is for. */
+        el("p", {
+          class: "hole-card__caption",
+          text: "Track your entropy as you gather the energy to escape.",
+        }),
         /* The figure and the hold's note on ONE line: the live amount
            against the live threshold, and - when the ledger halves it -
-           the reason right beside the number it changed, in the row the
-           figure already occupies instead of a row of its own. */
+           the reason beside the number it changed. */
         el("div", { class: "hole-card__meter-head" }, [
           el("p", { class: "hole-card__figure" }, [
             el("span", { class: "hole-card__figure-label", text: "Entropy\u00a0" }),
@@ -300,6 +324,8 @@ export function drawHoleStage(board, hole, {
             ? el("p", { class: "hole-card__held", text: "Event Horizon: 5" })
             : null,
         ].filter(Boolean)),
+        /* The bar, directly under its number - a track with real height and
+           rounded ends, so it reads as a progress bar at a glance. */
         el("div", {
           class: "hole-card__meter",
           role: "progressbar",

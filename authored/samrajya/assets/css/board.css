@@ -4370,11 +4370,32 @@ button.board__cell--corner:focus-visible {
 .hole-card__body {
   min-height: 0;
   display: grid;
-  gap: calc(var(--cell) * 0.042);
-  align-content: start;
+  gap: calc(var(--cell) * 0.032);
+  /* THE SPREAD: the centre zone now takes every spare pixel of the card's
+     height (see the card's rows), and its blocks are spaced EVENLY through
+     it - identity, myth, Protocol, vessel each given its own air - instead
+     of being piled against the header with the surplus pooling at the foot.
+     At the smallest board there is no surplus and this behaves like a plain
+     start, so the fit never changes. */
+  align-content: space-evenly;
   justify-items: center;
   width: 100%;
   overflow: hidden;
+}
+
+/* THE EMBLEM: a coin-sized mark under the title and over the epithet -
+   centred, one stroke weight, no illustration. */
+.hole-card__emblem {
+  display: grid;
+  place-items: center;
+  line-height: 0;
+}
+
+.hole-card__emblem-svg {
+  display: block;
+  width: max(22px, calc(var(--cell) * 0.5));
+  height: auto;
+  color: var(--ink);
 }
 
 /* THE READING CARD KEEPS THE ONE THING THE ACTIVE POPUP REFUSES: its body
@@ -4400,6 +4421,7 @@ button.board__cell--corner:focus-visible {
 .hole-card__prose,
 .hole-card__section,
 .hole-card__notice,
+.hole-card__caption,
 .hole-lore__warning {
   width: min(100%, 46ch);
   margin-inline: auto;
@@ -4410,27 +4432,28 @@ button.board__cell--corner:focus-visible {
 
 .hole-card__prose {
   margin-block: 0;
-  /* The density of the middle: a slightly smaller floor and a tighter
-     leading, still inside the sizes the board prints elsewhere - and at
-     larger cells it scales up with the card, as everything here does. */
-  font-size: max(9px, calc(var(--cell) * 0.125));
-  line-height: 1.36;
+  /* The density of the middle: a floor and a leading inside the sizes the
+     board prints elsewhere - and at larger cells it scales up with the
+     card, as everything here does. */
+  font-size: max(8.7px, calc(var(--cell) * 0.125));
+  line-height: 1.3;
   color: var(--ink-soft);
 }
 
 .hole-card__section {
   display: grid;
-  gap: 0.35em;
-  margin-block: calc(var(--cell) * 0.012);
-  padding-top: calc(var(--cell) * 0.042);
+  gap: 0.3em;
+  margin-block: 0;
+  padding-top: calc(var(--cell) * 0.03);
   border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--cell-ground));
 }
 
 .hole-card__section-name {
   margin: 0;
-  font-size: max(8.8px, calc(var(--cell) * 0.116));
+  font-size: max(8.7px, calc(var(--cell) * 0.116));
   font-weight: 500;
-  letter-spacing: 0.14em;
+  line-height: 1.15;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--ink);
   /* Balanced, so a long heading breaks across two even lines instead of
@@ -4443,9 +4466,18 @@ button.board__cell--corner:focus-visible {
 .hole-card__notice {
   margin-block: 0;
   font-size: max(8.6px, calc(var(--cell) * 0.112));
-  line-height: 1.35;
+  line-height: 1.3;
   color: color-mix(in srgb, var(--ink) 62%, var(--cell-ground));
   text-align: center;
+}
+
+/* THE QUIET LINE UNDER THE PROTOCOL: what the meter below is for, in the
+   smallest voice on the card. */
+.hole-card__caption {
+  margin-block: 0;
+  font-size: max(8.2px, calc(var(--cell) * 0.106));
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--ink) 50%, var(--cell-ground));
 }
 
 .hole-card__figure-label {
@@ -4461,6 +4493,7 @@ button.board__cell--corner:focus-visible {
 .hole-lore__subtitle {
   margin: 0;
   font-size: max(9px, calc(var(--cell) * 0.118));
+  line-height: 1.15;
   /* Tracking that keeps the epithet on ONE line at the baseline phone, where
      a wider one wrapped it to two and cost the centre zone a row. */
   letter-spacing: 0.18em;
@@ -4484,10 +4517,10 @@ button.board__cell--corner:focus-visible {
    buttons nor the notice ever touch the card's edge. */
 .hole-card__footer {
   display: grid;
-  gap: calc(var(--cell) * 0.045);
+  gap: calc(var(--cell) * 0.035);
   width: 100%;
   justify-items: center;
-  padding-top: calc(var(--cell) * 0.065);
+  padding-top: calc(var(--cell) * 0.05);
   border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--cell-ground));
 }
 
@@ -4498,13 +4531,19 @@ button.board__cell--corner:focus-visible {
   width: 100%;
 }
 
-/* THE CARD'S OWN FIT: the property card's padding and row gap are generous
-   for a card with room; this one carries three zones and a fixed budget, so
-   it takes slightly less air at the edges and between its rows - the same
-   proportions, at the density the middle can hold. */
+/* THE CARD'S OWN FIT - AND ITS OWN ROWS.
+
+   The property card's later rule hands every .property-card five tracks
+   (`auto auto auto 1fr auto`) for ITS anatomy; this card has three children,
+   so tracks 1-3 took them and the 1fr sat EMPTY below the footer - the great
+   dead band under the buttons. Three children, three tracks: head, the
+   centre that absorbs every spare pixel, and the footer pinned at the
+   bottom. (This rule is later in the file than the property card's, so it
+   wins the cascade for this card alone; property cards are untouched.) */
 .hole-card {
-  padding: calc(var(--cell) * 0.13) calc(var(--cell) * 0.18);
-  row-gap: calc(var(--cell) * 0.042);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  padding: calc(var(--cell) * 0.105) calc(var(--cell) * 0.16);
+  row-gap: calc(var(--cell) * 0.032);
 }
 
 /* The head sits tight against its own row: every pixel the header saves is
@@ -4522,26 +4561,26 @@ button.board__cell--corner:focus-visible {
   padding-right: max(24px, calc(var(--cell) * 0.42));
 }
 
-.hole-card__meter-block {
-  display: grid;
-  gap: calc(var(--cell) * 0.045);
-  width: 100%;
-  align-content: start;
-}
-
-/* The number and the reason on one line - no second row for the note. */
+/* The number and the reason on one line, with air above them so the
+   progress display reads as its own step beneath the caption. */
 .hole-card__meter-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 6px;
   width: 100%;
+  margin-top: calc(var(--cell) * 0.015);
 }
 
+/* THE BAR READS AS A BAR: real height, fully rounded ends, a quiet track
+   against a solid gold fill - still the panel's own minimal vocabulary,
+   just no longer a hairline that could be mistaken for a divider. */
 .hole-card__meter {
-  height: max(5px, calc(var(--cell) * 0.075));
+  height: max(7px, calc(var(--cell) * 0.105));
+  margin-top: calc(var(--cell) * 0.02);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--ink) 12%, var(--cell-ground));
+  background: color-mix(in srgb, var(--ink) 11%, var(--cell-ground));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 7%, transparent);
   overflow: hidden;
 }
 
@@ -4558,6 +4597,7 @@ button.board__cell--corner:focus-visible {
   display: flex;
   align-items: baseline;
   gap: 1px;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
@@ -4608,11 +4648,13 @@ button.board__cell--corner:focus-visible {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: 1px;
   align-self: stretch;
   width: 100%;
-  min-height: max(36px, calc(var(--cell) * 0.58));
-  padding: 0.34em 0.5em;
+  min-height: max(33px, calc(var(--cell) * 0.52));
+  /* Two lines in the pill: enough air that label and tagline never feel
+     cramped against each other or against the border. */
+  padding: 0.36em 0.55em;
   margin: 0;
   border: 1px solid color-mix(in srgb, var(--ink) 30%, transparent);
   border-radius: 999px;
@@ -4624,7 +4666,7 @@ button.board__cell--corner:focus-visible {
   font-size: max(9.4px, calc(var(--cell) * 0.124));
   font-weight: 400;
   letter-spacing: 0.1em;
-  line-height: 1.22;
+  line-height: 1.16;
   text-transform: uppercase;
   text-align: center;
   color: inherit;
@@ -4649,26 +4691,17 @@ button.board__cell--corner:focus-visible {
   letter-spacing: 0.1em;
 }
 
-/* THE STAR, ABOVE THE WORDS: the smallest mark that can be a star, in the
-   gold the panel already speaks, centred over the free passage. */
-.hole-card__star-slot {
-  display: block;
-  line-height: 0;
-  margin-bottom: 1px;
-}
-
-.hole-card__star {
-  display: block;
-  width: max(7px, calc(var(--cell) * 0.115));
-  height: max(7px, calc(var(--cell) * 0.115));
-  color: color-mix(in srgb, var(--accent, #c9a24a) 72%, var(--ink));
-  opacity: 0.92;
-}
-
-.hole-card__action-price {
-  font-size: 0.94em;
+/* THE TAGLINE INSIDE THE PILL: the smaller, lighter second line - the cost
+   or the price - directly beneath the label, in the same button. Not
+   uppercase, not tracked out: it is a whisper under the label, not a second
+   label. */
+.hole-card__action-tag {
+  font-size: 0.78em;
+  font-weight: 400;
   letter-spacing: 0.03em;
-  color: color-mix(in srgb, var(--accent, #c9a24a) 62%, var(--ink));
+  text-transform: none;
+  line-height: 1.25;
+  color: color-mix(in srgb, var(--ink) 55%, var(--cell-ground));
 }
 
 /* THE MARK.
