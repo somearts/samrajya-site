@@ -8,21 +8,31 @@
    arrival. Every device draws the middle from that fact, so a phone that
    reconnects or joined late shows exactly the same journey.
 
-   THREE SHAPES, ONE CARD
+   THE LOOK: CLASSIFIED TECHNOLOGY, NOT A SHOP. An obsidian panel over the
+   cream board - charcoal suit cards with hairline silver borders, silver
+   caps, steel secondary text, one controlled indigo for energy. The artwork
+   is the argument: three engineered suit concepts drawn as refined vector
+   concepts inside their own dark display case - angular plating, visor
+   slits, restrained highlights - progressing from sleek steel (Tier I)
+   through layered photonic lamellae (Tier II) to the heavy indigo-cored
+   mantle (Tier III). No cartoon proportions, no faces, no badges.
+
+   THREE SHAPES, ONE CARD, PORTRAIT STACK:
 
    1. THE EXPIRY NOTICE - shown first when the arriving seat was still
       carrying a suit whose discount was never spent. Its CONTINUE is local:
       it takes the notice down and reveals the counter underneath, with no
       action sent anywhere.
 
-   2. THE SELECTION - the headline, the subtitle, the mythology, the three
-      vertically stacked suit cards (art, name, descriptor, discount, price,
-      ACQUIRE SUIT) and the Mission Protocols beneath. The card scrolls
-      inside the holder if the small board needs it; nothing else moves.
+   2. THE SELECTION - the section label, headline and subtitle, then the
+      three portrait suit cards stacked in one column: artwork, name, one
+      price line, ACQUIRE. Compact enough that a normal phone fits all
+      three without scrolling; a single scroll is the fallback on short
+      boards. The secondary exit sits right-set at the foot.
 
-   3. THE ACQUISITION POPUP - the suit, its illustration, its narrative and
-      the one CTA, CONTINUE JOURNEY, which the board wires to the same
-      `continue` that ends every visit.
+   3. THE ACQUISITION POPUP - the suit, its narrative and the one CTA,
+      CONTINUE JOURNEY, which the board wires to the same `continue` that
+      ends every visit.
 
    NOTHING HERE DECIDES ANYTHING
 
@@ -38,121 +48,181 @@ import { rupees } from "./shared/economy.js";
 
 /* ------------------------------------------------------------- the suits
 
-   Three full-body suits on one frame: the same stance, the same helmet,
-   the same light falling from the upper left, so the row reads as one
-   collection. The progression is carried by silhouette and detail - a
-   slim seam-clean exploration suit, a layered photonic weave, a heavy
-   singularity-grade mantle - and by colour that stays sophisticated:
-   slate-teal, warm pearl, deep indigo, never literal metal. */
+   One frame, one stance, one light: every suit is drawn front-on inside the
+   same dark display case at 100x132 portrait, lit from the upper left, so
+   the row reads as one issued set. The tiers differ by construction, not
+   by colour games - plate count, edge language, silhouette weight - and
+   the palette stays noir: muted steel, gunmetal, silver trim, indigo
+   glass and indigo energy, never literal bright metal. */
 
 const SUIT_ART = Object.freeze({
-  "quantum-one": `<svg viewBox="0 0 100 170" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  "quantum-one": `<svg viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
     <defs>
-      <linearGradient id="q1-body" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#b7c6ca"/>
-        <stop offset="1" stop-color="#7f959d"/>
+      <linearGradient id="q1-case" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#23262f"/>
+        <stop offset="1" stop-color="#13151b"/>
       </linearGradient>
-      <linearGradient id="q1-helm" x1="0" y1="0" x2="0.6" y2="1">
-        <stop offset="0" stop-color="#c6d3d6"/>
-        <stop offset="1" stop-color="#8ba0a7"/>
+      <linearGradient id="q1-plate" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#aeb6c2"/>
+        <stop offset="0.5" stop-color="#78818e"/>
+        <stop offset="1" stop-color="#474e59"/>
       </linearGradient>
+      <linearGradient id="q1-side" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#59616e"/>
+        <stop offset="1" stop-color="#8a93a1"/>
+      </linearGradient>
+      <linearGradient id="q1-visor" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#2b3454"/>
+        <stop offset="1" stop-color="#111422"/>
+      </linearGradient>
+      <radialGradient id="q1-core">
+        <stop offset="0" stop-color="#aab6f2"/>
+        <stop offset="1" stop-color="#4d56a8"/>
+      </radialGradient>
     </defs>
-    <rect x="35" y="47" width="30" height="36" rx="9" fill="#5c767e"/>
-    <rect x="38" y="103" width="11" height="47" rx="5.5" fill="url(#q1-body)"/>
-    <rect x="51" y="103" width="11" height="47" rx="5.5" fill="url(#q1-body)"/>
-    <rect x="34" y="145" width="16" height="13" rx="4.5" fill="#456069"/>
-    <rect x="50" y="145" width="16" height="13" rx="4.5" fill="#456069"/>
-    <rect x="18" y="57" width="13" height="44" rx="6.5" fill="url(#q1-body)"/>
-    <rect x="69" y="57" width="13" height="44" rx="6.5" fill="url(#q1-body)"/>
-    <circle cx="24.5" cy="104" r="7.5" fill="#456069"/>
-    <circle cx="75.5" cy="104" r="7.5" fill="#456069"/>
-    <path d="M31 60 h38 a8 8 0 0 1 8 8 v22 a12 12 0 0 1 -12 12 h-30 a12 12 0 0 1 -12 -12 v-22 a8 8 0 0 1 8 -8 z" fill="url(#q1-body)"/>
-    <rect x="42" y="65" width="16" height="21" rx="5" fill="#1e2f36"/>
-    <circle cx="50" cy="74.5" r="5" fill="#7fd8c4"/>
-    <rect x="44" y="43" width="12" height="9" rx="2" fill="#456069"/>
-    <circle cx="50" cy="30" r="18" fill="url(#q1-helm)"/>
-    <ellipse cx="50" cy="29.5" rx="12.5" ry="10.5" fill="#132229"/>
-    <path d="M41.5 24.5 a13 9 0 0 1 13.5 -2.5" stroke="#cfe2e6" stroke-width="2.2" fill="none" stroke-linecap="round" opacity="0.75"/>
-    <rect x="45" y="92" width="10" height="14" rx="3" fill="#5c767e"/>
+    <rect x="10" y="3" width="80" height="126" rx="5" fill="url(#q1-case)" stroke="#ffffff" stroke-opacity="0.07" stroke-width="0.8"/>
+    <ellipse cx="50" cy="124" rx="20" ry="3.2" fill="#000000" opacity="0.5"/>
+    <path d="M41.5 81 h7.5 l-.8 30 h-7.5 z" fill="url(#q1-plate)"/>
+    <path d="M51 81 h7.5 l.8 30 h-7.5 z" fill="url(#q1-plate)"/>
+    <rect x="40.6" y="95" width="8" height="1.2" fill="#cdd6e1" opacity="0.4"/>
+    <rect x="51.4" y="95" width="8" height="1.2" fill="#cdd6e1" opacity="0.4"/>
+    <rect x="38.5" y="111" width="11" height="6" rx="1" fill="#2f3541"/>
+    <rect x="37.5" y="116" width="13" height="5" rx="1.5" fill="#262c36"/>
+    <rect x="50.5" y="111" width="11" height="6" rx="1" fill="#2f3541"/>
+    <rect x="49.5" y="116" width="13" height="5" rx="1.5" fill="#262c36"/>
+    <path d="M37 75 h26 v5 q0 2 -2 2 h-22 q-2 0 -2 -2 z" fill="url(#q1-side)"/>
+    <path d="M31 51 q1 -8 9 -8 h20 q8 0 9 8 l-2 19 q-.6 6 -6.5 6 h-21 q-5.9 0 -6.5 -6 z" fill="url(#q1-plate)"/>
+    <rect x="47.5" y="44.5" width="5" height="24" rx="1.5" fill="#262b35"/>
+    <circle cx="50" cy="52" r="3.6" fill="url(#q1-core)"/>
+    <circle cx="50" cy="52" r="4.9" fill="none" stroke="#b9c4d6" stroke-width="0.7" opacity="0.5"/>
+    <path d="M36 59 h9.5 M54.5 59 h9.5" stroke="#cdd6e1" stroke-width="1" opacity="0.4"/>
+    <path d="M23 47 l11 -4 l2.5 9.5 l-10 3.5 z" fill="url(#q1-side)"/>
+    <path d="M77 47 l-11 -4 l-2.5 9.5 l10 3.5 z" fill="url(#q1-side)"/>
+    <rect x="23.5" y="51" width="8.5" height="27" rx="3.5" fill="url(#q1-side)"/>
+    <rect x="68" y="51" width="8.5" height="27" rx="3.5" fill="url(#q1-side)"/>
+    <rect x="23.5" y="63" width="8.5" height="1" fill="#cdd6e1" opacity="0.35"/>
+    <rect x="68" y="63" width="8.5" height="1" fill="#cdd6e1" opacity="0.35"/>
+    <rect x="23" y="76" width="9" height="7.5" rx="2.5" fill="#2b313c"/>
+    <rect x="68" y="76" width="9" height="7.5" rx="2.5" fill="#2b313c"/>
+    <rect x="43.5" y="40" width="13" height="6" rx="1.5" fill="#2e3440"/>
+    <path d="M50 13 c8.5 0 13.5 6.5 13.5 14.5 c0 8.5 -6 14.5 -13.5 14.5 s-13.5 -6 -13.5 -14.5 c0 -8 5 -14.5 13.5 -14.5 z" fill="url(#q1-plate)"/>
+    <path d="M50 14.5 v6" stroke="#d5dce6" stroke-width="1" opacity="0.6"/>
+    <path d="M39.5 25 q10.5 -4.5 21 0 l-1.6 7.2 q-9 3.8 -17.8 0 z" fill="url(#q1-visor)" stroke="#cfd8e2" stroke-width="0.7" stroke-opacity="0.5"/>
+    <path d="M42 26.5 q8 -3 16 0" stroke="#a9b6ef" stroke-width="1.2" fill="none" opacity="0.75"/>
   </svg>`,
 
-  "photon-weave": `<svg viewBox="0 0 100 170" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  "photon-weave": `<svg viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
     <defs>
-      <linearGradient id="pw-body" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#efe7d4"/>
-        <stop offset="1" stop-color="#c9bb9d"/>
+      <linearGradient id="pw-case" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#242731"/>
+        <stop offset="1" stop-color="#13151b"/>
       </linearGradient>
-      <linearGradient id="pw-helm" x1="0" y1="0" x2="0.6" y2="1">
-        <stop offset="0" stop-color="#f2ebda"/>
-        <stop offset="1" stop-color="#c3b595"/>
+      <linearGradient id="pw-plate" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#d3dbe6"/>
+        <stop offset="0.5" stop-color="#99a2ae"/>
+        <stop offset="1" stop-color="#5c6470"/>
+      </linearGradient>
+      <linearGradient id="pw-side" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#666e7b"/>
+        <stop offset="1" stop-color="#a6afbb"/>
+      </linearGradient>
+      <linearGradient id="pw-visor" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#2e3860"/>
+        <stop offset="1" stop-color="#101426"/>
       </linearGradient>
     </defs>
-    <rect x="35" y="47" width="30" height="36" rx="9" fill="#a08f6d"/>
-    <path d="M20 54 l14 -6 v10 l-14 6 z" fill="#c2705a"/>
-    <path d="M80 54 l-14 -6 v10 l14 6 z" fill="#c2705a"/>
-    <rect x="38" y="103" width="11" height="47" rx="5.5" fill="url(#pw-body)"/>
-    <rect x="51" y="103" width="11" height="47" rx="5.5" fill="url(#pw-body)"/>
-    <rect x="34" y="145" width="16" height="13" rx="4.5" fill="#8c7a56"/>
-    <rect x="50" y="145" width="16" height="13" rx="4.5" fill="#8c7a56"/>
-    <rect x="18" y="57" width="13" height="44" rx="6.5" fill="url(#pw-body)"/>
-    <rect x="69" y="57" width="13" height="44" rx="6.5" fill="url(#pw-body)"/>
-    <rect x="18" y="72" width="13" height="4" fill="#c2705a"/>
-    <rect x="69" y="72" width="13" height="4" fill="#c2705a"/>
-    <circle cx="24.5" cy="104" r="7.5" fill="#8c7a56"/>
-    <circle cx="75.5" cy="104" r="7.5" fill="#8c7a56"/>
-    <path d="M31 60 h38 a8 8 0 0 1 8 8 v22 a12 12 0 0 1 -12 12 h-30 a12 12 0 0 1 -12 -12 v-22 a8 8 0 0 1 8 -8 z" fill="url(#pw-body)"/>
-    <path d="M35 66 h30 v5 h-30 z" fill="#c2705a" opacity="0.85"/>
-    <path d="M35 76 h30 v3 h-30 z" fill="#c2705a" opacity="0.55"/>
-    <rect x="42" y="83" width="16" height="10" rx="3" fill="#3a332a"/>
-    <circle cx="50" cy="88" r="3.4" fill="#f0d9a8"/>
-    <rect x="44" y="43" width="12" height="9" rx="2" fill="#8c7a56"/>
-    <circle cx="50" cy="30" r="18" fill="url(#pw-helm)"/>
-    <ellipse cx="50" cy="29.5" rx="12.5" ry="10.5" fill="#241f18"/>
-    <path d="M41.5 24.5 a13 9 0 0 1 13.5 -2.5" stroke="#f6efdd" stroke-width="2.2" fill="none" stroke-linecap="round" opacity="0.8"/>
-    <path d="M31 60 h38" stroke="#a08f6d" stroke-width="1.4" fill="none" opacity="0.6"/>
+    <rect x="10" y="3" width="80" height="126" rx="5" fill="url(#pw-case)" stroke="#ffffff" stroke-opacity="0.07" stroke-width="0.8"/>
+    <ellipse cx="50" cy="124" rx="20" ry="3.2" fill="#000000" opacity="0.5"/>
+    <path d="M41.5 81 h7.5 l-.8 30 h-7.5 z" fill="url(#pw-plate)"/>
+    <path d="M51 81 h7.5 l.8 30 h-7.5 z" fill="url(#pw-plate)"/>
+    <rect x="40.6" y="86" width="7.5" height="1.1" fill="#e4eaf2" opacity="0.5"/>
+    <rect x="51.4" y="86" width="7.5" height="1.1" fill="#e4eaf2" opacity="0.5"/>
+    <rect x="40.6" y="96" width="7.5" height="1.1" fill="#e4eaf2" opacity="0.4"/>
+    <rect x="51.4" y="96" width="7.5" height="1.1" fill="#e4eaf2" opacity="0.4"/>
+    <rect x="38.5" y="111" width="11" height="6" rx="1" fill="#333944"/>
+    <rect x="37.5" y="116" width="13" height="5" rx="1.5" fill="#282e38"/>
+    <rect x="50.5" y="111" width="11" height="6" rx="1" fill="#333944"/>
+    <rect x="49.5" y="116" width="13" height="5" rx="1.5" fill="#282e38"/>
+    <path d="M37 75 h26 v5 q0 2 -2 2 h-22 q-2 0 -2 -2 z" fill="url(#pw-side)"/>
+    <path d="M31 51 q1 -8 9 -8 h20 q8 0 9 8 l-2 19 q-.6 6 -6.5 6 h-21 q-5.9 0 -6.5 -6 z" fill="url(#pw-plate)"/>
+    <rect x="34.5" y="49.5" width="31" height="4.2" rx="1" fill="#dbe3ed" opacity="0.95"/>
+    <rect x="35" y="56.5" width="30" height="4.2" rx="1" fill="#c8d1de" opacity="0.9"/>
+    <rect x="35.5" y="63.5" width="29" height="4.2" rx="1" fill="#b3bcc9" opacity="0.85"/>
+    <rect x="35" y="54.4" width="30" height="1.1" fill="#7d8ad4" opacity="0.85"/>
+    <rect x="35" y="61.4" width="30" height="1.1" fill="#7d8ad4" opacity="0.6"/>
+    <path d="M22.5 46.5 l11.5 -4.5 l3 10 l-10.5 4 z" fill="url(#pw-side)" stroke="#e8eef5" stroke-width="0.7" stroke-opacity="0.6"/>
+    <path d="M77.5 46.5 l-11.5 -4.5 l-3 10 l10.5 4 z" fill="url(#pw-side)" stroke="#e8eef5" stroke-width="0.7" stroke-opacity="0.6"/>
+    <rect x="23" y="51" width="9" height="12" rx="3" fill="url(#pw-side)"/>
+    <rect x="23.5" y="65" width="8" height="13" rx="3" fill="url(#pw-side)"/>
+    <rect x="68" y="51" width="9" height="12" rx="3" fill="url(#pw-side)"/>
+    <rect x="68.5" y="65" width="8" height="13" rx="3" fill="url(#pw-side)"/>
+    <rect x="23" y="77" width="9" height="7" rx="2.5" fill="#2b313c"/>
+    <rect x="68" y="77" width="9" height="7" rx="2.5" fill="#2b313c"/>
+    <rect x="43.5" y="40" width="13" height="6" rx="1.5" fill="#2e3440"/>
+    <path d="M50 12.5 c8.5 0 13.5 6.5 13.5 14.5 c0 8.5 -6 14.5 -13.5 14.5 s-13.5 -6 -13.5 -14.5 c0 -8 5 -14.5 13.5 -14.5 z" fill="url(#pw-plate)"/>
+    <rect x="36.5" y="23" width="3" height="7" rx="1" fill="#171b24"/>
+    <rect x="60.5" y="23" width="3" height="7" rx="1" fill="#171b24"/>
+    <path d="M50 14 v5.5" stroke="#eef2f7" stroke-width="1" opacity="0.7"/>
+    <path d="M39.5 25 q10.5 -4.5 21 0 l-1.6 7.2 q-9 3.8 -17.8 0 z" fill="url(#pw-visor)" stroke="#dfe6ef" stroke-width="0.7" stroke-opacity="0.6"/>
+    <path d="M41.5 26.5 q8.5 -3.2 17 0" stroke="#c3ccf2" stroke-width="1.4" fill="none" opacity="0.85"/>
+    <path d="M43 31 q7 -2 14 0" stroke="#7d8ad4" stroke-width="0.9" fill="none" opacity="0.7"/>
   </svg>`,
 
-  "singularity-mantle": `<svg viewBox="0 0 100 170" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  "singularity-mantle": `<svg viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
     <defs>
-      <linearGradient id="sm-body" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#565c8c"/>
-        <stop offset="1" stop-color="#33375c"/>
+      <linearGradient id="sm-case" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#23252f"/>
+        <stop offset="1" stop-color="#12141a"/>
       </linearGradient>
-      <linearGradient id="sm-helm" x1="0" y1="0" x2="0.6" y2="1">
-        <stop offset="0" stop-color="#666c9e"/>
-        <stop offset="1" stop-color="#3a3e66"/>
+      <linearGradient id="sm-plate" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#5b6271"/>
+        <stop offset="0.5" stop-color="#3c4250"/>
+        <stop offset="1" stop-color="#272b35"/>
       </linearGradient>
       <linearGradient id="sm-mantle" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#6a4f95"/>
-        <stop offset="1" stop-color="#463163"/>
+        <stop offset="0" stop-color="#3b3866"/>
+        <stop offset="1" stop-color="#201e3b"/>
       </linearGradient>
+      <linearGradient id="sm-visor" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#191d33"/>
+        <stop offset="1" stop-color="#0b0d15"/>
+      </linearGradient>
+      <radialGradient id="sm-core">
+        <stop offset="0" stop-color="#a5a2f4"/>
+        <stop offset="1" stop-color="#413e9c"/>
+      </radialGradient>
     </defs>
-    <path d="M24 58 q-7 34 -2 74 h20 l-4 -66 z" fill="url(#sm-mantle)"/>
-    <path d="M76 58 q7 34 2 74 h-20 l4 -66 z" fill="url(#sm-mantle)"/>
-    <rect x="34" y="47" width="32" height="36" rx="9" fill="#262a49"/>
-    <path d="M38 103 h11 l-1 47 h-10 z" fill="url(#sm-body)"/>
-    <path d="M51 103 h11 l1 47 h-10 z" fill="url(#sm-body)"/>
-    <rect x="33" y="144" width="17" height="14" rx="4.5" fill="#1f2340"/>
-    <rect x="50" y="144" width="17" height="14" rx="4.5" fill="#1f2340"/>
-    <path d="M17 57 h15 l1 44 h-15 z" fill="url(#sm-body)"/>
-    <path d="M68 57 h15 l-1 44 h-15 z" fill="url(#sm-body)"/>
-    <path d="M14 52 h21 l-2 13 h-17 z" fill="#262a49"/>
-    <path d="M86 52 h-21 l2 13 h17 z" fill="#262a49"/>
-    <rect x="14" y="52" width="21" height="3" fill="#c9a05a" opacity="0.85"/>
-    <rect x="65" y="52" width="21" height="3" fill="#c9a05a" opacity="0.85"/>
-    <circle cx="24.5" cy="104" r="7.5" fill="#1f2340"/>
-    <circle cx="75.5" cy="104" r="7.5" fill="#1f2340"/>
-    <path d="M31 60 h38 a8 8 0 0 1 8 8 v22 a12 12 0 0 1 -12 12 h-30 a12 12 0 0 1 -12 -12 v-22 a8 8 0 0 1 8 -8 z" fill="url(#sm-body)"/>
-    <path d="M36 63 h28 v4 h-28 z" fill="#c9a05a" opacity="0.75"/>
-    <path d="M38 72 h24 v14 a6 6 0 0 1 -6 6 h-12 a6 6 0 0 1 -6 -6 z" fill="#1c1f38"/>
-    <circle cx="50" cy="81" r="6" fill="#463163"/>
-    <circle cx="50" cy="81" r="3" fill="#b79ae0"/>
-    <rect x="44" y="43" width="12" height="9" rx="2" fill="#1f2340"/>
-    <path d="M50 8 l4 10 h-8 z" fill="#c9a05a" opacity="0.8"/>
-    <circle cx="50" cy="30" r="18" fill="url(#sm-helm)"/>
-    <ellipse cx="50" cy="29.5" rx="12.5" ry="10.5" fill="#12142b"/>
-    <path d="M41.5 24.5 a13 9 0 0 1 13.5 -2.5" stroke="#cdd0f0" stroke-width="2.2" fill="none" stroke-linecap="round" opacity="0.8"/>
-    <path d="M31 60 h38" stroke="#1c1f38" stroke-width="1.4" fill="none"/>
+    <rect x="10" y="3" width="80" height="126" rx="5" fill="url(#sm-case)" stroke="#ffffff" stroke-opacity="0.07" stroke-width="0.8"/>
+    <ellipse cx="50" cy="124" rx="21" ry="3.2" fill="#000000" opacity="0.5"/>
+    <path d="M34 43 L19.5 49 L16.5 74 L27.5 70 L30 52 Z" fill="url(#sm-mantle)"/>
+    <path d="M66 43 L80.5 49 L83.5 74 L72.5 70 L70 52 Z" fill="url(#sm-mantle)"/>
+    <path d="M34 43 L19.5 49 M19.5 49 L16.5 74" stroke="#c9d2e0" stroke-width="1" fill="none" opacity="0.5"/>
+    <path d="M66 43 L80.5 49 M80.5 49 L83.5 74" stroke="#c9d2e0" stroke-width="1" fill="none" opacity="0.5"/>
+    <path d="M40.5 81 h9 l-1 30 h-9 z" fill="url(#sm-plate)"/>
+    <path d="M50.5 81 h9 l1 30 h-9 z" fill="url(#sm-plate)"/>
+    <rect x="40" y="88" width="9" height="1.3" fill="#c9d2e0" opacity="0.45"/>
+    <rect x="51" y="88" width="9" height="1.3" fill="#c9d2e0" opacity="0.45"/>
+    <rect x="38" y="111" width="12" height="6.5" rx="1.5" fill="#2a2e39"/>
+    <rect x="37" y="117" width="14" height="4.5" rx="1.5" fill="#20232c"/>
+    <rect x="50" y="111" width="12" height="6.5" rx="1.5" fill="#2a2e39"/>
+    <rect x="49" y="117" width="14" height="4.5" rx="1.5" fill="#20232c"/>
+    <path d="M30 52 q1.5 -9 10 -9.5 h20 q8.5 .5 10 9.5 l-2.5 20 q-.8 6.5 -7 6.5 h-21 q-6.2 0 -7 -6.5 z" fill="url(#sm-plate)"/>
+    <circle cx="50" cy="56" r="6.5" fill="#14161f"/>
+    <circle cx="50" cy="56" r="4" fill="url(#sm-core)"/>
+    <circle cx="50" cy="56" r="7.4" fill="none" stroke="#c9d2e0" stroke-width="0.8" opacity="0.55"/>
+    <path d="M40 41 q10 -4 20 0 l-2 5 q-8 -3 -16 0 z" fill="#262340"/>
+    <path d="M21 45 l13 -5 l3 11 l-11.5 4.5 z" fill="url(#sm-plate)" stroke="#c9d2e0" stroke-width="0.7" stroke-opacity="0.5"/>
+    <path d="M79 45 l-13 -5 l-3 11 l11.5 4.5 z" fill="url(#sm-plate)" stroke="#c9d2e0" stroke-width="0.7" stroke-opacity="0.5"/>
+    <rect x="22.5" y="52" width="10" height="27" rx="4" fill="url(#sm-plate)"/>
+    <rect x="67.5" y="52" width="10" height="27" rx="4" fill="url(#sm-plate)"/>
+    <rect x="22.5" y="64" width="10" height="1.4" fill="#c9d2e0" opacity="0.4"/>
+    <rect x="67.5" y="64" width="10" height="1.4" fill="#c9d2e0" opacity="0.4"/>
+    <rect x="22" y="77" width="10" height="8" rx="3" fill="#23262f"/>
+    <rect x="68" y="77" width="10" height="8" rx="3" fill="#23262f"/>
+    <path d="M50 6.5 l3.5 6.5 h-7 z" fill="#c9d2e0" opacity="0.85"/>
+    <path d="M50 11 c9.5 0 15 7 15 15.5 c0 9 -6.7 15.5 -15 15.5 s-15 -6.5 -15 -15.5 c0 -8.5 5.5 -15.5 15 -15.5 z" fill="url(#sm-plate)"/>
+    <path d="M38.5 24.5 q11.5 -5 23 0 l-1.8 7.8 q-9.8 4.2 -19.4 0 z" fill="url(#sm-visor)" stroke="#c9d2e0" stroke-width="0.7" stroke-opacity="0.55"/>
+    <path d="M41.5 26 q9 -3.5 17.5 0" stroke="#b6bcf0" stroke-width="1.3" fill="none" opacity="0.8"/>
   </svg>`,
 });
 
@@ -160,21 +230,6 @@ const SUIT_ART = Object.freeze({
 
 const HEADLINE = "HERE BEGINS YOUR INTERSTELLAR JOURNEY";
 const SUBTITLE = "Beyond Earth, evolution is survival.";
-const MYTHOLOGY =
-  "Humanity has crossed the boundaries of its known universe. Beyond Earth, " +
-  "advanced technology defines the civilizations that survive and thrive. " +
-  "Equip yourself for the journey ahead.";
-
-const PROTOCOLS = [
-  "Each suit discounts one eligible property purchase.",
-  "Use the discount on any eligible property during your circuit.",
-  "The discount does not expire when a turn ends.",
-  "The suit expires after one full circuit, from Outer Space and back to Outer Space.",
-  "A used discount is consumed immediately.",
-  "An unused suit expires at the circuit's end, with a notice.",
-  "The discount applies to the purchase price only - not rent, upgrades or fees.",
-  "One suit at a time. Discounts cannot be stacked.",
-];
 
 /** Which suit's notice this visit has already shown, so a repaint cannot
     bring it back after the player has read it. One key per visit. */
@@ -182,47 +237,37 @@ let noticeDismissed = null;
 
 /* ------------------------------------------------------------------ cards */
 
-/** One suit card: art, name, descriptor, meta, price, and its press. */
+/** One portrait suit card: artwork, name, one price line, and its press. */
 function suitCard(suit, { mine, money }) {
   const affordable = (money || 0) >= suit.price;
   return el("article", { class: "space-suit", "data-suit": suit.id }, [
     el("span", { class: "space-suit__art", html: SUIT_ART[suit.id] || "" }),
-    el("div", { class: "space-suit__info" }, [
-      el("h4", { class: "space-suit__name", text: suit.name }),
-      el("p", { class: "space-suit__descriptor", text: suit.descriptor }),
-      el("div", { class: "space-suit__meta" }, [
-        el("span", { class: "space-suit__off", text: `${suit.discount}% OFF` }),
-        el("span", { class: "space-suit__tier", text: suit.tier }),
-      ]),
-      el("p", { class: "space-suit__price", text: rupees(suit.price) }),
-      el("button", {
-        type: "button",
-        class: "chest-card__draw space-suit__buy",
-        "data-action": "acquire",
-        "data-suit": suit.id,
-        disabled: !mine || !affordable,
-        "aria-disabled": String(!mine || !affordable),
-        text: affordable ? "Acquire suit" : "Insufficient funds",
-      }),
+    el("h4", { class: "space-suit__name", text: suit.name }),
+    el("p", { class: "space-suit__price" }, [
+      el("b", { text: rupees(suit.price) }),
+      el("span", { text: ` · ${suit.discount}% discount` }),
     ]),
+    el("button", {
+      type: "button",
+      class: "chest-card__draw space-suit__buy",
+      "data-action": "acquire",
+      "data-suit": suit.id,
+      disabled: !mine || !affordable,
+      "aria-disabled": String(!mine || !affordable),
+      text: affordable ? "Acquire suit" : "Insufficient funds",
+    }),
   ]);
 }
 
-/** The selection: header, the three stacked cards, the protocols, the leave. */
+/** The selection: compact header, the three stacked portrait cards, the exit. */
 function selectionContent(space, { mine, money }) {
   return [
     el("header", { class: "space-card__head" }, [
       el("p", { class: "space-card__eyebrow", text: "Outer Space" }),
       el("h3", { class: "space-card__headline", text: HEADLINE }),
       el("p", { class: "space-card__subtitle", text: SUBTITLE }),
-      el("p", { class: "space-card__myth", text: MYTHOLOGY }),
     ]),
     el("div", { class: "space-card__suits" }, SUITS.map((suit) => suitCard(suit, { mine, money }))),
-    el("section", { class: "space-card__protocols" }, [
-      el("h4", { class: "space-card__protocols-name", text: "Mission protocols" }),
-      el("ul", { class: "space-card__protocols-list" },
-        PROTOCOLS.map((line) => el("li", { text: line }))),
-    ]),
     el("div", { class: "space-card__foot" }, [
       el("button", {
         type: "button",

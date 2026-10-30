@@ -97,6 +97,15 @@
   --corner-hole-accent: #d08a3c;
   --corner-hole-dark: #5a3a10;
   --corner-icon: #faf4ef;
+
+  /* THE OUTER SPACE COUNTER - noir. Obsidian ground, charcoal panels, muted
+     steel for secondary text, silver for the primary, and a single
+     controlled indigo for the suits' energy. Five tokens, one place. */
+  --space-ground: #101117;
+  --space-panel: #191b23;
+  --space-steel: #9aa4b2;
+  --space-silver: #e3e8ef;
+  --space-indigo: #7d8ad4;
   --centre-ground: #fbf9f5;
   --chest-wash: #000000;
   --wash-strength: 7%;
@@ -5712,17 +5721,20 @@ button.board__cell--corner:focus-visible {
 /* ==========================================================================
    OUTER SPACE - THE INTERSTELLAR COUNTER
 
-   The suit screen and its two popups, in the board's own material: the
-   ivory card shell every floating card wears, Jost at board scales, pills
-   borrowed from the chest's draw, hairline borders, the established
-   radii. The card takes the same box as the chest - its own height up to
-   the eight-cell ceiling - and scrolls inside the holder if the suits
-   need more room than a small board has, so nothing is clipped and the
-   board under it never moves.
+   CLASSIFIED TECHNOLOGY, NOT A SHOP. A dark panel floating over the cream
+   board - obsidian ground, charcoal cards, hairline silver borders,
+   Jost caps at board scales - so the screen reads as Samrajya's own noir
+   rather than an ecommerce page dropped on it. Three portrait cards in
+   one column, artwork first, then name, then one price line, then the
+   press: nothing beside the image, nothing competing with it, no
+   mythology paragraph, no protocols list.
 
-   Sizes ride the tile as everything else does, with floors under them;
-   the suit art and the popups' figures are sized against the CARD's own
-   width (container queries), so the proportions hold at every device.
+   The card takes the same box as the chest - its own height up to the
+   eight-cell ceiling - with a single scroll as the fallback on short
+   boards; the spacing below is budgeted so a normal phone fits all three
+   suits without it. Sizes ride the tile with floors under them, and the
+   artwork is sized against the CARD's own width (container queries), so
+   the proportions hold at every device.
    ======================================================================== */
 
 .board__card[data-card-kind="space"] {
@@ -5734,17 +5746,18 @@ button.board__cell--corner:focus-visible {
   pointer-events: auto;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--cell) * 0.11);
+  gap: calc(var(--cell) * 0.07);
   max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: none;
-  padding: 5.5% 6%;
+  padding: 4% 5%;
+  border: 1px solid rgb(255 255 255 / 0.1);
   border-radius: 10px;
-  background: var(--cell-ground);
+  background: var(--space-ground);
   box-shadow:
-    0 1px 0 rgb(255 255 255 / 0.7) inset,
-    0 2px 10px rgb(18 17 16 / 0.13);
+    0 1px 0 rgb(255 255 255 / 0.05) inset,
+    0 4px 24px rgb(0 0 0 / 0.45);
   container-type: inline-size;
 }
 
@@ -5752,71 +5765,71 @@ button.board__cell--corner:focus-visible {
   display: none;
 }
 
-/* ------------------------------------------------------------------ head */
+/* ------------------------------------------------------------------ head
+
+   Left-aligned on the card's own margin, the way every Samrajya card sets
+   its title block - compact: label, headline, one line of atmosphere. No
+   paragraph of exposition; the artwork carries the mood. */
 
 .space-card__head {
   display: grid;
-  gap: 0.4em;
-  text-align: center;
-  justify-items: center;
+  gap: 0.3em;
+  padding: 2% 1% 1%;
 }
 
 .space-card__eyebrow {
   margin: 0;
-  font-size: max(8.5px, calc(var(--cell) * 0.11));
+  font-size: max(8.5px, calc(var(--cell) * 0.108));
   letter-spacing: 0.24em;
   text-transform: uppercase;
-  color: var(--ink-soft);
+  color: var(--space-steel);
 }
 
 .space-card__headline {
   margin: 0;
-  font-size: max(12.5px, calc(var(--cell) * 0.175));
+  font-size: max(12px, calc(var(--cell) * 0.155));
   font-weight: 500;
-  letter-spacing: 0.05em;
-  line-height: 1.22;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
   text-transform: uppercase;
-  color: var(--ink);
+  color: var(--space-silver);
   text-wrap: balance;
 }
 
 .space-card__subtitle {
   margin: 0;
-  font-size: max(10px, calc(var(--cell) * 0.132));
-  font-weight: 500;
-  color: var(--ink);
+  font-size: max(9.8px, calc(var(--cell) * 0.126));
+  font-weight: 400;
+  color: var(--space-steel);
 }
 
-.space-card__myth {
-  margin: 0;
-  max-width: 46ch;
-  font-size: max(9.4px, calc(var(--cell) * 0.122));
-  line-height: 1.45;
-  color: var(--ink-soft);
-  text-wrap: pretty;
-}
+/* ------------------------------------------------------------------ suits
 
-/* ------------------------------------------------------------------ suits */
+   ONE COLUMN, PORTRAIT CARDS: artwork centred and dominant, then the name,
+   then a single price line, then the press - left-set beneath the image so
+   the block reads as equipment, not a product tile. No descriptor line, no
+   tier pill, no discount badge: three facts, one hierarchy. */
 
 .space-card__suits {
   display: grid;
-  gap: calc(var(--cell) * 0.09);
+  gap: calc(var(--cell) * 0.07);
 }
 
 .space-suit {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: clamp(8px, 4cqi, 14px);
-  align-items: center;
-  padding: clamp(8px, 3cqi, 12px);
-  border: 1px solid rgb(18 17 16 / 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(5px, 1.8cqi, 9px);
+  align-items: stretch;
+  padding: clamp(9px, 3cqi, 14px);
+  border: 1px solid rgb(255 255 255 / 0.09);
   border-radius: 8px;
-  background: var(--card-inset);
+  background: var(--space-panel);
 }
 
 .space-suit__art {
   display: block;
-  width: clamp(58px, 21cqi, 92px);
+  width: clamp(66px, 26cqi, 116px);
+  margin: 0 auto;
   line-height: 0;
 }
 
@@ -5826,142 +5839,88 @@ button.board__cell--corner:focus-visible {
   height: auto;
 }
 
-.space-suit__info {
-  display: grid;
-  gap: clamp(3px, 1.4cqi, 6px);
-  justify-items: start;
-  min-width: 0;
-}
-
 .space-suit__name {
   margin: 0;
-  font-size: max(11.5px, calc(var(--cell) * 0.15));
+  font-size: max(11.5px, calc(var(--cell) * 0.148));
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   line-height: 1.15;
-  color: var(--ink);
-}
-
-.space-suit__descriptor {
-  margin: 0;
-  font-size: max(9.2px, calc(var(--cell) * 0.118));
-  line-height: 1.3;
-  color: var(--ink-soft);
-}
-
-.space-suit__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  align-items: center;
-}
-
-.space-suit__off {
-  font-size: max(8.5px, calc(var(--cell) * 0.108));
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--ink);
-  color: var(--cell-ground);
-}
-
-.space-suit__tier {
-  font-size: max(8.5px, calc(var(--cell) * 0.108));
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  padding: 2px 7px;
-  border-radius: 999px;
-  border: 1px solid rgb(18 17 16 / 0.25);
-  color: var(--ink-soft);
+  color: var(--space-silver);
 }
 
 .space-suit__price {
   margin: 0;
-  font-size: max(13px, calc(var(--cell) * 0.185));
-  font-weight: 500;
-  color: var(--ink);
+  font-size: max(10px, calc(var(--cell) * 0.13));
+  line-height: 1.2;
+  color: var(--space-steel);
   font-variant-numeric: tabular-nums;
 }
 
-.space-suit__buy {
-  justify-self: stretch;
-  width: 100%;
-  min-height: max(24px, calc(var(--cell) * 0.34));
-  padding: 0 1em;
-  font-size: max(9.6px, calc(var(--cell) * 0.13));
-  margin-top: 2px;
-}
-
-/* -------------------------------------------------------------- protocols */
-
-.space-card__protocols {
-  display: grid;
-  gap: 0.45em;
-  padding-top: calc(var(--cell) * 0.07);
-  border-top: 1px solid rgb(18 17 16 / 0.1);
-}
-
-.space-card__protocols-name {
-  margin: 0;
-  font-size: max(9px, calc(var(--cell) * 0.118));
+.space-suit__price b {
   font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink);
+  color: var(--space-silver);
 }
 
-.space-card__protocols-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 3px;
+.space-suit__buy {
+  align-self: stretch;
+  width: 100%;
+  min-height: max(24px, calc(var(--cell) * 0.33));
+  padding: 0 1em;
+  font-size: max(9.6px, calc(var(--cell) * 0.126));
+  margin-top: clamp(2px, 0.6cqi, 5px);
 }
 
-.space-card__protocols-list li {
-  position: relative;
-  padding-left: 1em;
-  font-size: max(9.2px, calc(var(--cell) * 0.118));
-  line-height: 1.4;
-  color: var(--ink-soft);
-}
+/* ------------------------------------------------------------------- foot
 
-.space-card__protocols-list li::before {
-  content: "·";
-  position: absolute;
-  left: 0.3em;
-  color: var(--ink);
-  font-weight: 600;
-}
-
-/* ------------------------------------------------------------------- foot */
+   The secondary exit, right-set on the card's margin - present, findable,
+   and never competing with the acquires above it. Every pill inside the
+   counter is restated for the dark ground: silver on obsidian, the same
+   chest pill wearing noir. */
 
 .space-card__foot {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
+  padding-top: calc(var(--cell) * 0.02);
 }
 
 .space-card__leave {
-  min-height: max(24px, calc(var(--cell) * 0.33));
-  padding: 0 1.3em;
-  font-size: max(9.6px, calc(var(--cell) * 0.126));
+  min-height: max(23px, calc(var(--cell) * 0.31));
+  padding: 0 1.2em;
+  font-size: max(9.2px, calc(var(--cell) * 0.12));
 }
 
-/* ------------------------------------------------------------------ popups */
+.space-card .chest-card__draw {
+  background: rgb(255 255 255 / 0.04);
+  border-color: rgb(255 255 255 / 0.28);
+  color: var(--space-silver);
+  letter-spacing: 0.12em;
+  backdrop-filter: none;
+}
+
+.space-card .chest-card__draw:disabled {
+  opacity: 0.42;
+  border-color: rgb(255 255 255 / 0.16);
+}
+
+/* ------------------------------------------------------------------ popups
+
+   The acquisition and expiry cards speak on the same obsidian ground:
+   silver title, steel narrative, one outlined pill. Centred because a
+   single statement with its suit above it is the one screen where centring
+   is the design - nothing else on this counter is centred. */
 
 .space-popup {
   display: grid;
   justify-items: center;
-  gap: calc(var(--cell) * 0.1);
+  gap: calc(var(--cell) * 0.07);
   text-align: center;
-  padding: 6% 4% 3%;
+  padding: 5% 4% 3%;
 }
 
 .space-popup__art {
   display: block;
-  width: clamp(110px, 40cqi, 180px);
+  width: clamp(96px, 34cqi, 150px);
   line-height: 0;
 }
 
@@ -5973,33 +5932,33 @@ button.board__cell--corner:focus-visible {
 
 .space-popup__title {
   margin: 0;
-  font-size: max(13px, calc(var(--cell) * 0.19));
+  font-size: max(12.5px, calc(var(--cell) * 0.175));
   font-weight: 500;
   letter-spacing: 0.06em;
   line-height: 1.25;
   text-transform: uppercase;
-  color: var(--ink);
+  color: var(--space-silver);
   text-wrap: balance;
 }
 
 .space-popup__text {
   margin: 0;
   max-width: 36ch;
-  font-size: max(10px, calc(var(--cell) * 0.13));
+  font-size: max(10px, calc(var(--cell) * 0.128));
   line-height: 1.5;
-  color: var(--ink-soft);
+  color: var(--space-steel);
   text-wrap: pretty;
 }
 
 .space-popup__cta {
-  margin-top: calc(var(--cell) * 0.05);
-  min-height: max(28px, calc(var(--cell) * 0.38));
+  margin-top: calc(var(--cell) * 0.04);
+  min-height: max(27px, calc(var(--cell) * 0.36));
   padding: 0 1.6em;
-  font-size: max(10.4px, calc(var(--cell) * 0.14));
+  font-size: max(10.2px, calc(var(--cell) * 0.136));
 }
 
 .space-popup--notice {
-  padding-top: 16%;
+  padding-top: 10%;
 }
 
 /* ----------------------------------------------- the struck list price
