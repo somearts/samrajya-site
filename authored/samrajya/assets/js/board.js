@@ -2019,7 +2019,7 @@ export function board({
     paintPhase();
   }
 
-  /* --------------------------------------------------- the black hole
+  /* ------------------------------------------------------- the black hole */
 
   let holeStage = null;
 

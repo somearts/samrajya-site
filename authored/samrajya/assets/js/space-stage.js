@@ -301,6 +301,12 @@ export function drawSpaceStage(board, space, { mine = false, money = 0 } = {}) {
   const ctx = { mine, money };
   const card = el("article", { class: "space-card" });
   holder.append(card);
+  /* EVERY STAGE UNSHIDES ITS OWN HOLDER. The holder is hidden between cards
+     (and starts hidden), and a card appended into a hidden box is a card
+     nobody can see - the board's stranded-turn rescue then reads "decision
+     with no card" and walks the visit closed, which is what made the counter
+     vanish the moment it opened. */
+  holder.hidden = false;
 
   const render = () => {
     if (space.phase === "acquired") {
