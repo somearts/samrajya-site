@@ -90,15 +90,6 @@
   --corner-outer-space: #4a7fa8;
   --corner-black-hole: #b97626;
   --corner-icon: #faf4ef;
-
-  /* THE OUTER SPACE COUNTER - noir. Obsidian ground, charcoal panels, muted
-     steel for secondary text, silver for the primary, and a single
-     controlled indigo for the suits' energy. Five tokens, one place. */
-  --space-ground: #101117;
-  --space-panel: #191b23;
-  --space-steel: #9aa4b2;
-  --space-silver: #e3e8ef;
-  --space-indigo: #7d8ad4;
   --centre-ground: #fbf9f5;
   --chest-wash: #000000;
   --wash-strength: 7%;
@@ -5719,20 +5710,19 @@ button.board__cell--corner:focus-visible {
 /* ==========================================================================
    OUTER SPACE - THE INTERSTELLAR COUNTER
 
-   CLASSIFIED TECHNOLOGY, NOT A SHOP. A dark panel floating over the cream
-   board - obsidian ground, charcoal cards, hairline silver borders,
-   Jost caps at board scales - so the screen reads as Samrajya's own noir
-   rather than an ecommerce page dropped on it. Three portrait cards in
-   one column, artwork first, then name, then one price line, then the
-   press: nothing beside the image, nothing competing with it, no
-   mythology paragraph, no protocols list.
+   BUILT FROM SCRATCH: a warm off-white panel in the board's own material
+   carrying the headline and ONE ROW of three tall portrait cards -
+   [ Quantum One ] [ Photon Weave ] [ Singularity Mantle ] - artwork at the
+   top of each, name beneath, price and discount beneath that, ACQUIRE SUIT
+   pinned at the bottom inside the card. The horizontal row is the point:
+   headline plus three side-by-side cards inside the viewport, no scrolling
+   anywhere on this screen. A visible X closes the counter (the visit's own
+   `continue` - no purchase, no state of its own).
 
-   The card takes the same box as the chest - its own height up to the
-   eight-cell ceiling - with a single scroll as the fallback on short
-   boards; the spacing below is budgeted so a normal phone fits all three
-   suits without it. Sizes ride the tile with floors under them, and the
-   artwork is sized against the CARD's own width (container queries), so
-   the proportions hold at every device.
+   The row is a three-column grid with equal tracks, so all three cards
+   share one height and one width class; everything inside sizes against
+   the card's own width (container queries) and the tile, so the
+   arrangement survives every device without overflow.
    ======================================================================== */
 
 .board__card[data-card-kind="space"] {
@@ -5744,90 +5734,96 @@ button.board__cell--corner:focus-visible {
   pointer-events: auto;
   display: flex;
   flex-direction: column;
-  gap: calc(var(--cell) * 0.07);
-  max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-  padding: 4% 5%;
-  border: 1px solid rgb(255 255 255 / 0.1);
+  gap: clamp(8px, 2.4cqi, 16px);
+  padding: 4.5% 5% 5.5%;
   border-radius: 10px;
-  background: var(--space-ground);
+  background: var(--cell-ground);
   box-shadow:
-    0 1px 0 rgb(255 255 255 / 0.05) inset,
-    0 4px 24px rgb(0 0 0 / 0.45);
+    0 1px 0 rgb(255 255 255 / 0.7) inset,
+    0 2px 10px rgb(18 17 16 / 0.13);
   container-type: inline-size;
+  /* No scroll of any kind: the row fits, and every part of it is budgeted
+     against the panel so nothing can spill or clip. */
+  overflow: visible;
 }
 
-.space-card::-webkit-scrollbar {
-  display: none;
-}
+/* ------------------------------------------------------------------- head
 
-/* ------------------------------------------------------------------ head
+   The headline left-set on the panel's margin - the established Samrajya
+   title position - with the close X alone in the top-right corner. One
+   line of intent; the artwork below it carries the rest. */
 
-   Left-aligned on the card's own margin, the way every Samrajya card sets
-   its title block - compact: label, headline, one line of atmosphere. No
-   paragraph of exposition; the artwork carries the mood. */
-
-.space-card__head {
-  display: grid;
-  gap: 0.3em;
-  padding: 2% 1% 1%;
-}
-
-.space-card__eyebrow {
-  margin: 0;
-  font-size: max(8.5px, calc(var(--cell) * 0.108));
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-  color: var(--space-steel);
+.space-card__bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: clamp(6px, 2cqi, 12px);
+  padding: 1% 0 0;
 }
 
 .space-card__headline {
   margin: 0;
-  font-size: max(12px, calc(var(--cell) * 0.155));
+  min-width: 0;
+  font-size: max(12px, calc(var(--cell) * 0.165));
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   line-height: 1.2;
   text-transform: uppercase;
-  color: var(--space-silver);
+  color: var(--ink);
   text-wrap: balance;
 }
 
-.space-card__subtitle {
-  margin: 0;
-  font-size: max(9.8px, calc(var(--cell) * 0.126));
-  font-weight: 400;
-  color: var(--space-steel);
+.space-card__close {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: clamp(24px, 7.5cqi, 30px);
+  height: clamp(24px, 7.5cqi, 30px);
+  padding: 0;
+  border: 1px solid rgb(18 17 16 / 0.3);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  font-size: clamp(13px, 4cqi, 16px);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.space-card__close:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 /* ------------------------------------------------------------------ suits
 
-   ONE COLUMN, PORTRAIT CARDS: artwork centred and dominant, then the name,
-   then a single price line, then the press - left-set beneath the image so
-   the block reads as equipment, not a product tile. No descriptor line, no
-   tier pill, no discount badge: three facts, one hierarchy. */
+   ONE ROW, THREE TALL CARDS. Three equal tracks side by side - never
+   stacked, never landscape - each card a vertical column: artwork, name,
+   price, press. Grid stretch keeps all three the same height, and
+   margin-top:auto pins each ACQUIRE button to the bottom of its own card,
+   so the row reads as one issued set. */
 
 .space-card__suits {
   display: grid;
-  gap: calc(var(--cell) * 0.07);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(6px, 2cqi, 12px);
+  align-items: stretch;
 }
 
 .space-suit {
   display: flex;
   flex-direction: column;
-  gap: clamp(5px, 1.8cqi, 9px);
-  align-items: stretch;
-  padding: clamp(9px, 3cqi, 14px);
-  border: 1px solid rgb(255 255 255 / 0.09);
+  align-items: center;
+  gap: clamp(4px, 1.4cqi, 8px);
+  min-width: 0;
+  padding: clamp(7px, 2.2cqi, 13px) clamp(5px, 1.6cqi, 9px) clamp(8px, 2.4cqi, 13px);
+  border: 1px solid rgb(18 17 16 / 0.1);
   border-radius: 8px;
-  background: var(--space-panel);
+  background: var(--card-inset);
 }
 
 .space-suit__art {
   display: block;
-  width: clamp(66px, 26cqi, 116px);
-  margin: 0 auto;
+  width: 100%;
   line-height: 0;
 }
 
@@ -5839,74 +5835,54 @@ button.board__cell--corner:focus-visible {
 
 .space-suit__name {
   margin: 0;
-  font-size: max(11.5px, calc(var(--cell) * 0.148));
+  text-align: center;
+  font-size: clamp(9.5px, calc(var(--cell) * 0.132), 11.5px);
   font-weight: 500;
   letter-spacing: 0.05em;
   text-transform: uppercase;
   line-height: 1.15;
-  color: var(--space-silver);
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
 
 .space-suit__price {
   margin: 0;
-  font-size: max(10px, calc(var(--cell) * 0.13));
-  line-height: 1.2;
-  color: var(--space-steel);
+  text-align: center;
+  font-size: clamp(8.5px, calc(var(--cell) * 0.106), 9.5px);
+  line-height: 1.25;
+  color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
 }
 
 .space-suit__price b {
   font-weight: 500;
-  color: var(--space-silver);
+  color: var(--ink);
 }
 
+/* The press, pinned to the card's floor: full card width, tight tracking so
+   ACQUIRE SUIT holds one line at every card width it is given, and allowed
+   to wrap only when the funds say "Insufficient funds" - it stays inside
+   the card either way. */
 .space-suit__buy {
+  margin-top: auto;
   align-self: stretch;
   width: 100%;
-  min-height: max(24px, calc(var(--cell) * 0.33));
-  padding: 0 1em;
-  font-size: max(9.6px, calc(var(--cell) * 0.126));
-  margin-top: clamp(2px, 0.6cqi, 5px);
+  min-height: max(22px, calc(var(--cell) * 0.3));
+  padding: 3px 0.4em;
+  font-size: clamp(8px, calc(var(--cell) * 0.1), 9.5px);
+  letter-spacing: 0.04em;
+  white-space: normal;
 }
 
-/* ------------------------------------------------------------------- foot
-
-   The secondary exit, right-set on the card's margin - present, findable,
-   and never competing with the acquires above it. Every pill inside the
-   counter is restated for the dark ground: silver on obsidian, the same
-   chest pill wearing noir. */
-
-.space-card__foot {
-  display: flex;
-  justify-content: flex-end;
-  padding-top: calc(var(--cell) * 0.02);
-}
-
-.space-card__leave {
-  min-height: max(23px, calc(var(--cell) * 0.31));
-  padding: 0 1.2em;
-  font-size: max(9.2px, calc(var(--cell) * 0.12));
-}
-
-.space-card .chest-card__draw {
-  background: rgb(255 255 255 / 0.04);
-  border-color: rgb(255 255 255 / 0.28);
-  color: var(--space-silver);
-  letter-spacing: 0.12em;
-  backdrop-filter: none;
-}
-
-.space-card .chest-card__draw:disabled {
-  opacity: 0.42;
-  border-color: rgb(255 255 255 / 0.16);
-}
+/* (No footer: the close X in the head is the counter's only exit, and the
+   acquisition popup keeps its own CONTINUE JOURNEY.) */
 
 /* ------------------------------------------------------------------ popups
 
-   The acquisition and expiry cards speak on the same obsidian ground:
-   silver title, steel narrative, one outlined pill. Centred because a
-   single statement with its suit above it is the one screen where centring
-   is the design - nothing else on this counter is centred. */
+   The acquisition and expiry cards on the same warm ground as the board:
+   the suit at full width of the panel, the statement beneath, one chest
+   pill. Centred because a single statement with its suit above it is the
+   one screen where centring is the design. */
 
 .space-popup {
   display: grid;
@@ -5918,7 +5894,7 @@ button.board__cell--corner:focus-visible {
 
 .space-popup__art {
   display: block;
-  width: clamp(96px, 34cqi, 150px);
+  width: clamp(110px, 40cqi, 180px);
   line-height: 0;
 }
 
@@ -5930,29 +5906,30 @@ button.board__cell--corner:focus-visible {
 
 .space-popup__title {
   margin: 0;
-  font-size: max(12.5px, calc(var(--cell) * 0.175));
+  font-size: max(12.5px, calc(var(--cell) * 0.18));
   font-weight: 500;
   letter-spacing: 0.06em;
   line-height: 1.25;
   text-transform: uppercase;
-  color: var(--space-silver);
+  color: var(--ink);
   text-wrap: balance;
 }
 
 .space-popup__text {
   margin: 0;
   max-width: 36ch;
-  font-size: max(10px, calc(var(--cell) * 0.128));
+  font-size: max(10px, calc(var(--cell) * 0.13));
   line-height: 1.5;
-  color: var(--space-steel);
+  color: var(--ink-soft);
   text-wrap: pretty;
 }
 
 .space-popup__cta {
   margin-top: calc(var(--cell) * 0.04);
   min-height: max(27px, calc(var(--cell) * 0.36));
-  padding: 0 1.6em;
+  padding: 0 1.4em;
   font-size: max(10.2px, calc(var(--cell) * 0.136));
+  letter-spacing: 0.1em;
 }
 
 .space-popup--notice {

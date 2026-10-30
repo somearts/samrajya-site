@@ -5,34 +5,26 @@
    and the Black Hole panel are: `game.space` is the whole truth about it -
    which seat is at the counter, whether the suits are being chosen or the
    acquisition popup is speaking, and which suit was retired by this
-   arrival. Every device draws the middle from that fact, so a phone that
-   reconnects or joined late shows exactly the same journey.
+   arrival. Every device draws the middle from that fact.
 
-   THE LOOK: CLASSIFIED TECHNOLOGY, NOT A SHOP. An obsidian panel over the
-   cream board - charcoal suit cards with hairline silver borders, silver
-   caps, steel secondary text, one controlled indigo for energy. The artwork
-   is the argument: three engineered suit concepts drawn as refined vector
-   concepts inside their own dark display case - angular plating, visor
-   slits, restrained highlights - progressing from sleek steel (Tier I)
-   through layered photonic lamellae (Tier II) to the heavy indigo-cored
-   mantle (Tier III). No cartoon proportions, no faces, no badges.
+   THE SCREEN, BUILT FROM SCRATCH: a warm off-white panel in the board's own
+   material carrying a headline and ONE ROW of three tall portrait cards -
+   [ Quantum One ] [ Photon Weave ] [ Singularity Mantle ] - each with its
+   artwork at the top, name beneath, price and discount beneath that, and
+   ACQUIRE SUIT pinned at the bottom inside the card. The row is what makes
+   everything fit: headline plus three side-by-side cards in the viewport,
+   no scrolling anywhere. A visible X in the panel's top-right closes the
+   counter (it is the visit's own `continue` - no purchase, no state
+   change beyond a clean leave).
 
-   THREE SHAPES, ONE CARD, PORTRAIT STACK:
-
-   1. THE EXPIRY NOTICE - shown first when the arriving seat was still
-      carrying a suit whose discount was never spent. Its CONTINUE is local:
-      it takes the notice down and reveals the counter underneath, with no
-      action sent anywhere.
-
-   2. THE SELECTION - the section label, headline and subtitle, then the
-      three portrait suit cards stacked in one column: artwork, name, one
-      price line, ACQUIRE. Compact enough that a normal phone fits all
-      three without scrolling; a single scroll is the fallback on short
-      boards. The secondary exit sits right-set at the foot.
-
-   3. THE ACQUISITION POPUP - the suit, its narrative and the one CTA,
-      CONTINUE JOURNEY, which the board wires to the same `continue` that
-      ends every visit.
+   THE ARTWORK: three realistic, human-proportioned astronauts - same
+   skeleton, same stance, same upper-left light across all three, roughly
+   seven-and-a-half heads tall, serious full-glass helmets with no faces
+   visible, fitted plate armor over a dark undersuit, gloves, knee pads,
+   boots, an EVA pack's hoses at the collar. Only the material differs:
+   pearl-white with restrained teal (Quantum One), graphite with subtle
+   violet (Photon Weave), obsidian with indigo and cyan (Singularity
+   Mantle). No case boxes, no cartoon proportions, no badges.
 
    NOTHING HERE DECIDES ANYTHING
 
@@ -48,188 +40,216 @@ import { rupees } from "./shared/economy.js";
 
 /* ------------------------------------------------------------- the suits
 
-   One frame, one stance, one light: every suit is drawn front-on inside the
-   same dark display case at 100x132 portrait, lit from the upper left, so
-   the row reads as one issued set. The tiers differ by construction, not
-   by colour games - plate count, edge language, silhouette weight - and
-   the palette stays noir: muted steel, gunmetal, silver trim, indigo
-   glass and indigo energy, never literal bright metal. */
+   ONE BODY, THREE MATERIALS. Every figure is the same 96x128 frame with
+   identical coordinates - helmet, shoulders, torso, belt, pelvis, thighs,
+   knees, shins, boots, arms to mid-thigh - so the row reads as three
+   issues of one equipment line photographed identically. Light falls from
+   the upper left in all three; a soft halo behind the torso and a low
+   ground shadow root each figure on the cream card. Accents stay
+   restrained: a seam, a belt rule, wrist rings, the visor glint, and one
+   energy core on the Mantle. */
 
 const SUIT_ART = Object.freeze({
-  "quantum-one": `<svg viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  "quantum-one": `<svg viewBox="0 0 96 128" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
     <defs>
-      <linearGradient id="q1-case" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#23262f"/>
-        <stop offset="1" stop-color="#13151b"/>
-      </linearGradient>
-      <linearGradient id="q1-plate" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#aeb6c2"/>
-        <stop offset="0.5" stop-color="#78818e"/>
-        <stop offset="1" stop-color="#474e59"/>
-      </linearGradient>
-      <linearGradient id="q1-side" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="#59616e"/>
-        <stop offset="1" stop-color="#8a93a1"/>
-      </linearGradient>
-      <linearGradient id="q1-visor" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#2b3454"/>
-        <stop offset="1" stop-color="#111422"/>
-      </linearGradient>
-      <radialGradient id="q1-core">
-        <stop offset="0" stop-color="#aab6f2"/>
-        <stop offset="1" stop-color="#4d56a8"/>
+      <radialGradient id="q1-halo" cx="0.5" cy="0.42" r="0.62">
+        <stop offset="0" stop-color="#e7eae6"/>
+        <stop offset="1" stop-color="#f7f4ef" stop-opacity="0"/>
       </radialGradient>
+      <linearGradient id="q1-armor" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#f4f2ec"/>
+        <stop offset="0.55" stop-color="#dcdad3"/>
+        <stop offset="1" stop-color="#b9bcb7"/>
+      </linearGradient>
+      <linearGradient id="q1-limb" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#e9e7e0"/>
+        <stop offset="1" stop-color="#c3c6c0"/>
+      </linearGradient>
+      <linearGradient id="q1-visor" x1="0" y1="0" x2="0.6" y2="1">
+        <stop offset="0" stop-color="#2c3a3a"/>
+        <stop offset="1" stop-color="#0e1414"/>
+      </linearGradient>
     </defs>
-    <rect x="10" y="3" width="80" height="126" rx="5" fill="url(#q1-case)" stroke="#ffffff" stroke-opacity="0.07" stroke-width="0.8"/>
-    <ellipse cx="50" cy="124" rx="20" ry="3.2" fill="#000000" opacity="0.5"/>
-    <path d="M41.5 81 h7.5 l-.8 30 h-7.5 z" fill="url(#q1-plate)"/>
-    <path d="M51 81 h7.5 l.8 30 h-7.5 z" fill="url(#q1-plate)"/>
-    <rect x="40.6" y="95" width="8" height="1.2" fill="#cdd6e1" opacity="0.4"/>
-    <rect x="51.4" y="95" width="8" height="1.2" fill="#cdd6e1" opacity="0.4"/>
-    <rect x="38.5" y="111" width="11" height="6" rx="1" fill="#2f3541"/>
-    <rect x="37.5" y="116" width="13" height="5" rx="1.5" fill="#262c36"/>
-    <rect x="50.5" y="111" width="11" height="6" rx="1" fill="#2f3541"/>
-    <rect x="49.5" y="116" width="13" height="5" rx="1.5" fill="#262c36"/>
-    <path d="M37 75 h26 v5 q0 2 -2 2 h-22 q-2 0 -2 -2 z" fill="url(#q1-side)"/>
-    <path d="M31 51 q1 -8 9 -8 h20 q8 0 9 8 l-2 19 q-.6 6 -6.5 6 h-21 q-5.9 0 -6.5 -6 z" fill="url(#q1-plate)"/>
-    <rect x="47.5" y="44.5" width="5" height="24" rx="1.5" fill="#262b35"/>
-    <circle cx="50" cy="52" r="3.6" fill="url(#q1-core)"/>
-    <circle cx="50" cy="52" r="4.9" fill="none" stroke="#b9c4d6" stroke-width="0.7" opacity="0.5"/>
-    <path d="M36 59 h9.5 M54.5 59 h9.5" stroke="#cdd6e1" stroke-width="1" opacity="0.4"/>
-    <path d="M23 47 l11 -4 l2.5 9.5 l-10 3.5 z" fill="url(#q1-side)"/>
-    <path d="M77 47 l-11 -4 l-2.5 9.5 l10 3.5 z" fill="url(#q1-side)"/>
-    <rect x="23.5" y="51" width="8.5" height="27" rx="3.5" fill="url(#q1-side)"/>
-    <rect x="68" y="51" width="8.5" height="27" rx="3.5" fill="url(#q1-side)"/>
-    <rect x="23.5" y="63" width="8.5" height="1" fill="#cdd6e1" opacity="0.35"/>
-    <rect x="68" y="63" width="8.5" height="1" fill="#cdd6e1" opacity="0.35"/>
-    <rect x="23" y="76" width="9" height="7.5" rx="2.5" fill="#2b313c"/>
-    <rect x="68" y="76" width="9" height="7.5" rx="2.5" fill="#2b313c"/>
-    <rect x="43.5" y="40" width="13" height="6" rx="1.5" fill="#2e3440"/>
-    <path d="M50 13 c8.5 0 13.5 6.5 13.5 14.5 c0 8.5 -6 14.5 -13.5 14.5 s-13.5 -6 -13.5 -14.5 c0 -8 5 -14.5 13.5 -14.5 z" fill="url(#q1-plate)"/>
-    <path d="M50 14.5 v6" stroke="#d5dce6" stroke-width="1" opacity="0.6"/>
-    <path d="M39.5 25 q10.5 -4.5 21 0 l-1.6 7.2 q-9 3.8 -17.8 0 z" fill="url(#q1-visor)" stroke="#cfd8e2" stroke-width="0.7" stroke-opacity="0.5"/>
-    <path d="M42 26.5 q8 -3 16 0" stroke="#a9b6ef" stroke-width="1.2" fill="none" opacity="0.75"/>
+    <ellipse cx="48" cy="54" rx="31" ry="39" fill="url(#q1-halo)"/>
+    <ellipse cx="48" cy="125" rx="17" ry="2.6" fill="#121116" opacity="0.14"/>
+    <path d="M43.4 31.5 q-1.6 -2.6 -3.4 -3.4" stroke="#6d7570" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <path d="M52.6 31.5 q1.6 -2.6 3.4 -3.4" stroke="#6d7570" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <rect x="39" y="30.5" width="18" height="13" rx="3" fill="#c6c9c3"/>
+    <path d="M39.6 67 L47.4 67 L46.6 95.5 L40.4 95.5 Z" fill="url(#q1-limb)"/>
+    <path d="M48.6 67 L56.4 67 L55.6 95.5 L49.4 95.5 Z" fill="url(#q1-limb)"/>
+    <ellipse cx="44" cy="97.3" rx="3.8" ry="3" fill="#eceae4"/>
+    <ellipse cx="52" cy="97.3" rx="3.8" ry="3" fill="#eceae4"/>
+    <path d="M41.6 99.6 L46.4 99.6 L45.8 119 L42.2 119 Z" fill="url(#q1-limb)"/>
+    <path d="M49.6 99.6 L54.4 99.6 L53.8 119 L50.2 119 Z" fill="url(#q1-limb)"/>
+    <rect x="40.6" y="118.6" width="6.8" height="4.4" rx="1.3" fill="#f0eee8"/>
+    <rect x="39.6" y="122.4" width="8.2" height="3" rx="1.3" fill="#4d544f"/>
+    <rect x="48.6" y="118.6" width="6.8" height="4.4" rx="1.3" fill="#f0eee8"/>
+    <rect x="48.2" y="122.4" width="8.2" height="3" rx="1.3" fill="#4d544f"/>
+    <path d="M38.8 57.5 h18.4 l-1 8 q-1.3 4 -3.9 4 h-8.6 q-2.6 0 -3.9 -4 z" fill="url(#q1-armor)"/>
+    <rect x="38.6" y="56.6" width="18.8" height="3.4" rx="1.4" fill="#6d7570"/>
+    <rect x="38.6" y="59.4" width="18.8" height="1" fill="#3f9c8f"/>
+    <path d="M43.2 27.4 L36 30.6 q-1.6 .8 -1.5 2.7 l1 13.2 q.3 4.6 1.2 8.4 l.7 3 q.5 2.6 3.5 2.6 h15.8 q3 0 3.5 -2.6 l.7 -3 q.9 -3.8 1.2 -8.4 l1 -13.2 q.1 -1.9 -1.5 -2.7 L52.8 27.4 z" fill="url(#q1-armor)"/>
+    <path d="M39.4 34.5 q4 -1.6 8 .4 M56.6 34.5 q-4 -1.6 -8 .4" stroke="#9ba19c" stroke-width="1.1" fill="none" opacity="0.7"/>
+    <path d="M48 33.5 v21.5" stroke="#3f9c8f" stroke-width="1.3" opacity="0.9"/>
+    <path d="M42.5 50.5 h11" stroke="#a8ada8" stroke-width="0.9" fill="none"/>
+    <ellipse cx="37.6" cy="33" rx="6" ry="6.2" fill="url(#q1-armor)"/>
+    <ellipse cx="58.4" cy="33" rx="6" ry="6.2" fill="url(#q1-armor)"/>
+    <rect x="32.8" y="35.4" width="7.6" height="17.5" rx="3.6" fill="url(#q1-limb)"/>
+    <rect x="55.6" y="35.4" width="7.6" height="17.5" rx="3.6" fill="url(#q1-limb)"/>
+    <rect x="33.2" y="51.4" width="6.8" height="7.6" rx="3.2" fill="url(#q1-limb)"/>
+    <rect x="56" y="51.4" width="6.8" height="7.6" rx="3.2" fill="url(#q1-limb)"/>
+    <rect x="33.6" y="57.8" width="6.4" height="11.6" rx="3" fill="url(#q1-limb)"/>
+    <rect x="56" y="57.8" width="6.4" height="11.6" rx="3" fill="url(#q1-limb)"/>
+    <rect x="33.7" y="68.6" width="6.2" height="1.6" rx="0.8" fill="#3f9c8f"/>
+    <rect x="56.1" y="68.6" width="6.2" height="1.6" rx="0.8" fill="#3f9c8f"/>
+    <rect x="33.4" y="69.8" width="6.8" height="7.4" rx="2.4" fill="#e2e0d9"/>
+    <ellipse cx="40" cy="72.6" rx="1.5" ry="2.1" fill="#e2e0d9"/>
+    <rect x="55.8" y="69.8" width="6.8" height="7.4" rx="2.4" fill="#e2e0d9"/>
+    <ellipse cx="56" cy="72.6" rx="1.5" ry="2.1" fill="#e2e0d9"/>
+    <rect x="44.6" y="23.8" width="6.8" height="4.4" rx="1.6" fill="#6d7570"/>
+    <path d="M48 9.5 c5.6 0 8.8 4.2 8.8 9.8 c0 3.6 -1.2 6.4 -3.2 8.1 c-1.6 1.35 -3.4 2.05 -5.6 2.05 s-4 -.7 -5.6 -2.05 c-2 -1.7 -3.2 -4.5 -3.2 -8.1 c0 -5.6 3.2 -9.8 8.8 -9.8 z" fill="url(#q1-armor)"/>
+    <path d="M41.4 12.6 q4.2 -4 11.2 -3" stroke="#ffffff" stroke-width="1.4" fill="none" opacity="0.65" stroke-linecap="round"/>
+    <path d="M42 14.2 q6 -3.4 12 0 l-.5 5.4 q-.9 2.8 -5.5 2.8 t-5.5 -2.8 z" fill="url(#q1-visor)" stroke="#d7dad4" stroke-width="0.9" stroke-opacity="0.7"/>
+    <path d="M43.6 16.2 q4.6 -2.5 8.8 -.7" stroke="#bfe6df" stroke-width="1.5" fill="none" opacity="0.85" stroke-linecap="round"/>
+    <rect x="37.6" y="15.5" width="2.4" height="4" rx="1.1" fill="#cfd2cc"/>
+    <rect x="56" y="15.5" width="2.4" height="4" rx="1.1" fill="#cfd2cc"/>
   </svg>`,
 
-  "photon-weave": `<svg viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  "photon-weave": `<svg viewBox="0 0 96 128" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
     <defs>
-      <linearGradient id="pw-case" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#242731"/>
-        <stop offset="1" stop-color="#13151b"/>
+      <radialGradient id="pw-halo" cx="0.5" cy="0.42" r="0.62">
+        <stop offset="0" stop-color="#e4e6ea"/>
+        <stop offset="1" stop-color="#f7f4ef" stop-opacity="0"/>
+      </radialGradient>
+      <linearGradient id="pw-armor" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#70767e"/>
+        <stop offset="0.55" stop-color="#4a4f57"/>
+        <stop offset="1" stop-color="#33373d"/>
       </linearGradient>
-      <linearGradient id="pw-plate" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#d3dbe6"/>
-        <stop offset="0.5" stop-color="#99a2ae"/>
-        <stop offset="1" stop-color="#5c6470"/>
+      <linearGradient id="pw-limb" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#5f656d"/>
+        <stop offset="1" stop-color="#3f444b"/>
       </linearGradient>
-      <linearGradient id="pw-side" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="#666e7b"/>
-        <stop offset="1" stop-color="#a6afbb"/>
-      </linearGradient>
-      <linearGradient id="pw-visor" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#2e3860"/>
-        <stop offset="1" stop-color="#101426"/>
+      <linearGradient id="pw-visor" x1="0" y1="0" x2="0.6" y2="1">
+        <stop offset="0" stop-color="#292640"/>
+        <stop offset="1" stop-color="#0f0e18"/>
       </linearGradient>
     </defs>
-    <rect x="10" y="3" width="80" height="126" rx="5" fill="url(#pw-case)" stroke="#ffffff" stroke-opacity="0.07" stroke-width="0.8"/>
-    <ellipse cx="50" cy="124" rx="20" ry="3.2" fill="#000000" opacity="0.5"/>
-    <path d="M41.5 81 h7.5 l-.8 30 h-7.5 z" fill="url(#pw-plate)"/>
-    <path d="M51 81 h7.5 l.8 30 h-7.5 z" fill="url(#pw-plate)"/>
-    <rect x="40.6" y="86" width="7.5" height="1.1" fill="#e4eaf2" opacity="0.5"/>
-    <rect x="51.4" y="86" width="7.5" height="1.1" fill="#e4eaf2" opacity="0.5"/>
-    <rect x="40.6" y="96" width="7.5" height="1.1" fill="#e4eaf2" opacity="0.4"/>
-    <rect x="51.4" y="96" width="7.5" height="1.1" fill="#e4eaf2" opacity="0.4"/>
-    <rect x="38.5" y="111" width="11" height="6" rx="1" fill="#333944"/>
-    <rect x="37.5" y="116" width="13" height="5" rx="1.5" fill="#282e38"/>
-    <rect x="50.5" y="111" width="11" height="6" rx="1" fill="#333944"/>
-    <rect x="49.5" y="116" width="13" height="5" rx="1.5" fill="#282e38"/>
-    <path d="M37 75 h26 v5 q0 2 -2 2 h-22 q-2 0 -2 -2 z" fill="url(#pw-side)"/>
-    <path d="M31 51 q1 -8 9 -8 h20 q8 0 9 8 l-2 19 q-.6 6 -6.5 6 h-21 q-5.9 0 -6.5 -6 z" fill="url(#pw-plate)"/>
-    <rect x="34.5" y="49.5" width="31" height="4.2" rx="1" fill="#dbe3ed" opacity="0.95"/>
-    <rect x="35" y="56.5" width="30" height="4.2" rx="1" fill="#c8d1de" opacity="0.9"/>
-    <rect x="35.5" y="63.5" width="29" height="4.2" rx="1" fill="#b3bcc9" opacity="0.85"/>
-    <rect x="35" y="54.4" width="30" height="1.1" fill="#7d8ad4" opacity="0.85"/>
-    <rect x="35" y="61.4" width="30" height="1.1" fill="#7d8ad4" opacity="0.6"/>
-    <path d="M22.5 46.5 l11.5 -4.5 l3 10 l-10.5 4 z" fill="url(#pw-side)" stroke="#e8eef5" stroke-width="0.7" stroke-opacity="0.6"/>
-    <path d="M77.5 46.5 l-11.5 -4.5 l-3 10 l10.5 4 z" fill="url(#pw-side)" stroke="#e8eef5" stroke-width="0.7" stroke-opacity="0.6"/>
-    <rect x="23" y="51" width="9" height="12" rx="3" fill="url(#pw-side)"/>
-    <rect x="23.5" y="65" width="8" height="13" rx="3" fill="url(#pw-side)"/>
-    <rect x="68" y="51" width="9" height="12" rx="3" fill="url(#pw-side)"/>
-    <rect x="68.5" y="65" width="8" height="13" rx="3" fill="url(#pw-side)"/>
-    <rect x="23" y="77" width="9" height="7" rx="2.5" fill="#2b313c"/>
-    <rect x="68" y="77" width="9" height="7" rx="2.5" fill="#2b313c"/>
-    <rect x="43.5" y="40" width="13" height="6" rx="1.5" fill="#2e3440"/>
-    <path d="M50 12.5 c8.5 0 13.5 6.5 13.5 14.5 c0 8.5 -6 14.5 -13.5 14.5 s-13.5 -6 -13.5 -14.5 c0 -8 5 -14.5 13.5 -14.5 z" fill="url(#pw-plate)"/>
-    <rect x="36.5" y="23" width="3" height="7" rx="1" fill="#171b24"/>
-    <rect x="60.5" y="23" width="3" height="7" rx="1" fill="#171b24"/>
-    <path d="M50 14 v5.5" stroke="#eef2f7" stroke-width="1" opacity="0.7"/>
-    <path d="M39.5 25 q10.5 -4.5 21 0 l-1.6 7.2 q-9 3.8 -17.8 0 z" fill="url(#pw-visor)" stroke="#dfe6ef" stroke-width="0.7" stroke-opacity="0.6"/>
-    <path d="M41.5 26.5 q8.5 -3.2 17 0" stroke="#c3ccf2" stroke-width="1.4" fill="none" opacity="0.85"/>
-    <path d="M43 31 q7 -2 14 0" stroke="#7d8ad4" stroke-width="0.9" fill="none" opacity="0.7"/>
+    <ellipse cx="48" cy="54" rx="31" ry="39" fill="url(#pw-halo)"/>
+    <ellipse cx="48" cy="125" rx="17" ry="2.6" fill="#121116" opacity="0.16"/>
+    <path d="M43.4 31.5 q-1.6 -2.6 -3.4 -3.4" stroke="#2c2f35" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <path d="M52.6 31.5 q1.6 -2.6 3.4 -3.4" stroke="#2c2f35" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <rect x="39" y="30.5" width="18" height="13" rx="3" fill="#3b4046"/>
+    <path d="M39.6 67 L47.4 67 L46.6 95.5 L40.4 95.5 Z" fill="url(#pw-limb)"/>
+    <path d="M48.6 67 L56.4 67 L55.6 95.5 L49.4 95.5 Z" fill="url(#pw-limb)"/>
+    <ellipse cx="44" cy="97.3" rx="3.8" ry="3" fill="#666c74"/>
+    <ellipse cx="52" cy="97.3" rx="3.8" ry="3" fill="#666c74"/>
+    <path d="M41.6 99.6 L46.4 99.6 L45.8 119 L42.2 119 Z" fill="url(#pw-limb)"/>
+    <path d="M49.6 99.6 L54.4 99.6 L53.8 119 L50.2 119 Z" fill="url(#pw-limb)"/>
+    <rect x="40.6" y="118.6" width="6.8" height="4.4" rx="1.3" fill="#4a4f57"/>
+    <rect x="39.6" y="122.4" width="8.2" height="3" rx="1.3" fill="#22252a"/>
+    <rect x="48.6" y="118.6" width="6.8" height="4.4" rx="1.3" fill="#4a4f57"/>
+    <rect x="48.2" y="122.4" width="8.2" height="3" rx="1.3" fill="#22252a"/>
+    <path d="M38.8 57.5 h18.4 l-1 8 q-1.3 4 -3.9 4 h-8.6 q-2.6 0 -3.9 -4 z" fill="url(#pw-armor)"/>
+    <rect x="38.6" y="56.6" width="18.8" height="3.4" rx="1.4" fill="#2c2f35"/>
+    <rect x="38.6" y="59.4" width="18.8" height="1" fill="#8b7ae0"/>
+    <path d="M43.2 27.4 L36 30.6 q-1.6 .8 -1.5 2.7 l1 13.2 q.3 4.6 1.2 8.4 l.7 3 q.5 2.6 3.5 2.6 h15.8 q3 0 3.5 -2.6 l.7 -3 q.9 -3.8 1.2 -8.4 l1 -13.2 q.1 -1.9 -1.5 -2.7 L52.8 27.4 z" fill="url(#pw-armor)"/>
+    <path d="M39.4 34.5 q4 -1.6 8 .4 M56.6 34.5 q-4 -1.6 -8 .4" stroke="#868c95" stroke-width="1.1" fill="none" opacity="0.55"/>
+    <path d="M48 33.5 v21.5" stroke="#8b7ae0" stroke-width="1.3" opacity="0.9"/>
+    <path d="M42.5 50.5 h11" stroke="#7b818a" stroke-width="0.9" fill="none"/>
+    <ellipse cx="37.6" cy="33" rx="6" ry="6.2" fill="url(#pw-armor)"/>
+    <ellipse cx="58.4" cy="33" rx="6" ry="6.2" fill="url(#pw-armor)"/>
+    <rect x="32.8" y="35.4" width="7.6" height="17.5" rx="3.6" fill="url(#pw-limb)"/>
+    <rect x="55.6" y="35.4" width="7.6" height="17.5" rx="3.6" fill="url(#pw-limb)"/>
+    <rect x="33.2" y="51.4" width="6.8" height="7.6" rx="3.2" fill="url(#pw-limb)"/>
+    <rect x="56" y="51.4" width="6.8" height="7.6" rx="3.2" fill="url(#pw-limb)"/>
+    <rect x="33.6" y="57.8" width="6.4" height="11.6" rx="3" fill="url(#pw-limb)"/>
+    <rect x="56" y="57.8" width="6.4" height="11.6" rx="3" fill="url(#pw-limb)"/>
+    <rect x="33.7" y="68.6" width="6.2" height="1.6" rx="0.8" fill="#8b7ae0"/>
+    <rect x="56.1" y="68.6" width="6.2" height="1.6" rx="0.8" fill="#8b7ae0"/>
+    <rect x="33.4" y="69.8" width="6.8" height="7.4" rx="2.4" fill="#525861"/>
+    <ellipse cx="40" cy="72.6" rx="1.5" ry="2.1" fill="#525861"/>
+    <rect x="55.8" y="69.8" width="6.8" height="7.4" rx="2.4" fill="#525861"/>
+    <ellipse cx="56" cy="72.6" rx="1.5" ry="2.1" fill="#525861"/>
+    <rect x="44.6" y="23.8" width="6.8" height="4.4" rx="1.6" fill="#2c2f35"/>
+    <path d="M48 9.5 c5.6 0 8.8 4.2 8.8 9.8 c0 3.6 -1.2 6.4 -3.2 8.1 c-1.6 1.35 -3.4 2.05 -5.6 2.05 s-4 -.7 -5.6 -2.05 c-2 -1.7 -3.2 -4.5 -3.2 -8.1 c0 -5.6 3.2 -9.8 8.8 -9.8 z" fill="url(#pw-armor)"/>
+    <path d="M41.4 12.6 q4.2 -4 11.2 -3" stroke="#9aa0a8" stroke-width="1.4" fill="none" opacity="0.6" stroke-linecap="round"/>
+    <path d="M42 14.2 q6 -3.4 12 0 l-.5 5.4 q-.9 2.8 -5.5 2.8 t-5.5 -2.8 z" fill="url(#pw-visor)" stroke="#7f858e" stroke-width="0.9" stroke-opacity="0.8"/>
+    <path d="M43.6 16.2 q4.6 -2.5 8.8 -.7" stroke="#c3b7f5" stroke-width="1.5" fill="none" opacity="0.9" stroke-linecap="round"/>
+    <rect x="37.6" y="15.5" width="2.4" height="4" rx="1.1" fill="#666c74"/>
+    <rect x="56" y="15.5" width="2.4" height="4" rx="1.1" fill="#666c74"/>
   </svg>`,
 
-  "singularity-mantle": `<svg viewBox="0 0 100 132" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  "singularity-mantle": `<svg viewBox="0 0 96 128" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
     <defs>
-      <linearGradient id="sm-case" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#23252f"/>
-        <stop offset="1" stop-color="#12141a"/>
-      </linearGradient>
-      <linearGradient id="sm-plate" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#5b6271"/>
-        <stop offset="0.5" stop-color="#3c4250"/>
-        <stop offset="1" stop-color="#272b35"/>
-      </linearGradient>
-      <linearGradient id="sm-mantle" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#3b3866"/>
-        <stop offset="1" stop-color="#201e3b"/>
-      </linearGradient>
-      <linearGradient id="sm-visor" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#191d33"/>
-        <stop offset="1" stop-color="#0b0d15"/>
-      </linearGradient>
-      <radialGradient id="sm-core">
-        <stop offset="0" stop-color="#a5a2f4"/>
-        <stop offset="1" stop-color="#413e9c"/>
+      <radialGradient id="sm-halo" cx="0.5" cy="0.42" r="0.62">
+        <stop offset="0" stop-color="#e3e5ea"/>
+        <stop offset="1" stop-color="#f7f4ef" stop-opacity="0"/>
       </radialGradient>
+      <linearGradient id="sm-armor" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#383b44"/>
+        <stop offset="0.55" stop-color="#212329"/>
+        <stop offset="1" stop-color="#14151a"/>
+      </linearGradient>
+      <linearGradient id="sm-limb" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0" stop-color="#2f323a"/>
+        <stop offset="1" stop-color="#1c1e24"/>
+      </linearGradient>
+      <linearGradient id="sm-visor" x1="0" y1="0" x2="0.6" y2="1">
+        <stop offset="0" stop-color="#1a1e33"/>
+        <stop offset="1" stop-color="#07080e"/>
+      </linearGradient>
     </defs>
-    <rect x="10" y="3" width="80" height="126" rx="5" fill="url(#sm-case)" stroke="#ffffff" stroke-opacity="0.07" stroke-width="0.8"/>
-    <ellipse cx="50" cy="124" rx="21" ry="3.2" fill="#000000" opacity="0.5"/>
-    <path d="M34 43 L19.5 49 L16.5 74 L27.5 70 L30 52 Z" fill="url(#sm-mantle)"/>
-    <path d="M66 43 L80.5 49 L83.5 74 L72.5 70 L70 52 Z" fill="url(#sm-mantle)"/>
-    <path d="M34 43 L19.5 49 M19.5 49 L16.5 74" stroke="#c9d2e0" stroke-width="1" fill="none" opacity="0.5"/>
-    <path d="M66 43 L80.5 49 M80.5 49 L83.5 74" stroke="#c9d2e0" stroke-width="1" fill="none" opacity="0.5"/>
-    <path d="M40.5 81 h9 l-1 30 h-9 z" fill="url(#sm-plate)"/>
-    <path d="M50.5 81 h9 l1 30 h-9 z" fill="url(#sm-plate)"/>
-    <rect x="40" y="88" width="9" height="1.3" fill="#c9d2e0" opacity="0.45"/>
-    <rect x="51" y="88" width="9" height="1.3" fill="#c9d2e0" opacity="0.45"/>
-    <rect x="38" y="111" width="12" height="6.5" rx="1.5" fill="#2a2e39"/>
-    <rect x="37" y="117" width="14" height="4.5" rx="1.5" fill="#20232c"/>
-    <rect x="50" y="111" width="12" height="6.5" rx="1.5" fill="#2a2e39"/>
-    <rect x="49" y="117" width="14" height="4.5" rx="1.5" fill="#20232c"/>
-    <path d="M30 52 q1.5 -9 10 -9.5 h20 q8.5 .5 10 9.5 l-2.5 20 q-.8 6.5 -7 6.5 h-21 q-6.2 0 -7 -6.5 z" fill="url(#sm-plate)"/>
-    <circle cx="50" cy="56" r="6.5" fill="#14161f"/>
-    <circle cx="50" cy="56" r="4" fill="url(#sm-core)"/>
-    <circle cx="50" cy="56" r="7.4" fill="none" stroke="#c9d2e0" stroke-width="0.8" opacity="0.55"/>
-    <path d="M40 41 q10 -4 20 0 l-2 5 q-8 -3 -16 0 z" fill="#262340"/>
-    <path d="M21 45 l13 -5 l3 11 l-11.5 4.5 z" fill="url(#sm-plate)" stroke="#c9d2e0" stroke-width="0.7" stroke-opacity="0.5"/>
-    <path d="M79 45 l-13 -5 l-3 11 l11.5 4.5 z" fill="url(#sm-plate)" stroke="#c9d2e0" stroke-width="0.7" stroke-opacity="0.5"/>
-    <rect x="22.5" y="52" width="10" height="27" rx="4" fill="url(#sm-plate)"/>
-    <rect x="67.5" y="52" width="10" height="27" rx="4" fill="url(#sm-plate)"/>
-    <rect x="22.5" y="64" width="10" height="1.4" fill="#c9d2e0" opacity="0.4"/>
-    <rect x="67.5" y="64" width="10" height="1.4" fill="#c9d2e0" opacity="0.4"/>
-    <rect x="22" y="77" width="10" height="8" rx="3" fill="#23262f"/>
-    <rect x="68" y="77" width="10" height="8" rx="3" fill="#23262f"/>
-    <path d="M50 6.5 l3.5 6.5 h-7 z" fill="#c9d2e0" opacity="0.85"/>
-    <path d="M50 11 c9.5 0 15 7 15 15.5 c0 9 -6.7 15.5 -15 15.5 s-15 -6.5 -15 -15.5 c0 -8.5 5.5 -15.5 15 -15.5 z" fill="url(#sm-plate)"/>
-    <path d="M38.5 24.5 q11.5 -5 23 0 l-1.8 7.8 q-9.8 4.2 -19.4 0 z" fill="url(#sm-visor)" stroke="#c9d2e0" stroke-width="0.7" stroke-opacity="0.55"/>
-    <path d="M41.5 26 q9 -3.5 17.5 0" stroke="#b6bcf0" stroke-width="1.3" fill="none" opacity="0.8"/>
+    <ellipse cx="48" cy="54" rx="31" ry="39" fill="url(#sm-halo)"/>
+    <ellipse cx="48" cy="125" rx="17" ry="2.6" fill="#121116" opacity="0.18"/>
+    <path d="M43.4 31.5 q-1.6 -2.6 -3.4 -3.4" stroke="#17181d" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <path d="M52.6 31.5 q1.6 -2.6 3.4 -3.4" stroke="#17181d" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <rect x="39" y="30.5" width="18" height="13" rx="3" fill="#1a1c22"/>
+    <path d="M39.6 67 L47.4 67 L46.6 95.5 L40.4 95.5 Z" fill="url(#sm-limb)"/>
+    <path d="M48.6 67 L56.4 67 L55.6 95.5 L49.4 95.5 Z" fill="url(#sm-limb)"/>
+    <ellipse cx="44" cy="97.3" rx="3.8" ry="3" fill="#3f434c"/>
+    <ellipse cx="52" cy="97.3" rx="3.8" ry="3" fill="#3f434c"/>
+    <path d="M41.6 99.6 L46.4 99.6 L45.8 119 L42.2 119 Z" fill="url(#sm-limb)"/>
+    <path d="M49.6 99.6 L54.4 99.6 L53.8 119 L50.2 119 Z" fill="url(#sm-limb)"/>
+    <rect x="40.6" y="118.6" width="6.8" height="4.4" rx="1.3" fill="#26282f"/>
+    <rect x="39.6" y="122.4" width="8.2" height="3" rx="1.3" fill="#101116"/>
+    <rect x="48.6" y="118.6" width="6.8" height="4.4" rx="1.3" fill="#26282f"/>
+    <rect x="48.2" y="122.4" width="8.2" height="3" rx="1.3" fill="#101116"/>
+    <path d="M38.8 57.5 h18.4 l-1 8 q-1.3 4 -3.9 4 h-8.6 q-2.6 0 -3.9 -4 z" fill="url(#sm-armor)"/>
+    <rect x="38.6" y="56.6" width="18.8" height="3.4" rx="1.4" fill="#17181d"/>
+    <rect x="38.6" y="59.4" width="18.8" height="1" fill="#5b62c9"/>
+    <path d="M43.2 27.4 L36 30.6 q-1.6 .8 -1.5 2.7 l1 13.2 q.3 4.6 1.2 8.4 l.7 3 q.5 2.6 3.5 2.6 h15.8 q3 0 3.5 -2.6 l.7 -3 q.9 -3.8 1.2 -8.4 l1 -13.2 q.1 -1.9 -1.5 -2.7 L52.8 27.4 z" fill="url(#sm-armor)"/>
+    <path d="M39.4 34.5 q4 -1.6 8 .4 M56.6 34.5 q-4 -1.6 -8 .4" stroke="#565a64" stroke-width="1.1" fill="none" opacity="0.7"/>
+    <rect x="46.9" y="36" width="2.2" height="9" rx="1.1" fill="#5b62c9"/>
+    <circle cx="48" cy="45.2" r="1.7" fill="#4fd0e0"/>
+    <path d="M42.5 50.5 h11" stroke="#4a4e58" stroke-width="0.9" fill="none"/>
+    <ellipse cx="37.6" cy="33" rx="6" ry="6.2" fill="url(#sm-armor)"/>
+    <ellipse cx="58.4" cy="33" rx="6" ry="6.2" fill="url(#sm-armor)"/>
+    <rect x="32.8" y="35.4" width="7.6" height="17.5" rx="3.6" fill="url(#sm-limb)"/>
+    <rect x="55.6" y="35.4" width="7.6" height="17.5" rx="3.6" fill="url(#sm-limb)"/>
+    <rect x="33.2" y="51.4" width="6.8" height="7.6" rx="3.2" fill="url(#sm-limb)"/>
+    <rect x="56" y="51.4" width="6.8" height="7.6" rx="3.2" fill="url(#sm-limb)"/>
+    <rect x="33.6" y="57.8" width="6.4" height="11.6" rx="3" fill="url(#sm-limb)"/>
+    <rect x="56" y="57.8" width="6.4" height="11.6" rx="3" fill="url(#sm-limb)"/>
+    <rect x="33.7" y="68.6" width="6.2" height="1.6" rx="0.8" fill="#4fd0e0"/>
+    <rect x="56.1" y="68.6" width="6.2" height="1.6" rx="0.8" fill="#4fd0e0"/>
+    <rect x="33.4" y="69.8" width="6.8" height="7.4" rx="2.4" fill="#26282f"/>
+    <ellipse cx="40" cy="72.6" rx="1.5" ry="2.1" fill="#26282f"/>
+    <rect x="55.8" y="69.8" width="6.8" height="7.4" rx="2.4" fill="#26282f"/>
+    <ellipse cx="56" cy="72.6" rx="1.5" ry="2.1" fill="#26282f"/>
+    <rect x="44.6" y="23.8" width="6.8" height="4.4" rx="1.6" fill="#17181d"/>
+    <path d="M48 9.5 c5.6 0 8.8 4.2 8.8 9.8 c0 3.6 -1.2 6.4 -3.2 8.1 c-1.6 1.35 -3.4 2.05 -5.6 2.05 s-4 -.7 -5.6 -2.05 c-2 -1.7 -3.2 -4.5 -3.2 -8.1 c0 -5.6 3.2 -9.8 8.8 -9.8 z" fill="url(#sm-armor)"/>
+    <path d="M41.4 12.6 q4.2 -4 11.2 -3" stroke="#8f96a3" stroke-width="1.4" fill="none" opacity="0.55" stroke-linecap="round"/>
+    <path d="M42 14.2 q6 -3.4 12 0 l-.5 5.4 q-.9 2.8 -5.5 2.8 t-5.5 -2.8 z" fill="url(#sm-visor)" stroke="#4a4e5c" stroke-width="0.9" stroke-opacity="0.9"/>
+    <path d="M43.6 16.2 q4.6 -2.5 8.8 -.7" stroke="#7fe3ef" stroke-width="1.5" fill="none" opacity="0.9" stroke-linecap="round"/>
+    <rect x="37.6" y="15.5" width="2.4" height="4" rx="1.1" fill="#3f4350"/>
+    <rect x="56" y="15.5" width="2.4" height="4" rx="1.1" fill="#3f4350"/>
   </svg>`,
 });
 
 /* ------------------------------------------------------------------ copy */
 
 const HEADLINE = "HERE BEGINS YOUR INTERSTELLAR JOURNEY";
-const SUBTITLE = "Beyond Earth, evolution is survival.";
 
 /** Which suit's notice this visit has already shown, so a repaint cannot
     bring it back after the player has read it. One key per visit. */
@@ -237,7 +257,8 @@ let noticeDismissed = null;
 
 /* ------------------------------------------------------------------ cards */
 
-/** One portrait suit card: artwork, name, one price line, and its press. */
+/** One tall portrait card: artwork, name, price line, and the press pinned
+    at the bottom of the card. */
 function suitCard(suit, { mine, money }) {
   const affordable = (money || 0) >= suit.price;
   return el("article", { class: "space-suit", "data-suit": suit.id }, [
@@ -259,29 +280,28 @@ function suitCard(suit, { mine, money }) {
   ]);
 }
 
-/** The selection: compact header, the three stacked portrait cards, the exit. */
+/** The counter: headline with the close X beside it, then the one row of
+    three portrait cards. Nothing else - no subtitle, no exposition, no
+    protocol list. */
 function selectionContent(space, { mine, money }) {
   return [
-    el("header", { class: "space-card__head" }, [
-      el("p", { class: "space-card__eyebrow", text: "Outer Space" }),
+    el("div", { class: "space-card__bar" }, [
       el("h3", { class: "space-card__headline", text: HEADLINE }),
-      el("p", { class: "space-card__subtitle", text: SUBTITLE }),
-    ]),
-    el("div", { class: "space-card__suits" }, SUITS.map((suit) => suitCard(suit, { mine, money }))),
-    el("div", { class: "space-card__foot" }, [
       el("button", {
         type: "button",
-        class: "chest-card__draw space-card__leave",
+        class: "space-card__close",
         "data-action": "continue",
         disabled: !mine,
         "aria-disabled": String(!mine),
-        text: "Continue without a suit",
+        "aria-label": "Close",
+        text: "\u00d7",
       }),
     ]),
+    el("div", { class: "space-card__suits" }, SUITS.map((suit) => suitCard(suit, { mine, money }))),
   ];
 }
 
-/** The acquisition popup: the suit speaks, and the one CTA ends the visit. */
+/** The acquisition popup: the suit, its narrative, the one CTA. */
 function acquiredContent(suit, { mine }) {
   const acquired = SUITS.find((entry) => entry.id === suit?.id) || suitById(suit?.id);
   if (!acquired) return [];
@@ -329,10 +349,12 @@ function noticeContent(onContinue) {
  * Draw the Outer Space screen from the state.
  *
  * Returns the card it built (so the board can wire the presses), or null
- * when there is nothing to show. The notice, when this visit has one and it
- * has not been read, is what the card opens with; its CONTINUE swaps the
- * card's own contents to the counter underneath, with nothing sent to the
- * server.
+ * when there is nothing to show. The close X and the acquisition CTA both
+ * carry `data-action="continue"`, which the board already wires to the
+ * visit's own `continue` - a clean leave, no purchase, no state of its own.
+ * The notice, when this visit has one and it has not been read, is what the
+ * card opens with; its CONTINUE swaps the card's own contents to the
+ * counter underneath, with nothing sent to the server.
  */
 export function drawSpaceStage(board, space, { mine = false, money = 0 } = {}) {
   const holder = board.querySelector(".board__card");
@@ -349,8 +371,7 @@ export function drawSpaceStage(board, space, { mine = false, money = 0 } = {}) {
   /* EVERY STAGE UNSHIDES ITS OWN HOLDER. The holder is hidden between cards
      (and starts hidden), and a card appended into a hidden box is a card
      nobody can see - the board's stranded-turn rescue then reads "decision
-     with no card" and walks the visit closed, which is what made the counter
-     vanish the moment it opened. */
+     with no card" and walks the visit closed. */
   holder.hidden = false;
 
   const render = () => {
