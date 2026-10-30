@@ -40,6 +40,7 @@ import { cardArt } from "./cards.js";
 import { propertyArt } from "./property-art.js";
 import { propertyFor } from "./shared/properties.js";
 import { upgradesOf, rupees } from "./shared/economy.js";
+import { discountPrice, suitById } from "./shared/suits.js";
 import {
   MAX_UPGRADE,
   canBuy,
@@ -148,7 +149,11 @@ export function propertyCard(property, ctx) {
       ]),
       el("p", { class: "property-card__price" }, [
         el("span", { "aria-hidden": "true", text: "₹" }),
-        el("span", { text: rupees(property.price).slice(1) }),
+        el("span", { class: "property-card__price-figure", text: rupees(property.price).slice(1) }),
+        /* The list price, shown struck through beside the discounted figure
+           while an unspent suit stands behind the decision. Hidden by
+           default; `syncCard` owns both figures. */
+        el("span", { class: "property-card__price-was", hidden: true }),
       ]),
     ]),
 
@@ -298,13 +303,33 @@ export function syncCard(board, ctx) {
   const level = levelOf(ledger, id);
   const rent = rentAt(ledger, id);
 
+  /* THE ACTIVE SEAT'S UNSPENT SUIT - the discount this card must show
+     BEFORE the purchase is confirmed, so the figure on the card and the
+     figure the ledger takes are the same number. The purchase price only:
+     rent and everything else stay exactly as they are. */
+  const suit = ctx?.suit && !ctx.suit.used ? ctx.suit : null;
+  const suitName = suit ? suitById(suit.id)?.name || "" : "";
+  const listPrice = propertyFor(id).price;
+  const price = suit ? discountPrice(listPrice, suit.discount || 0) : listPrice;
+
   const status = card.querySelector(".property-card__status");
   status.textContent =
     owner === null
-      ? `Cost ${rupees(propertyFor(id).price)}`
+      ? `Cost ${rupees(price)}${suit ? ` · ${suit.discount}% off` : ""}`
       : owner === seat
         ? "You own this"
         : `Owned by ${nameOfSeat(ledger, owner)}`;
+
+  // The header figure follows the same arithmetic, with the list price
+  // struck through beside it while a suit stands behind the decision.
+  const headFigure = card.querySelector(".property-card__price-figure");
+  const headWas = card.querySelector(".property-card__price-was");
+  if (headFigure) headFigure.textContent = rupees(price).slice(1);
+  if (headWas) {
+    const showWas = Boolean(suit) && owner === null && price !== listPrice;
+    headWas.hidden = !showWas;
+    headWas.textContent = showWas ? rupees(listPrice) : "";
+  }
 
   // One clean figure: the rent this square charges right now. No sentences, no
   // repetition of who holds it - that is the status line's job.
@@ -356,8 +381,9 @@ export function syncCard(board, ctx) {
     slot.hidden = true;
     slot.style.display = "none";
   } else {
-    const verdict = canBuy(ledger, id, seat);
-    const price = propertyFor(id).price;
+    const verdict = canBuy(ledger, id, seat, {
+      discount: suit ? suit.discount || 0 : 0,
+    });
     const money = moneyOf(ledger, seat);
     const affordable = money >= price;
     slot.hidden = false;
@@ -381,7 +407,9 @@ export function syncCard(board, ctx) {
     slot.querySelector(".property-card__buy-cost").textContent = affordable
       ? rupees(price)
       : `${rupees(price - money)} short`;
-    button.title = affordable ? `Buy for ${rupees(price)}` : verdict.why;
+    button.title = affordable
+      ? `Buy for ${rupees(price)}${suit ? ` with ${suitName} −${suit.discount}%` : ""}`
+      : verdict.why;
     button.onclick = () => ctx?.onBuy?.();
   }
 

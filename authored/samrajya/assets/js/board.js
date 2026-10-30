@@ -90,6 +90,7 @@ import {
 } from "./fight-stage.js";
 import { drawEpochStage } from "./epoch-stage.js";
 import { drawHoleLoreCard, drawHoleStage, playHoleCinematic, renderHole } from "./hole-stage.js";
+import { drawSpaceStage } from "./space-stage.js";
 
 /**
  * The four corners, and the mark each one carries.
@@ -669,6 +670,11 @@ export function board({
     seat: mySeat ?? game.active,
     mode: cardMode,
     sellEnabled: ENABLE_SELL,
+    /* The ACTIVE seat's carried suit, if it is unspent - the fact the buy
+       card reads to show the discounted price before the confirmation. The
+       suit belongs to whoever is deciding, so it is read from the active
+       seat and never from whoever is looking. */
+    suit: game.suits?.[game.active] || null,
     onBuy: () => run({ type: "buy" }),
     onPass: () => run({ type: "pass" }),
     onUpgrade: () => run({ type: "upgrade" }),
@@ -875,6 +881,18 @@ export function board({
       }
     }
 
+    /* THE OUTER SPACE COUNTER, ON BOTH SCREENS - opened for the visit's
+       DECISION and taken down the moment the visit ends, from the same
+       state fact on every device. */
+    if (game.space && game.phase === PHASE.DECISION && game.landing?.kind === "space") {
+      openSpaceStage();
+    } else if (spaceStage) {
+      spaceStage = null;
+      if (holder()?.dataset.cardKind === "space") {
+        await dismissCard();
+      }
+    }
+
     /* THE BLACK HOLE, ON BOTH SCREENS - the flag from the call above is
        already up, so the panel here is gated and opens only once the five
        seconds have finished. It is drawn for every DECISION of the held
@@ -986,6 +1004,17 @@ export function board({
         } else if (epochStage) {
           epochStage = null;
           if (holder()?.dataset.cardKind === "epoch") {
+            await dismissCard();
+          }
+        }
+        /* The same counter on the watching screen: the state is the same
+           fact there, so the same gate opens it and the same walk takes
+           it down when the visit ends. */
+        if (game.space && game.phase === PHASE.DECISION && game.landing?.kind === "space") {
+          openSpaceStage();
+        } else if (spaceStage) {
+          spaceStage = null;
+          if (holder()?.dataset.cardKind === "space") {
             await dismissCard();
           }
         }
@@ -1276,6 +1305,17 @@ export function board({
           /* The panel redraws itself from the state in the step's tail - a
              committed seat's line, a released card - and the chip keeps
              step with the entropy or with the release. */
+          paint({ animate: false });
+          break;
+        }
+
+        case "spaceOpened":
+        case "suitAcquired":
+        case "suitExpired": {
+          /* The counter and its popups are drawn from the state in the
+             tail that follows these events - the arrival, the acquisition,
+             the retirement - so the event itself only keeps the paint in
+             step. The screen decides what it shows; nothing here does. */
           paint({ animate: false });
           break;
         }
@@ -1928,7 +1968,58 @@ export function board({
     paintPhase();
   }
 
-  /* ------------------------------------------------------- the black hole */
+  /* ------------------------------------------------------- Outer Space
+
+     THE SUIT COUNTER, drawn from `game.space` the way every other shared
+     screen is drawn: one fact, both devices, buttons only for the seat at
+     the counter. Its stage key carries the phase and the suit, so the
+     arrival, the acquisition popup and the retirement each redraw the card
+     once, and a repaint of the stage already on screen is left alone -
+     which is also what keeps a locally dismissed expiry notice dismissed. */
+
+  let spaceStage = null;
+
+  function openSpaceStage() {
+    const space = game?.space;
+    if (!space) return;
+    if (game.phase !== PHASE.DECISION) return; // the counter appears with the decision, never mid-walk
+    if (cinematic) return;
+
+    cardMode = isMyTurn() ? "decision" : "read";
+    reading = false;
+    cardKey = `space:${space.playerId}:${space.startedAt || 0}`;
+
+    const mine = isMyTurn() && space.playerId === game.active;
+    const stageKey =
+      `space:${space.playerId}:${space.phase}:${space.suit || ""}:` +
+      `${space.expired || ""}:${space.startedAt || 0}`;
+    const changed = spaceStage !== stageKey;
+    spaceStage = stageKey;
+    if (!changed && holder() && !holder().hidden) return;
+
+    const money =
+      game.ledger.players.find((player) => player.seat === game.active)?.money ?? 0;
+    const card = drawSpaceStage(frame, space, { mine, money });
+    if (!card) return;
+
+    /* Only the seat at the counter can press: the server refuses everybody
+       else, and a live button that does nothing is worse than a dead one.
+       The expiry notice wires itself inside the stage - it is a local
+       dismissal, not an action. */
+    if (mine) {
+      for (const btn of card.querySelectorAll('[data-action="acquire"]')) {
+        btn.addEventListener("click", () =>
+          void run({ type: "acquireSuit", suitId: btn.dataset.suit }));
+      }
+      for (const btn of card.querySelectorAll('[data-action="continue"]')) {
+        btn.addEventListener("click", () => void run({ type: "continue" }));
+      }
+    }
+
+    paintPhase();
+  }
+
+  /* --------------------------------------------------- the black hole
 
   let holeStage = null;
 
@@ -2129,6 +2220,16 @@ export function board({
          truth; the buttons belong to the player who landed; a device that
          reconnects or joins late draws the same middle. Nobody refreshes. */
       openEpochStage();
+      return;
+    }
+
+    if (landing.kind === "space") {
+      /* THE OUTER SPACE COUNTER, THE SAME WAY: `game.space` is the truth,
+         the seat that landed presses, and a device that reconnects or
+         joined late draws the same screen. This is also the auto-open -
+         landing here walks into this branch and the counter is simply
+         there, with no tap on the tile needed. */
+      openSpaceStage();
       return;
     }
 
@@ -2471,6 +2572,9 @@ export function board({
   /* and Epoch too: the threshold is a fact in the state, so a board that
      loads mid-visit draws the same card without a refresh. */
   else if (game.epoch) openEpochStage();
+  /* and the Outer Space counter is the same kind of fact - a board loading
+     in the middle of the suit visit draws the same screen. */
+  else if (game.space) openSpaceStage();
 
   return frame;
 }

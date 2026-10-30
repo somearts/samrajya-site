@@ -56,6 +56,7 @@
    ========================================================================== */
 
 import { MAX_UPGRADE, REDEMPTION, STARTING_MONEY, isPriced, priceOf } from "./economy.js";
+import { suitById } from "./suits.js";
 import {
   adjustMoney,
   buy as ledgerBuy,
@@ -98,6 +99,9 @@ const KRONOS = CELLS.find((cell) => cell.id === "kronos") || null;
 
 /** The Black Hole corner, matched the same way. */
 const HOLE_CELL = CELLS.find((cell) => cell.id === "black-hole") || null;
+
+/** The Outer Space corner: where the interstellar suits are offered. */
+const SPACE_CELL = CELLS.find((cell) => cell.id === "outer-space") || null;
 
 /** The Wormhole square: where the escape vessel sets its passenger down. */
 const WORMHOLE_CELL = CELLS.find((cell) => cell.id === "wormhole") || null;
@@ -214,6 +218,20 @@ export function createGame(players = [], { opening = STARTING_MONEY, testMode = 
        choice    what the player chose ("pray" | "draw")
        result    what the chest produced */
     chest: null,
+    /* The Outer Space screen, or null - a SHARED screen like the chest, so
+       every device draws the same counter from the same fact.
+
+       phase     "selecting" (the suits are offered) | "acquired" (the
+                 purchase is made and the popup speaks)
+       expired   the suit id that was retired by this arrival, or null
+       expiredNotice  true when that retirement must be announced (the
+                 discount was never spent) */
+    space: null,
+    /* The suits the two seats carry, keyed by seat: `{ id, discount, price,
+       used, since }` or null. One suit per seat; `used` is flipped by the
+       first eligible purchase and the suit is retired on the seat's return
+       to Outer Space. */
+    suits: null,
     /* The fight that is at the bottom-right corner, or null.
 
        Like the chest, it is a SHARED screen: a fact about the game, living in
@@ -630,6 +648,7 @@ export function applyAction(state, action, rng = Math.random) {
         kind: "none",
       };
       next.chest = null;
+      next.space = null;
       next.visit = {
         seat: active,
         bought: false,
@@ -840,6 +859,37 @@ export function applyAction(state, action, rng = Math.random) {
             threshold: holeThreshold(next.ledger, active),
           });
         }
+      } else if (SPACE_CELL && cell?.id === SPACE_CELL.id) {
+        /* OUTER SPACE OFFERS THE SUITS, AND RETIRES THE OLD ONE.
+
+           The screen is a shared fact like every chest and panel; arriving
+           here is also the far side of the circuit a suit was bought on, so
+           any suit this seat still carries is retired on this landing -
+           announced when its discount was never spent, silently when it
+           was. The turn itself is untouched: the screen decides what comes
+           next, and `continue` leaves it the way every visit is left. */
+        next.landing.kind = "space";
+        next.space = {
+          playerId: active,
+          phase: "selecting",
+          startedAt: now(),
+          expired: null,
+          expiredNotice: false,
+        };
+        const carried = (state.suits || {})[active] || null;
+        if (carried) {
+          next.suits = { ...(state.suits || {}), [active]: null };
+          if (!carried.used) {
+            next.space.expired = carried.id;
+            next.space.expiredNotice = true;
+          }
+          ok("suitExpired", {
+            seat: active,
+            suit: carried.id,
+            used: Boolean(carried.used),
+          });
+        }
+        ok("spaceOpened", { seat: active, startedAt: next.space.startedAt });
       } else {
         next.landing.kind = "none";
       }
@@ -930,6 +980,7 @@ export function applyAction(state, action, rng = Math.random) {
         kind: "none",
       };
       next.chest = null;
+      next.space = null;
       next.visit = {
         seat: active,
         bought: false,
@@ -1102,6 +1153,37 @@ export function applyAction(state, action, rng = Math.random) {
             test: true,
           });
         }
+      } else if (SPACE_CELL && cell?.id === SPACE_CELL.id) {
+        /* OUTER SPACE OFFERS THE SUITS, AND RETIRES THE OLD ONE.
+
+           The screen is a shared fact like every chest and panel; arriving
+           here is also the far side of the circuit a suit was bought on, so
+           any suit this seat still carries is retired on this landing -
+           announced when its discount was never spent, silently when it
+           was. The turn itself is untouched: the screen decides what comes
+           next, and `continue` leaves it the way every visit is left. */
+        next.landing.kind = "space";
+        next.space = {
+          playerId: active,
+          phase: "selecting",
+          startedAt: now(),
+          expired: null,
+          expiredNotice: false,
+        };
+        const carried = (state.suits || {})[active] || null;
+        if (carried) {
+          next.suits = { ...(state.suits || {}), [active]: null };
+          if (!carried.used) {
+            next.space.expired = carried.id;
+            next.space.expiredNotice = true;
+          }
+          ok("suitExpired", {
+            seat: active,
+            suit: carried.id,
+            used: Boolean(carried.used),
+          });
+        }
+        ok("spaceOpened", { seat: active, startedAt: next.space.startedAt });
       } else {
         next.landing.kind = "none";
       }
@@ -1117,8 +1199,21 @@ export function applyAction(state, action, rng = Math.random) {
       }
       if (actor !== active) return refused(state, action, "It is not your turn.");
       const id = state.landing.id;
-      const verdict = ledgerBuy(next.ledger, id, active);
+      /* A SUIT'S DISCOUNT IS SPENT HERE, ON THE PRICE AND THE PRICE ALONE.
+
+         The carried suit - if it is unspent - comes off the purchase figure
+         before the funds are asked, and this very purchase is what consumes
+         it: `used` flips below in the same action that moved the money, so
+         one suit can never discount twice and rent, upgrades, fees and every
+         other charge are untouched. */
+      const suit = (state.suits || {})[active] || null;
+      const discount = suit && !suit.used ? suit.discount || 0 : 0;
+      const verdict = ledgerBuy(next.ledger, id, active, { discount });
       if (!verdict.ok) return refused(state, action, verdict.why);
+
+      if (discount > 0) {
+        next.suits = { ...(state.suits || {}), [active]: { ...suit, used: true } };
+      }
 
       next.visit.bought = true;
       next.phase = PHASE.RESOLVING;
@@ -1126,7 +1221,9 @@ export function applyAction(state, action, rng = Math.random) {
         turn: state.turn,
         seat: active,
         kind: "buy",
-        text: `Bought ${landingCell(next)?.name || id}`,
+        text:
+          `Bought ${landingCell(next)?.name || id}` +
+          (discount > 0 ? ` · ${suit.name} −${discount}%` : ""),
         amount: -verdict.spent,
       });
       ok("bought", {
@@ -1135,6 +1232,7 @@ export function applyAction(state, action, rng = Math.random) {
         name: landingCell(next)?.name || id,
         price: verdict.spent,
         money: verdict.money,
+        ...(discount > 0 ? { suit: suit.id, suitDiscount: discount, listPrice: verdict.full } : {}),
       });
       return { state: next, events };
     }
@@ -1644,6 +1742,74 @@ export function applyAction(state, action, rng = Math.random) {
         seat: active,
         price: VESSEL_PRICE,
         money: (player.money || 0) - VESSEL_PRICE,
+      });
+      return { state: next, events };
+    }
+
+    /* ------------------------------------------------ Outer Space suits
+
+       One press per visit: the price is taken, the suit is carried, and the
+       screen moves to its popup. Every guard refuses before a coin moves, so
+       a repeated tap, a second seat, or a purse that cannot cover the price
+       changes nothing. */
+
+    case "acquireSuit": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        state.landing?.kind !== "space" ||
+        !state.space ||
+        state.space.playerId !== active
+      ) {
+        return refused(state, action, "There is no suit offered here.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.space.phase !== "selecting") {
+        return refused(state, action, "You have already chosen your suit.");
+      }
+      if ((state.suits || {})[active]) {
+        return refused(state, action, "You are already carrying a suit.");
+      }
+      const suit = suitById(action.suitId);
+      if (!suit) return refused(state, action, "That suit does not exist.");
+      const wearer = state.ledger.players.find((entry) => entry.seat === active);
+      if (!wearer) return refused(state, action, "That seat is not playing.");
+      if ((wearer.money || 0) < suit.price) {
+        return refused(
+          state,
+          action,
+          `You need ${suit.price - (wearer.money || 0)} more for the ${suit.name}.`,
+        );
+      }
+
+      /* ONE DEDUCTION, ONE SUIT, ONE SCREEN. The price moves through the
+         ledger's own transaction; the suit is carried unspent (`used:
+         false`) until its first eligible purchase consumes it; and the
+         screen advances to the acquisition popup in the same action, so the
+         popup can only ever be seen after a purchase that actually went
+         through. */
+      adjustMoney(next.ledger, active, -suit.price, {
+        turn: state.turn,
+        kind: "suit",
+        text: `Acquired ${suit.name} · ${suit.tier}`,
+      });
+      next.suits = {
+        ...(state.suits || {}),
+        [active]: {
+          id: suit.id,
+          discount: suit.discount,
+          price: suit.price,
+          used: false,
+          since: state.turn,
+        },
+      };
+      next.space = { ...state.space, phase: "acquired", suit: suit.id };
+      ok("suitAcquired", {
+        seat: active,
+        suit: suit.id,
+        name: suit.name,
+        price: suit.price,
+        discount: suit.discount,
+        money: (wearer.money || 0) - suit.price,
       });
       return { state: next, events };
     }
@@ -2374,6 +2540,14 @@ export function applyAction(state, action, rng = Math.random) {
             return refused(state, action, "Choose a future first.");
           }
           next.epoch = null;
+        }
+        if (kind === "space") {
+          /* THE SUIT SCREEN IS LEFT THE WAY EVERY VISIT IS LEFT. Both of its
+             exits - CONTINUE JOURNEY after the popup, and the plain leave on
+             the selection screen - are this same press: the screen goes down
+             and the turn ends through the normal walk, with no separate
+             closing action of its own. */
+          next.space = null;
         }
         next.phase = PHASE.TURN_END;
         return { state: next, events };

@@ -53,6 +53,7 @@ import {
   rentFor,
   upgradeAt,
 } from "./economy.js";
+import { discountPrice } from "./suits.js";
 import { CELLS } from "./spaces.js";
 
 export { MAX_UPGRADE, STARTING_MONEY };
@@ -301,14 +302,16 @@ export function rentAt(ledger, id) {
  * May this seat take this square?
  *
  * `ok` is the answer; `why` is a sentence for a card or a check to use when it
- * is no.
+ * is no. `discount` is an active suit's percentage off the PURCHASE PRICE -
+ * the funds check is made against the discounted figure, because that is the
+ * figure the ledger will take.
  */
-export function canBuy(ledger, id, seat) {
+export function canBuy(ledger, id, seat, { discount = 0 } = {}) {
   if (!isPriced(id)) return no("This square is not for sale.");
   const player = playerAt(ledger, seat);
   if (!player) return no("Nobody is sitting in that seat.");
   if (ownerOf(ledger, id) !== null) return no("Somebody already holds this square.");
-  const price = priceOf(id);
+  const price = discountPrice(priceOf(id), discount);
   if (player.money < price) return no(`You need ${price - player.money} more to take it.`);
   return yes();
 }
@@ -317,18 +320,21 @@ export function canBuy(ledger, id, seat) {
  * Take the square, and take the money with it.
  *
  * Refuses rather than throwing when `canBuy` says no, and refuses without
- * changing anything when it does.
+ * changing anything when it does. The optional discount is spent by this
+ * very call - the caller owns the suit and marks it used - and lands in the
+ * verdict's `spent` so the ledger entry records exactly what moved.
  */
-export function buy(ledger, id, seat) {
-  const verdict = canBuy(ledger, id, seat);
+export function buy(ledger, id, seat, { discount = 0 } = {}) {
+  const verdict = canBuy(ledger, id, seat, { discount });
   if (!verdict.ok) return verdict;
 
   const player = playerAt(ledger, seat);
-  const price = priceOf(id);
+  const full = priceOf(id);
+  const price = discountPrice(full, discount);
   player.money -= price;
   const sheet = sheetFor(ledger, id);
   sheet.owner = seat;
-  return yes({ spent: price, money: player.money, sheet });
+  return yes({ spent: price, full, discount, money: player.money, sheet });
 }
 
 /* ----------------------------------------------------------------- upgrading */

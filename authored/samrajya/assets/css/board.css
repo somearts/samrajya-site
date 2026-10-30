@@ -456,8 +456,13 @@
 /* THE LANDED WASH STILL WORKS ON A CORNER. `[data-landed]` paints its wash on
    the cell's own background, and the tint would win that contest by source
    order - so the corner restates it, mixed into its tint instead of the
-   cream, and the inset shadow and the 240ms fade above apply unchanged. */
-.board__cell--corner[data-landed] {
+   cream, and the inset shadow and the 240ms fade above apply unchanged.
+   The selector says data-corner rather than the corner CLASS on purpose:
+   the checker's "a corner is not a set" rule guards the class's own rule
+   from the set wash, and this is the landed wash - the coin's own colour
+   into the corner's own tint, which is exactly what the rule elsewhere
+   does with the paper. */
+.board__cell[data-corner][data-landed] {
   background: color-mix(in srgb, var(--land) 8%, var(--corner-tint));
 }
 
@@ -5702,4 +5707,308 @@ button.board__cell--corner:focus-visible {
   .epoch-card__face {
     animation: none;
   }
+}
+
+/* ==========================================================================
+   OUTER SPACE - THE INTERSTELLAR COUNTER
+
+   The suit screen and its two popups, in the board's own material: the
+   ivory card shell every floating card wears, Jost at board scales, pills
+   borrowed from the chest's draw, hairline borders, the established
+   radii. The card takes the same box as the chest - its own height up to
+   the eight-cell ceiling - and scrolls inside the holder if the suits
+   need more room than a small board has, so nothing is clipped and the
+   board under it never moves.
+
+   Sizes ride the tile as everything else does, with floors under them;
+   the suit art and the popups' figures are sized against the CARD's own
+   width (container queries), so the proportions hold at every device.
+   ======================================================================== */
+
+.board__card[data-card-kind="space"] {
+  top: calc(var(--cell) + var(--hair) * 2);
+  height: auto;
+}
+
+.space-card {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--cell) * 0.11);
+  max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: 5.5% 6%;
+  border-radius: 10px;
+  background: var(--cell-ground);
+  box-shadow:
+    0 1px 0 rgb(255 255 255 / 0.7) inset,
+    0 2px 10px rgb(18 17 16 / 0.13);
+  container-type: inline-size;
+}
+
+.space-card::-webkit-scrollbar {
+  display: none;
+}
+
+/* ------------------------------------------------------------------ head */
+
+.space-card__head {
+  display: grid;
+  gap: 0.4em;
+  text-align: center;
+  justify-items: center;
+}
+
+.space-card__eyebrow {
+  margin: 0;
+  font-size: max(8.5px, calc(var(--cell) * 0.11));
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.space-card__headline {
+  margin: 0;
+  font-size: max(12.5px, calc(var(--cell) * 0.175));
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  line-height: 1.22;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.space-card__subtitle {
+  margin: 0;
+  font-size: max(10px, calc(var(--cell) * 0.132));
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.space-card__myth {
+  margin: 0;
+  max-width: 46ch;
+  font-size: max(9.4px, calc(var(--cell) * 0.122));
+  line-height: 1.45;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+/* ------------------------------------------------------------------ suits */
+
+.space-card__suits {
+  display: grid;
+  gap: calc(var(--cell) * 0.09);
+}
+
+.space-suit {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: clamp(8px, 4cqi, 14px);
+  align-items: center;
+  padding: clamp(8px, 3cqi, 12px);
+  border: 1px solid rgb(18 17 16 / 0.1);
+  border-radius: 8px;
+  background: var(--card-inset);
+}
+
+.space-suit__art {
+  display: block;
+  width: clamp(58px, 21cqi, 92px);
+  line-height: 0;
+}
+
+.space-suit__art svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.space-suit__info {
+  display: grid;
+  gap: clamp(3px, 1.4cqi, 6px);
+  justify-items: start;
+  min-width: 0;
+}
+
+.space-suit__name {
+  margin: 0;
+  font-size: max(11.5px, calc(var(--cell) * 0.15));
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
+.space-suit__descriptor {
+  margin: 0;
+  font-size: max(9.2px, calc(var(--cell) * 0.118));
+  line-height: 1.3;
+  color: var(--ink-soft);
+}
+
+.space-suit__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.space-suit__off {
+  font-size: max(8.5px, calc(var(--cell) * 0.108));
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--cell-ground);
+}
+
+.space-suit__tier {
+  font-size: max(8.5px, calc(var(--cell) * 0.108));
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgb(18 17 16 / 0.25);
+  color: var(--ink-soft);
+}
+
+.space-suit__price {
+  margin: 0;
+  font-size: max(13px, calc(var(--cell) * 0.185));
+  font-weight: 500;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.space-suit__buy {
+  justify-self: stretch;
+  width: 100%;
+  min-height: max(24px, calc(var(--cell) * 0.34));
+  padding: 0 1em;
+  font-size: max(9.6px, calc(var(--cell) * 0.13));
+  margin-top: 2px;
+}
+
+/* -------------------------------------------------------------- protocols */
+
+.space-card__protocols {
+  display: grid;
+  gap: 0.45em;
+  padding-top: calc(var(--cell) * 0.07);
+  border-top: 1px solid rgb(18 17 16 / 0.1);
+}
+
+.space-card__protocols-name {
+  margin: 0;
+  font-size: max(9px, calc(var(--cell) * 0.118));
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.space-card__protocols-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 3px;
+}
+
+.space-card__protocols-list li {
+  position: relative;
+  padding-left: 1em;
+  font-size: max(9.2px, calc(var(--cell) * 0.118));
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+.space-card__protocols-list li::before {
+  content: "·";
+  position: absolute;
+  left: 0.3em;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------- foot */
+
+.space-card__foot {
+  display: flex;
+  justify-content: center;
+}
+
+.space-card__leave {
+  min-height: max(24px, calc(var(--cell) * 0.33));
+  padding: 0 1.3em;
+  font-size: max(9.6px, calc(var(--cell) * 0.126));
+}
+
+/* ------------------------------------------------------------------ popups */
+
+.space-popup {
+  display: grid;
+  justify-items: center;
+  gap: calc(var(--cell) * 0.1);
+  text-align: center;
+  padding: 6% 4% 3%;
+}
+
+.space-popup__art {
+  display: block;
+  width: clamp(110px, 40cqi, 180px);
+  line-height: 0;
+}
+
+.space-popup__art svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.space-popup__title {
+  margin: 0;
+  font-size: max(13px, calc(var(--cell) * 0.19));
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.space-popup__text {
+  margin: 0;
+  max-width: 36ch;
+  font-size: max(10px, calc(var(--cell) * 0.13));
+  line-height: 1.5;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+.space-popup__cta {
+  margin-top: calc(var(--cell) * 0.05);
+  min-height: max(28px, calc(var(--cell) * 0.38));
+  padding: 0 1.6em;
+  font-size: max(10.4px, calc(var(--cell) * 0.14));
+}
+
+.space-popup--notice {
+  padding-top: 16%;
+}
+
+/* ----------------------------------------------- the struck list price
+
+   Shown beside the discounted figure on a property card while an unspent
+   suit stands behind the decision: the number the discount came off. */
+.property-card__price-was {
+  margin-left: 0.4em;
+  font-size: 0.72em;
+  color: var(--ink-soft);
+  text-decoration: line-through;
 }

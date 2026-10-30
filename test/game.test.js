@@ -171,12 +171,28 @@ test("the coin stops in MOVING until the client says it has landed", () => {
 
 test("a square with nothing to decide goes to RESOLVING, not DECISION", () => {
   const before = game();
-  before.pieces[0].position = 8; // Halley's Comet
-  const { state } = take(before, { type: "roll" }, face(1)); // outer-space corner
+  before.pieces[0].position = 27; // SGR A*, one short of the start corner
+  const { state } = take(before, { type: "roll" }, face(1)); // start corner
   assert.equal(state.landing.kind, "none");
   const resolving = take(state, { type: "continue" }).state;
   assert.equal(resolving.phase, PHASE.RESOLVING);
   assert.equal(wantsDecision(resolving), false);
+});
+
+test("the Outer Space corner opens the suit counter as its decision", () => {
+  const before = game();
+  before.pieces[0].position = 8; // Halley's Comet
+  const { state } = take(before, { type: "roll" }, face(1)); // outer-space corner
+  assert.equal(state.landing.kind, "space");
+  assert.ok(state.space, "the counter is a fact in the state");
+  assert.equal(state.space.playerId, 0, "the seat that landed is the seat deciding");
+  assert.equal(state.space.phase, "selecting");
+  assert.equal(state.space.expiredNotice, false, "nobody arrived carrying a suit");
+  assert.equal(state.suits || null, null, "nobody carries a suit yet");
+
+  const opened = take(state, { type: "continue" }).state;
+  assert.equal(opened.phase, PHASE.DECISION, "the counter is the decision");
+  assert.ok(wantsDecision(opened));
 });
 
 test("the turn ends only when TURN_END is continued, and then moves to the next seat", () => {

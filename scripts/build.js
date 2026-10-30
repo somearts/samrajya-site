@@ -420,7 +420,7 @@ export function drawShield(rng = Math.random, held = []) {
 
 async function publishShared() {
   const wanted = new Set([
-    "civilizations.js", "identity.js", "spaces.js", "properties.js", "weapons.js", "economy.js", "ledger.js", "fight.js", "game.js", "announcements.js", "nexus-cards.js", "epoch-cards.js",
+    "civilizations.js", "identity.js", "spaces.js", "properties.js", "weapons.js", "economy.js", "ledger.js", "fight.js", "game.js", "announcements.js", "nexus-cards.js", "epoch-cards.js", "suits.js",
   ]);
   const entries = await readdir(SHARED);
   const files = entries.filter((name) => wanted.has(name));
