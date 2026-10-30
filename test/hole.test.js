@@ -7,8 +7,11 @@
    - the capture opens the confinement with entropy at zero, once;
    - a held seat may not throw the die except the two rolls its panel has
      decided - entropy, and the committed escape;
-   - an entropy roll converts the face into energy and never moves the
-     piece;
+   - an entropy roll converts the face into energy, never moves the
+     piece, and reopens the panel as the turn's DECISION - the popup
+     waits there until a choice is made, and nothing walks the turn on;
+   - the vessel pays once, releases at once, and sets its passenger
+     down at the Wormhole square with the turn over;
    - the threshold is ten, halved to five while the seat holds Event
      Horizon, read fresh so it can never be applied twice;
    - ESCAPE NEXT TURN commits the seat and holds it until its own roll;
@@ -31,6 +34,7 @@ import {
   serializeGame,
 } from "../shared/game.js";
 import { sheetFor } from "../shared/ledger.js";
+import { CELLS } from "../shared/spaces.js";
 
 const PLAYERS = [
   { name: "Aster", civ: "indus-valley" },
@@ -77,14 +81,18 @@ function captured() {
   return goTo(createGame(PLAYERS, { testMode: true }), HOLE_INDEX);
 }
 
-/** The whole cycle: press BUILD ENTROPY, play the opponent, throw the face. */
+/** One whole cycle, ending AT the reopened panel: press BUILD ENTROPY,
+    hand the turn over, let the opponent play, throw the face - and the
+    confinement popup comes straight back with the new figure, waiting for
+    the next choice. The old flow ended the turn inside the throw; the fix
+    is that the panel, not the walk, receives it. */
 function buildAndThrow(state, steps) {
   const armed = take(state, { type: "buildEntropy" }).state;
   const handed = take(armed, { type: "continue" }).state; // TURN_END -> seat 1
   const back = passTurn(handed); // seat 1 plays; seat 0 returns with the die
   const rolled = take(back, { type: "testRoll", steps }).state; // entropy, no walk
-  const resolved = take(rolled, { type: "continue" }).state; // RESOLVING -> TURN_END
-  return take(resolved, { type: "continue" }).state; // -> seat 1 again
+  assert.equal(rolled.phase, PHASE.DECISION, "the reopened panel is the decision");
+  return rolled;
 }
 
 /* ---------------------------------------------------------------- arrival */
@@ -177,15 +185,18 @@ test("the entropy roll converts the face and never moves the piece", () => {
   assert.equal(gain.face, 5);
   assert.equal(gain.entropy, 5);
   assert.equal(gain.threshold, HOLE_THRESHOLD);
-  assert.equal(rolled.phase, PHASE.RESOLVING, "the beat that shows the gain");
+  /* THE PANEL TAKES THE THROW, NOT THE WALK. The popup reopens over the new
+     figure and waits: nothing auto-continues, so the turn cannot end
+     without a choice - the reported bug. */
+  assert.equal(rolled.phase, PHASE.DECISION, "the panel reopens over the new figure");
+  refuse(rolled, { type: "continue" }, "The singularity holds you. The panel decides your turn.");
 });
 
 test("a roll of 5 and then a roll of 6 carries entropy from 0 to 11", () => {
   let state = captured();
   state = buildAndThrow(state, 5);
-  assert.equal(state.hole.entropy, 5);
-  state = passTurn(state); // back to the held seat's own panel turn
-  state = buildAndThrow(state, 6);
+  assert.equal(state.hole.entropy, 5, "the first throw lands on the reopened panel");
+  state = buildAndThrow(state, 6); // arm from that panel; the opponent plays; throw
   assert.equal(state.hole.entropy, 11, "past the threshold, still held until it escapes");
 });
 
@@ -225,7 +236,8 @@ test("ESCAPE NEXT TURN is refused below the threshold and commits at it", () => 
   refuse(state, { type: "escapeNext" }, "You do not hold the energy to escape yet.");
 
   state = buildAndThrow(state, 5);
-  state = passTurn(state); // back to the held seat's own panel turn
+  // The cycle ends AT the reopened panel - this is already the held seat's
+  // own decision, needing no turn in between.
   refuse(state, { type: "escapeNext" }, "You do not hold the energy to escape yet.");
 
   // The property halves the threshold, and the same five now walks out.
@@ -240,7 +252,6 @@ test("the committed seat stays held until its own roll releases it", () => {
   let state = captured();
   sheetFor(state.ledger, "event-horizon").owner = 0;
   state = buildAndThrow(state, 5);
-  state = passTurn(state); // the held seat's own panel turn
   state = take(state, { type: "escapeNext" }).state;
   state = take(state, { type: "continue" }).state; // -> seat 1
 
@@ -286,6 +297,11 @@ test("the vessel deducts exactly ₹500, releases at once, and cannot be charged
 
   assert.equal(bought.ledger.players.find((p) => p.seat === 0).money, purse - VESSEL_PRICE, "exactly the price");
   assert.equal(bought.hole.phase, "released", "released in the same action that was paid for");
+  assert.equal(
+    bought.pieces[0].position,
+    CELLS.find((cell) => cell.id === "wormhole").index,
+    "set down at the Wormhole square, in the same action",
+  );
   assert.equal(bought.phase, PHASE.RESOLVING, "the beat that shows the release");
   const paid = events.find((e) => e.type === "holeVessel");
   assert.ok(paid);
@@ -309,7 +325,6 @@ test("a seat that has committed to escaping cannot buy the vessel", () => {
   let state = captured();
   sheetFor(state.ledger, "event-horizon").owner = 0;
   state = buildAndThrow(state, 5);
-  state = passTurn(state); // the held seat's own panel turn
   state = take(state, { type: "escapeNext" }).state;
   // The commitment ends the turn at once, so the vessel's press has no
   // panel to press it from - refused by the first guard, and nothing moves.

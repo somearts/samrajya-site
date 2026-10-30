@@ -877,11 +877,12 @@ export function board({
 
     /* THE BLACK HOLE, ON BOTH SCREENS - the flag from the call above is
        already up, so the panel here is gated and opens only once the five
-       seconds have finished. It is drawn while the held seat's own turn is
-       being played - its DECISION turn (the panel's) and the RESOLVING
-       beat that shows an entropy gain. On the two die turns - the entropy
-       throw and the committed escape - the middle belongs to the die, and
-       the chip is what carries the confinement. */
+       seconds have finished. It is drawn for every DECISION of the held
+       seat's own turn: the capture's panel, and the panel that reopens
+       after each entropy throw with the new figure on it - and it stays
+       there until a choice is made, because the walk stops at DECISION and
+       the hole's own guard refuses the continue. On the die turns the
+       middle belongs to the die, and the chip carries the confinement. */
     if (
       game.hole &&
       game.hole.playerId === game.active &&
@@ -1254,10 +1255,13 @@ export function board({
         }
 
         case "holeEntropy": {
-          /* THE ENTROPY THROW. The same die and the same tumble both
-             screens already give an ordinary roll - no walk, because
-             nothing moves. The face is held to be read, the meter repaints
-             to the new figure, and the turn is already on its way out. */
+          /* THE ENTROPY THROW, AND THE PANEL IT LEAVES BEHIND. The same
+             die and the same tumble an ordinary roll gives - no walk,
+             because nothing moves. The dismissal key is cleared first so a
+             panel somebody had closed with the × cannot swallow this fresh
+             stage: the popup reopens over the new figure the moment the
+             throw is read, and it stays until the player chooses. */
+          holeDismissedKey = null;
           frame.dataset.throwing = "true";
           paintPhase();
           if (die) await throwTo(die, event.face);

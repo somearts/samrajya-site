@@ -214,6 +214,11 @@ export function drawHoleStage(board, hole, {
 
   const entropy = Math.max(0, Number(hole.entropy) || 0);
   const threshold = holeThreshold(ledger, hole.playerId);
+  /* THE METER READS FULL PAST THE THRESHOLD. A roll can carry the stored
+     figure beyond the escape number (8 + 6 = 14); the bar and the figure
+     cap at the threshold - 10 / 10 - while `entropy` itself stays true for
+     the escape check, the chip and the server. */
+  const shown = Math.min(entropy, threshold);
   const held = ownerOf(ledger, EVENT_HORIZON) === hole.playerId;
   const atEase = entropy >= threshold;
   const committed = Boolean(hole.escape);
@@ -324,7 +329,7 @@ export function drawHoleStage(board, hole, {
         el("div", { class: "hole-card__meter-head" }, [
           el("p", { class: "hole-card__figure" }, [
             el("span", { class: "hole-card__figure-label", text: "Entropy\u00a0" }),
-            el("span", { class: "hole-card__entropy", text: String(entropy) }),
+            el("span", { class: "hole-card__entropy", text: String(shown) }),
             el("span", { class: "hole-card__of", text: " / " }),
             el("span", { class: "hole-card__threshold", text: String(threshold) }),
           ]),
@@ -339,7 +344,7 @@ export function drawHoleStage(board, hole, {
           role: "progressbar",
           "aria-valuemin": "0",
           "aria-valuemax": String(threshold),
-          "aria-valuenow": String(entropy),
+          "aria-valuenow": String(shown),
           "aria-label": "Entropy toward escape",
         }, [
           el("span", {

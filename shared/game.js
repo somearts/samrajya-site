@@ -99,6 +99,9 @@ const KRONOS = CELLS.find((cell) => cell.id === "kronos") || null;
 /** The Black Hole corner, matched the same way. */
 const HOLE_CELL = CELLS.find((cell) => cell.id === "black-hole") || null;
 
+/** The Wormhole square: where the escape vessel sets its passenger down. */
+const WORMHOLE_CELL = CELLS.find((cell) => cell.id === "wormhole") || null;
+
 /** The property whose hold shortens a confinement: Event Horizon. */
 export const EVENT_HORIZON = "event-horizon";
 
@@ -546,14 +549,21 @@ export function applyAction(state, action, rng = Math.random) {
       const reserved = state.futureSight?.[active];
       const face = Number.isInteger(reserved) ? reserved : rolledFace;
 
-      /* ENTROPY, NOT MOVEMENT.
+      /* ENTROPY, NOT MOVEMENT - AND THE PANEL, NOT THE WALK.
 
          The roll is the die the player was always going to throw - same rng,
          same faces, same tumble on both screens - and its face becomes
          escape energy instead of steps. Nothing moves, no square is landed
-         on, `lastRoll` is untouched (it records a MOVEMENT and this is not
-         one), and the turn is already over: RESOLVING lets both screens see
-         the gain, and the walk-on carries the turn to the opponent. */
+         on, and `lastRoll` is untouched (it records a MOVEMENT and this is
+         not one).
+
+         The phase goes straight to the panel's DECISION: the confinement
+         popup reopens over the new figure the moment the throw is read and
+         WAITS for the player's choice - build again, escape, or buy the
+         vessel. Under RESOLVING the walk auto-continued, the popup appeared
+         only to vanish, and the turn ended with no say (the reported bug).
+         At DECISION the walk stops, `continue` is refused by the hole's own
+         guard, and the panel is the only door out. */
       if (confined?.entropyRoll) {
         if (Number.isInteger(reserved)) {
           next.futureSight = { ...(state.futureSight || { 0: null, 1: null }), [active]: null };
@@ -564,7 +574,7 @@ export function applyAction(state, action, rng = Math.random) {
         const entropy = (confined.entropy || 0) + face;
         const threshold = holeThreshold(next.ledger, active);
         next.hole = { ...confined, entropy, entropyRoll: false };
-        next.phase = PHASE.RESOLVING;
+        next.phase = PHASE.DECISION;
         ok("holeEntropy", {
           seat: active,
           face,
@@ -873,12 +883,14 @@ export function applyAction(state, action, rng = Math.random) {
 
       /* ENTROPY, NOT MOVEMENT. The test throw's own number becomes the
          energy - the same conversion the real die makes, so the system can
-         be walked through step by step. */
+         be walked through step by step. The phase goes to the panel's
+         DECISION for the same reason the real throw's does: the popup
+         reopens over the new figure and waits for the choice. */
       if (confined?.entropyRoll) {
         const entropy = (confined.entropy || 0) + face;
         const threshold = holeThreshold(next.ledger, active);
         next.hole = { ...confined, entropy, entropyRoll: false };
-        next.phase = PHASE.RESOLVING;
+        next.phase = PHASE.DECISION;
         ok("holeEntropy", {
           seat: active,
           face,
@@ -1621,6 +1633,12 @@ export function applyAction(state, action, rng = Math.random) {
         text: "Acquired a Relativistic Escape Vessel",
       });
       next.hole = { ...state.hole, phase: "released" };
+      /* OUT THROUGH THE WORMHOLE, AND THE TURN IS OVER. The vessel does not
+         merely open the corridor: it sets its passenger down at the Wormhole
+         square in the same action that paid for it - one movement, no
+         landing to answer (the square's own card never opens), and the walk
+         carries the turn on to the opponent. */
+      if (WORMHOLE_CELL && piece) piece.position = WORMHOLE_CELL.index;
       next.phase = PHASE.RESOLVING;
       ok("holeVessel", {
         seat: active,
