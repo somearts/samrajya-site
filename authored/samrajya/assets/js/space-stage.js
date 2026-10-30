@@ -251,6 +251,27 @@ const SUIT_ART = Object.freeze({
 
 const HEADLINE = "HERE BEGINS YOUR INTERSTELLAR JOURNEY";
 
+const MYTH =
+  "Beyond the boundaries of Earth lies a universe governed by forces no " +
+  "civilization can fully comprehend. Survival belongs to those who evolve, " +
+  "adapt, and master the technology of the unknown. Your journey beyond the " +
+  "familiar begins here.";
+
+/* THE PROTOCOLS ARE THE MECHANICS' OWN WORDS, not new rules: one discount
+   per purchase (the suit flips to `used` by its first eligible buy), any
+   eligible property during the circuit, one suit per seat (the server
+   refuses a second), retirement on the seat's return to Outer Space, the
+   expiry notice when the discount was never spent, and the purchase price
+   only - rent, upgrades and fees never see the discount. */
+const PROTOCOLS = [
+  ["One acquisition:", "Each suit grants a discount on one eligible property purchase."],
+  ["Choose your target:", "Apply the discount to any eligible property during your circuit."],
+  ["No stacking:", "Only one suit can be active per player."],
+  ["Circuit limit:", "Your suit remains active until you complete one full circuit and return to Outer Space."],
+  ["Unclaimed advantage:", "If you have not used the discount when you return to Outer Space, the suit expires."],
+  ["Purchase only:", "Discounts apply to property purchase prices, not rent, upgrades, or fees."],
+];
+
 /** Which suit's notice this visit has already shown, so a repaint cannot
     bring it back after the player has read it. One key per visit. */
 let noticeDismissed = null;
@@ -280,9 +301,9 @@ function suitCard(suit, { mine, money }) {
   ]);
 }
 
-/** The counter: headline with the close X beside it, then the one row of
-    three portrait cards. Nothing else - no subtitle, no exposition, no
-    protocol list. */
+/** The counter: headline with the close X beside it, the mythology line,
+    the one row of three portrait cards, and the Mission Protocols beneath
+    them - the order the space asks for, nothing else. */
 function selectionContent(space, { mine, money }) {
   return [
     el("div", { class: "space-card__bar" }, [
@@ -297,7 +318,15 @@ function selectionContent(space, { mine, money }) {
         text: "\u00d7",
       }),
     ]),
+    el("p", { class: "space-card__myth", text: MYTH }),
     el("div", { class: "space-card__suits" }, SUITS.map((suit) => suitCard(suit, { mine, money }))),
+    el("section", { class: "space-card__protocols" }, [
+      el("h4", { class: "space-card__protocols-name", text: "Mission protocols" }),
+      el("ul", { class: "space-card__protocols-list" },
+        PROTOCOLS.map(([label, text]) =>
+          el("li", {}, [el("b", { text: label }), el("span", { text: ` ${text}` })]),
+        )),
+    ]),
   ];
 }
 

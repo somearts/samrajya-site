@@ -5734,7 +5734,7 @@ button.board__cell--corner:focus-visible {
   pointer-events: auto;
   display: flex;
   flex-direction: column;
-  gap: clamp(8px, 2.4cqi, 16px);
+  gap: clamp(6px, 2cqi, 14px);
   padding: 4.5% 5% 5.5%;
   border-radius: 10px;
   background: var(--cell-ground);
@@ -5792,6 +5792,17 @@ button.board__cell--corner:focus-visible {
 .space-card__close:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+/* The atmosphere, directly under the headline: one quiet paragraph on the
+   card's measure, deliberately secondary to the cards below it. */
+.space-card__myth {
+  margin: 0;
+  max-width: 64ch;
+  font-size: clamp(8.5px, calc(var(--cell) * 0.115), 9.8px);
+  line-height: 1.42;
+  color: var(--ink-soft);
+  text-wrap: pretty;
 }
 
 /* ------------------------------------------------------------------ suits
@@ -5872,6 +5883,59 @@ button.board__cell--corner:focus-visible {
   font-size: clamp(8px, calc(var(--cell) * 0.1), 9.5px);
   letter-spacing: 0.04em;
   white-space: normal;
+}
+
+/* -------------------------------------------------------------- protocols
+
+   Clearly separated by one hairline, but the same voice as the rest of the
+   panel: a caps heading with its own rule running off to the right, then
+   six scannable rows - leading label in ink, explanation in the quiet
+   secondary tone. Not a card, not a second panel: the mechanics, named. */
+
+.space-card__protocols {
+  display: grid;
+  gap: clamp(4px, 1.2cqi, 7px);
+  padding-top: clamp(6px, 2cqi, 12px);
+  border-top: 1px solid rgb(18 17 16 / 0.12);
+}
+
+.space-card__protocols-name {
+  display: flex;
+  align-items: center;
+  gap: 0.55em;
+  margin: 0;
+  font-size: clamp(9px, calc(var(--cell) * 0.118), 10.5px);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.space-card__protocols-name::after {
+  content: "";
+  flex: 1;
+  min-width: 1em;
+  border-top: 1px solid rgb(18 17 16 / 0.16);
+}
+
+.space-card__protocols-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: clamp(2px, 0.6cqi, 4px);
+}
+
+.space-card__protocols-list li {
+  font-size: clamp(8.5px, calc(var(--cell) * 0.112), 9.6px);
+  line-height: 1.35;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+.space-card__protocols-list li b {
+  font-weight: 500;
+  color: var(--ink);
 }
 
 /* (No footer: the close X in the head is the counter's only exit, and the
