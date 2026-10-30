@@ -25,6 +25,8 @@ import {
   PHASE,
   applyAction,
   createGame,
+  serializeGame,
+  restoreGame,
 } from "../shared/game.js";
 import { CELLS } from "../shared/spaces.js";
 import { priceOf } from "../shared/economy.js";
@@ -350,4 +352,109 @@ test("returning to Outer Space retires a carried suit, announcing only an unused
   const opened2 = take(risen2.state, { type: "continue" }).state;
   assert.ok(opened2.suits[0] == null, "retired either way");
   assert.equal(opened2.space.expiredNotice, false, "a spent discount is retired silently");
+});
+
+/* --------------------------------- THE REPORTED FREEZE, REPLAYED END TO END
+
+   The production report: land at Outer Space, buy a suit, play a full
+   circuit, land again - and the game froze with no way to finish the turn.
+   The engine was clean (the freeze was a client draw crash), so this pins
+   the SEQUENCE itself at the rules level for every suit state, including
+   the serialize/restore a refresh performs mid-visit, and proves the turn
+   always hands over. The client half of the fix is covered by
+   `scripts/e2e-space-return.mjs` (four scenarios, real browser, real
+   clicks) - see package.json `test:space`. */
+test("the reported sequence resolves for every suit state: land, buy, circuit, land again, hand over", () => {
+  for (const mode of ["buy-unused", "buy-used", "never"]) {
+    const label = `${mode}: `;
+    let state = createGame(PLAYERS, { testMode: true });
+    const act = (action, rng) => {
+      const res = applyAction(state, action, rng || rngNothing);
+      const no = res.events.find((e) => e.type === "refused");
+      assert.equal(no, undefined, `${label}refused ${action.type}: ${no?.why}`);
+      state = res.state;
+      return res;
+    };
+    /** Let a throw's walk finish: MOVING/RESOLVING settle into the decision
+        (the client's `settle()` does this; the engine waits for it). */
+    const toDecision = () => {
+      for (let i = 0; i < 8 && state.phase !== PHASE.DECISION; i += 1) {
+        act({ type: "continue" });
+      }
+      assert.equal(state.phase, PHASE.DECISION, `${label}the walk settles into the decision`);
+    };
+    /** Walk any post-landing phases until the seat is waiting to throw. */
+    const untilAwaiting = (seat) => {
+      for (let i = 0; i < 12; i += 1) {
+        if (state.phase === PHASE.AWAITING_ROLL && state.active === seat) return;
+        if (state.phase === PHASE.DECISION) {
+          // A property the player does not want; every decision resolves forward.
+          act(state.landing?.kind === "buy" || state.landing?.kind === "own"
+            ? { type: "pass" }
+            : { type: "continue" });
+          continue;
+        }
+        act({ type: "continue" });
+      }
+      throw new Error(`${label}never reached AWAITING_ROLL for seat ${seat}`);
+    };
+
+    /* 1. First landing at Outer Space. */
+    act({ type: "testRoll", steps: outerIndex });
+    assert.equal(state.landing.id, "outer-space", `${label}first landing`);
+    toDecision();
+
+    /* 2. The visit: buy, decline, or buy-and-spend. */
+    if (mode === "never") {
+      act({ type: "continue" }); // close the counter without buying
+      untilAwaiting(1);
+    } else {
+      act({ type: "acquireSuit", suitId: "quantum-one" });
+      assert.equal(state.space.phase, "acquired", `${label}the popup is the state`);
+      assert.ok(state.suits[0] && state.suits[0].used === false, `${label}carried unspent`);
+      if (mode === "buy-used") {
+        state.suits = { ...state.suits, 0: { ...state.suits[0], used: true } };
+      }
+      act({ type: "continue" }); // leave the popup
+      untilAwaiting(1);
+    }
+
+    /* 3. The opponent throws one square and passes. */
+    act({ type: "testRoll", steps: 1 });
+    untilAwaiting(0);
+
+    /* 4. The full circuit back to Outer Space, from wherever the walk left
+       them (the buy-used detour moved them off the start-relative spot). */
+    const here = state.pieces[0].position;
+    act({ type: "testRoll", steps: (outerIndex - here + 28) % 28 || 28 });
+    assert.equal(state.landing.id, "outer-space", `${label}second landing`);
+    toDecision();
+    assert.ok((state.suits || {})[0] == null, `${label}the suit retired on return`);
+
+    /* The second landing exactly as both clients hold it - and exactly as a
+       REFRESH rebuilds it: serialize, restore, same facts, still resolvable. */
+    const restored = restoreGame(serializeGame(state));
+    assert.deepEqual(
+      { space: restored.space, suits: restored.suits, phase: restored.phase },
+      { space: state.space, suits: state.suits, phase: state.phase },
+      `${label}the restored visit is the same visit`,
+    );
+    state = restored;
+
+    /* What this visit shows, per suit state (the client draws from these). */
+    if (mode === "buy-unused") {
+      assert.equal(state.space.expired, "quantum-one", `${label}expiry notice state`);
+      assert.equal(state.space.expiredNotice, true, `${label}unused -> announced`);
+    } else {
+      assert.equal(state.space.expiredNotice, false, `${label}silent retirement`);
+    }
+
+    /* 5. THE FIX'S GUARANTEE: the visit finishes and the turn hands over. */
+    act({ type: "continue" });
+    assert.equal(state.phase, PHASE.TURN_END, `${label}the leave closes the visit`);
+    assert.equal(state.space, null, `${label}the counter is cleared`);
+    act({ type: "continue" });
+    assert.equal(state.phase, PHASE.AWAITING_ROLL, `${label}the game continues`);
+    assert.equal(state.active, 1, `${label}handed to the opponent`);
+  }
 });

@@ -351,7 +351,12 @@ function acquiredContent(suit, { mine }) {
   ];
 }
 
-/** The expiry notice: local to this card; its CONTINUE only uncovers the counter. */
+/** The expiry notice: local to this card; its CONTINUE only uncovers the counter.
+    It returns a LIST, like every other content builder here: the caller spreads
+    its result into `replaceChildren`, and spreading a bare element throws
+    `Spread syntax requires ...iterable` - which, at the second landing, used to
+    leave a freshly appended, completely EMPTY card: no notice, no counter, no
+    buttons, no way to finish the turn. */
 function noticeContent(onContinue) {
   const notice = el("div", { class: "space-popup space-popup--notice" }, [
     el("h3", { class: "space-popup__title", text: "Suit expired" }),
@@ -369,7 +374,7 @@ function noticeContent(onContinue) {
   notice.querySelector('[data-action="notice-continue"]').addEventListener("click", () => {
     onContinue();
   });
-  return notice;
+  return [notice];
 }
 
 /* ------------------------------------------------------------------ stage */
@@ -379,11 +384,14 @@ function noticeContent(onContinue) {
  *
  * Returns the card it built (so the board can wire the presses), or null
  * when there is nothing to show. The close X and the acquisition CTA both
- * carry `data-action="continue"`, which the board already wires to the
- * visit's own `continue` - a clean leave, no purchase, no state of its own.
- * The notice, when this visit has one and it has not been read, is what the
- * card opens with; its CONTINUE swaps the card's own contents to the
- * counter underneath, with nothing sent to the server.
+ * carry `data-action="continue"`, which the board wires to the visit's own
+ * `continue` - a clean leave, no purchase, no state of its own. The board
+ * DELEGATES those presses to the card element, not to the buttons, because
+ * of what follows: the notice, when this visit has one and it has not been
+ * read, is what the card opens with; its CONTINUE swaps the card's own
+ * contents to the counter underneath, with nothing sent to the server.
+ * Those swapped-in buttons never existed at draw time, so only a listener
+ * on the card itself can make them live.
  */
 export function drawSpaceStage(board, space, { mine = false, money = 0 } = {}) {
   const holder = board.querySelector(".board__card");
@@ -396,7 +404,12 @@ export function drawSpaceStage(board, space, { mine = false, money = 0 } = {}) {
 
   const ctx = { mine, money };
   const card = el("article", { class: "space-card" });
-  holder.append(card);
+  /* REPLACED, NOT APPENDED - the one draw that can happen twice on the same
+     visit (selecting -> acquired). `resetHolder` only clears animations and
+     inline paint, never children, so appending stacked the popup beneath the
+     card it was answering: both on screen, the second one below the fold.
+     Every other stage replaces; this one now does too. */
+  holder.replaceChildren(card);
   /* EVERY STAGE UNSHIDES ITS OWN HOLDER. The holder is hidden between cards
      (and starts hidden), and a card appended into a hidden box is a card
      nobody can see - the board's stranded-turn rescue then reads "decision

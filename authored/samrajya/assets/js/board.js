@@ -2048,16 +2048,27 @@ export function board({
 
     /* Only the seat at the counter can press: the server refuses everybody
        else, and a live button that does nothing is worse than a dead one.
-       The expiry notice wires itself inside the stage - it is a local
-       dismissal, not an action. */
+
+       THE PRESS IS DELEGATED TO THE CARD, not bound to the individual
+       buttons. On a returning visit the card's first face is the expiry
+       notice, and its CONTINUE - a purely local dismissal - swaps the
+       card's own contents for the counter underneath. Those counter
+       buttons were built AFTER this wiring pass, so binding them at draw
+       time left every one of them dead and the turn unfinishable. One
+       listener on the card itself rides that swap (and any repaint of the
+       same card), so the face that appears late is as live as the face
+       drawn first. The notice's own press carries a different data-action
+       and wires itself inside the stage, so it is left alone. */
     if (mine) {
-      for (const btn of card.querySelectorAll('[data-action="acquire"]')) {
-        btn.addEventListener("click", () =>
-          void run({ type: "acquireSuit", suitId: btn.dataset.suit }));
-      }
-      for (const btn of card.querySelectorAll('[data-action="continue"]')) {
-        btn.addEventListener("click", () => void run({ type: "continue" }));
-      }
+      card.addEventListener("click", (event) => {
+        const btn = event.target?.closest?.('[data-action="acquire"], [data-action="continue"]');
+        if (!btn || btn.disabled) return;
+        if (btn.dataset.action === "acquire") {
+          void run({ type: "acquireSuit", suitId: btn.dataset.suit });
+          return;
+        }
+        void run({ type: "continue" });
+      });
     }
 
     paintPhase();

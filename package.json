@@ -14,6 +14,7 @@
     "test": "node --test \"test/*.test.js\"",
     "test:board": "node scripts/measure-board.mjs",
     "test:e2e": "node scripts/e2e.js",
+    "test:space": "node scripts/e2e-space-return.mjs",
     "verify": "node scripts/verify-live.js",
     "verify:welcome": "node scripts/welcome-baseline.js check"
   },
