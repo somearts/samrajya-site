@@ -89,7 +89,7 @@ import {
   drawFightStage,
 } from "./fight-stage.js";
 import { drawEpochStage } from "./epoch-stage.js";
-import { drawHoleStage, playHoleCinematic, renderHole } from "./hole-stage.js";
+import { drawHoleLoreCard, drawHoleStage, playHoleCinematic, renderHole } from "./hole-stage.js";
 
 /**
  * The four corners, and the mark each one carries.
@@ -2144,7 +2144,12 @@ export function board({
        Everything else waits for the board to be at rest, because a card in
        the middle during a turn would cover the thing being decided. */
     const isChestTile = cell.id === NEXUS.id || cell.id === RAGNAROK.id;
-    if (!isChestTile) {
+    /* BLACK HOLE ANSWERS A TAP ON ANY TURN, when nobody is held: it is a
+       reading card, not a decision, so the "only at rest" guards - which
+       exist so a card cannot cover a decision in progress - must not keep
+       the tile's own explanation from the player. */
+    const isLoreTile = cell.id === "black-hole" && !game.hole;
+    if (!isChestTile && !isLoreTile) {
       if (game.phase !== PHASE.AWAITING_ROLL) return;
       if (isDecision()) return;
     }
@@ -2182,6 +2187,28 @@ export function board({
         cell.id === NEXUS.id ? "nexus" : cell.id === KRONOS_CHEST.id ? "kronos" : "ragnarok",
         { onClose: () => closeRead() },
       );
+      paintPhase();
+      return;
+    }
+
+    /* THE BLACK HOLE'S OWN READING CARD - shown only while nobody is held.
+       Pure explanation: no meter, no presses, no state, and NO cinematic -
+       the capture sequence belongs to landing on the tile, never to
+       looking at it. The holder takes the kind "hole-lore" rather than
+       "property", so the property card's synchroniser leaves it alone. */
+    if (isLoreTile) {
+      const loreHolder = frame.querySelector(".board__card");
+      if (!loreHolder) {
+        closeRead();
+        return;
+      }
+      resetHolder(loreHolder);
+      loreHolder.dataset.cardKind = "hole-lore";
+      loreHolder.dataset.property = "black-hole";
+      frame.dataset.property = "black-hole";
+      loreHolder.replaceChildren(drawHoleLoreCard({ onClose: () => closeRead() }));
+      loreHolder.hidden = false;
+      loreHolder.scrollTop = 0;
       paintPhase();
       return;
     }

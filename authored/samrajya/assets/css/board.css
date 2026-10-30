@@ -4257,6 +4257,15 @@ button.board__cell--corner:focus-visible {
   place-items: center;
   background: #000;
   opacity: 0;
+  /* THE PAPER, RE-DECLARED AT THE VEIL'S OWN SCOPE - the root cause of the
+     missing message. `--cell-ground` is defined on .board-screen, and the
+     veil lives at the body, outside it: an out-of-scope token invalidates
+     at computed-value time and the colour falls back to the INHERITED ink -
+     black text on a black screen. The message therefore names the same
+     paper here, where the veil can see it. If the board's paper ever
+     changes, this line changes with it - it is the one value that cannot
+     ride the token down to this element. */
+  --veil-paper: #f7f4ef;
 }
 
 .hole-veil.is-live {
@@ -4285,11 +4294,14 @@ button.board__cell--corner:focus-visible {
   display: grid;
   gap: 0.7em;
   text-align: center;
-  /* The board's own paper, on absolute black: the interface inverted, not
-     a new colour introduced. It is a CHILD of the blackout, so it paints
-     ON the black - above the overlay by construction, with nothing able to
-     slip between them. */
-  color: var(--cell-ground);
+  /* The paper, from the veil's own scope above - THE ROOT-CAUSE FIX: this
+     used to read `var(--cell-ground)`, which is defined on .board-screen
+     and therefore unset at the body. An out-of-scope token invalidates at
+     computed-value time and the colour fell back to the INHERITED ink, so
+     the message printed black on black and vanished while the blackout
+     itself worked perfectly. The line is a CHILD of the veil, so it paints
+     ON the black - above the overlay by construction. */
+  color: var(--veil-paper);
   opacity: 0;
 }
 
@@ -4301,14 +4313,13 @@ button.board__cell--corner:focus-visible {
   opacity: 1;
 }
 
-/* THE MESSAGE IS THERE FOR THE WHOLE CINEMATIC. It rises with the black
-   and falls with it - present from the first full moment of the blackout
-   through all five seconds of it, and never hidden by any other element,
-   because it is the only thing the veil contains. */
+/* THE MESSAGE IS THERE FROM THE FIRST FRAME OF THE FADE. The line itself
+   is at full opacity immediately; what the viewer sees rise out of nothing
+   is the veil's own group opacity carrying it. So the text appears AS the
+   fade begins - never a beat after the screen has gone black - it holds
+   for all five seconds of the blackout, and it leaves with it. */
 @keyframes hole-veil-line {
-  0% { opacity: 0; }
-  4.55% { opacity: 1; }
-  95.45% { opacity: 1; }
+  0%, 95.45% { opacity: 1; }
   100% { opacity: 0; }
 }
 
@@ -4341,13 +4352,15 @@ button.board__cell--corner:focus-visible {
    clipped to that would have its actions cut off. The card fills the
    rectangle and its middle region is the part that may scroll. */
 
-.board__card[data-card-kind="hole"] {
+.board__card[data-card-kind="hole"],
+.board__card[data-card-kind="hole-lore"] {
   height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
   max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
   overflow: hidden;
 }
 
-.board__card[data-card-kind="hole"] .hole-card {
+.board__card[data-card-kind="hole"] .hole-card,
+.board__card[data-card-kind="hole-lore"] .hole-card {
   height: 100%;
 }
 
@@ -4368,6 +4381,102 @@ button.board__cell--corner:focus-visible {
 
 .hole-card__body::-webkit-scrollbar {
   display: none;
+}
+
+/* THE WRITING'S MEASURE. Every paragraph and every titled block sits on
+   one centred column of a readable length - never edge to edge, never
+   narrow enough to break a word into single characters - with natural
+   wrapping, a line height that lets the eye return, and no hyphenation
+   pulling words apart. The column is responsive: on a phone it is the
+   card's own width; on a wide screen it stops at forty-six characters. */
+.hole-card__prose,
+.hole-card__section,
+.hole-card__compact,
+.hole-card__action-note,
+.hole-lore__warning {
+  width: min(100%, 46ch);
+  margin-inline: auto;
+  overflow-wrap: break-word;
+  hyphens: none;
+  text-wrap: pretty;
+}
+
+.hole-card__prose {
+  margin-block: 0;
+  font-size: max(9.8px, calc(var(--cell) * 0.128));
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.hole-card__prose--facts {
+  color: var(--ink);
+}
+
+/* A titled block of gameplay writing: its own hairline, its own heading,
+   its own paragraphs - the hierarchy the empty card never had. */
+.hole-card__section {
+  display: grid;
+  gap: 0.5em;
+  margin-block: calc(var(--cell) * 0.05);
+  padding-top: calc(var(--cell) * 0.11);
+  border-top: 1px solid color-mix(in srgb, var(--ink) 14%, var(--cell-ground));
+}
+
+.hole-card__section-name {
+  margin: 0;
+  font-size: max(9px, calc(var(--cell) * 0.12));
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink);
+  /* Balanced, so a long heading breaks across two even lines instead of
+     stranding a word - or a letter - on one of its own. */
+  text-wrap: balance;
+}
+
+.hole-card__compact {
+  margin-block: 0;
+  font-size: max(8.8px, calc(var(--cell) * 0.116));
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--ink) 55%, var(--cell-ground));
+}
+
+/* What a press costs, under the press, before it is pressed. */
+.hole-card__action-note {
+  margin-block: calc(var(--cell) * 0.055);
+  font-size: max(8.6px, calc(var(--cell) * 0.112));
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--ink) 58%, var(--cell-ground));
+  text-align: center;
+}
+
+.hole-card__figure-label {
+  font-size: max(9px, calc(var(--cell) * 0.12));
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-right: 0.35em;
+}
+
+/* THE READING CARD'S OWN TWO LINES: the tile's epithet under its name,
+   and the warning that closes the reading. */
+.hole-lore__subtitle {
+  margin: 0;
+  font-size: max(9.2px, calc(var(--cell) * 0.122));
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.hole-lore__warning {
+  margin-block: calc(var(--cell) * 0.06);
+  padding: calc(var(--cell) * 0.11) calc(var(--cell) * 0.13);
+  border: 1px solid color-mix(in srgb, var(--ink) 28%, var(--cell-ground));
+  border-radius: 6px;
+  font-size: max(9px, calc(var(--cell) * 0.118));
+  line-height: 1.5;
+  color: var(--ink);
 }
 
 .hole-card__actions {
@@ -4470,17 +4579,21 @@ button.board__cell--corner:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.8em;
+  gap: 0.7em;
   align-self: center;
-  min-height: max(26px, calc(var(--cell) * 0.39));
-  padding: 0 1.5em;
+  min-height: max(23px, calc(var(--cell) * 0.32));
+  padding: 0 1.25em;
   margin: 0;
   border: 1px solid color-mix(in srgb, var(--ink) 30%, transparent);
   border-radius: 999px;
   background: transparent;
   font: inherit;
-  font-size: max(11.1px, calc(var(--cell) * 0.1508));
-  letter-spacing: 0.2em;
+  /* SLENDER, NOT BULKY: a smaller, lighter label with quieter tracking -
+     deliberate rather than loud - while staying above the legibility floor
+     the board holds everywhere else. */
+  font-size: max(9.6px, calc(var(--cell) * 0.126));
+  font-weight: 400;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
   color: inherit;
   cursor: pointer;
@@ -4500,11 +4613,13 @@ button.board__cell--corner:focus-visible {
 }
 
 .hole-card__action-name {
-  letter-spacing: 0.2em;
+  font-weight: 500;
+  letter-spacing: 0.13em;
 }
 
 .hole-card__action-price {
-  letter-spacing: 0.06em;
+  font-size: 0.94em;
+  letter-spacing: 0.03em;
   color: color-mix(in srgb, var(--accent, #c9a24a) 62%, var(--ink));
 }
 
