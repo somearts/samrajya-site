@@ -246,17 +246,17 @@ function ragnarokCard({ drawable, phase, caption }) {
    it is spent on the block it makes. */
 
 /**
- * THE ONE PILLOW, EVERY STATE.
+ * THE ONE PILLOW, EVERY STATE - the whole flow is this button.
  *
- * The same button the DRAW pill was built as, told what it is at each stage,
- * in the progression the flow promises: DRAW while open; a greyed DRAW
- * through the shuffle (the card may already be in its reveal stage while the
- * shuffle runs, so the shuffle itself is remembered on the card); DEPLOY the
- * moment the face is up; "Select a colony" while the board is offering one
- * (or DEPLOY again, greyed, when there is nothing to select); and SHIELD
- * DEPLOYED - kept visible as the result - once the shield stands. `mine`
- * comes from the card, so the stage can re-sync it after the shuffle without
- * knowing anything except the state.
+ * The same element, told what it is by the state, in the exact sequence
+ * the flow promises: DRAW while open; a greyed DRAW through the shuffle;
+ * DEPLOY the moment the face is up; DEPLOY still - greyed, the action
+ * under way - while a colony is being chosen; and DONE once the shield
+ * stands (or once the draw has conclusively failed - a miss or a decline
+ * is a terminal state, and the one pill is the only way out of it). There
+ * is no second button and no separate closing control anywhere: the card
+ * never appends a Done of its own for this chest. `mine` comes from the
+ * card, so the stage can re-sync it after the shuffle by itself.
  */
 function syncDrawButton(card, chest) {
   const btn = card.querySelector('[data-action="draw"]');
@@ -265,27 +265,31 @@ function syncDrawButton(card, chest) {
   const phase = chest.phase;
   const none = Boolean(chest.result?.none);
   const faceShown = card.dataset.faceShown === "true";
+  const compatible = (chest.result?.compatible || []).length > 0;
 
   let label = "Draw";
   let disabled = !mine;
-  if (phase === "drawing" || (phase === "revealed" && !none && !faceShown)) {
+  if (phase === "drawing" || (phase === "revealed" && !faceShown)) {
     disabled = true; // visibly greyed through the shuffle, never hidden
   } else if (phase === "revealed") {
-    if (none) disabled = true; // a miss: nothing to deploy, Done is the way out
-    else {
+    if (none) {
+      label = "Done"; // a miss: nothing can deploy - the one pill closes the visit
+      disabled = !mine;
+    } else {
       label = "Deploy";
       disabled = !mine;
     }
   } else if (phase === "targeting") {
-    /* Selection state: the colonies are lit and the pill says what to do
-       next. With no compatible colony the press already happened and the
-       decline message carries the answer, so the pill stays on DEPLOY and
-       greyed rather than promising a selection that does not exist. */
-    label = (chest.result?.compatible || []).length ? "Select a colony" : "Deploy";
-    disabled = true;
+    if (compatible) {
+      label = "Deploy"; // the same action, still under way while choosing
+      disabled = true;
+    } else {
+      label = "Done"; // declined: terminal - the one pill closes the visit
+      disabled = !mine;
+    }
   } else if (phase === "deployed") {
-    label = "Shield deployed"; // the result, not an action: visible and done
-    disabled = true;
+    label = "Done"; // success shown in the popup; the pill's press closes it
+    disabled = !mine;
   }
 
   btn.style.display = "";
@@ -308,9 +312,9 @@ function syncDrawButton(card, chest) {
  * is tapped.
  *
  * The pill's label and availability are owned by `syncDrawButton`, which
- * the stage calls for every state - DRAW while open, greyed DRAW during
- * the shuffle, DEPLOY once revealed, "Select a colony" while picking,
- * SHIELD DEPLOYED when it stands.
+ * the stage calls for every state: DRAW while open, greyed DRAW during
+ * the shuffle, DEPLOY once revealed and while a colony is chosen, DONE
+ * once it stands - one pill for the whole flow, never a second button.
  */
 function kronosCard({ drawable, phase, caption }) {
   const slot = (shield, index) => {
@@ -1038,18 +1042,15 @@ function shieldInfo(chest, shield) {
     return [el("p", { class: "chest-card__drew", text: KRONOS_CHEST.badLuck })];
   }
 
-  /* REVEALED - THE REVEAL: four short sections in the approved order -
-     where it comes from, how it works, the three facts, the colonies -
-     each a caps heading over one small paragraph, all fitting the space
-     the popup already has. */
+  /* REVEALED - THE REVEAL: the shield's story, then the three approved
+     facts (Counters / Duration / Spent), then the colonies that can
+     receive it - name and countered weapon already carry on the face
+     above. Three short blocks, sized for the mobile popup; the welcome
+     copy is gone by this stage and does not come back. */
   return [
     shieldSection(
       "About this shield",
       shield?.myth || shield?.blurb || "",
-    ),
-    shieldSection(
-      "How it works",
-      `Tap DEPLOY, then choose a highlighted colony. It protects that one colony against the ${weapon?.name || "its weapon"} for two of your turns.`,
     ),
     shieldFacts(shield, weapon),
     shieldColonies(shield, weapon),

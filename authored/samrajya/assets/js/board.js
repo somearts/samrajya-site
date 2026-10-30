@@ -1453,11 +1453,13 @@ export function board({
           };
         } else if (chest.kind === "kronos") {
           /* KRONOS OFFERS THREE SHIELD FACES, and the player touches one of
-             them - or the pill, which is the same draw said once more. After
-             the shuffle the SAME PILL becomes DEPLOY, so its handler
-             dispatches on the state's own phase: open draws, revealed
-             collects (the server's targeting pass behind the DEPLOY press).
-             Only the server decides what either action means. */
+             them - or THE ONE PILL, which is the whole flow in one button:
+             open draws, revealed collects (the DEPLOY press that starts the
+             targeting), and every terminal state - the shield standing, a
+             miss, a declined deployment - closes the visit with `continue`,
+             the same press every landing ends with: the chest goes down and
+             the turn carries on through the normal walk, never through a
+             second button. Only the server decides what any press means. */
           for (const slot of [0, 1, 2]) {
             handlers[`.chest-card__slot[data-slot="${slot}"]`] = () => {
               if (game.chest?.phase !== "open") return;
@@ -1465,11 +1467,18 @@ export function board({
             };
           }
           handlers['[data-action="draw"]'] = () => {
-            const phase = game.chest?.phase;
-            if (phase === "open") {
+            const c = game.chest;
+            if (!c) return;
+            if (c.phase === "open") {
               void run({ type: "drawShield", slot: 1 });
-            } else if (phase === "revealed" && !game.chest?.result?.none) {
+            } else if (c.phase === "revealed" && !c.result?.none) {
               void run({ type: "collectShield" });
+            } else if (
+              (c.phase === "revealed" && c.result?.none) ||
+              (c.phase === "targeting" && !(c.result?.compatible || []).length) ||
+              c.phase === "deployed"
+            ) {
+              void run({ type: "continue" });
             }
           };
         } else {
@@ -1503,20 +1512,17 @@ export function board({
 
          A real Ragnarok draw ends at Collect. Done survives where there is
          no collect to make (a bad-luck draw), where the chest's own rules
-         asked for it (an answered Nexus, an offering), and at KRONOS
-         throughout: after the reveal (the DEPLOY pill and the shield's
-         explanation are on the card, and Done is the way out), during
-         targeting (the player may decline to place and simply leave), and
-         once the shield stands (Done closes the visit that deployed it). */
+         asked for it (an answered Nexus, an offering) - and NEVER at
+         Kronos. The shield chest has exactly one control: the pill, which
+         walks DRAW -> DEPLOY -> DONE through the flow itself. The card
+         appends no Done button for Kronos at any stage, so nothing but
+         that pill can close the visit, and it only offers DONE once the
+         deployment has succeeded (or the draw has conclusively failed). */
       const ragnarokRevealed =
         chest.kind === "ragnarok" && chest.phase === "revealed";
       const needsDone =
         chest.phase === "praying" ||
         (chest.kind === "nexus" && chest.phase === "revealed") ||
-        (chest.kind === "kronos" &&
-          (chest.phase === "revealed" ||
-            chest.phase === "targeting" ||
-            chest.phase === "deployed")) ||
         (ragnarokRevealed && Boolean(chest.result?.badLuck));
       if (needsDone) {
         if (mine) {

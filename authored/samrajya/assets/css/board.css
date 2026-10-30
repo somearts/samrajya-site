@@ -1541,31 +1541,36 @@
   display: none;
 }
 
-/* KRONOS KEEPS ITS PILL - AND ITS WELCOME - WHERE RAGNAROK HIDES ITS OWN.
+/* KRONOS KEEPS ITS PILL - AND SENDS ITS WELCOME OFF AT THE REVEAL.
 
    Ragnarok's pill is finished the moment its card is answered - Collect is
-   a separate element and the draw disappears. Kronos's SAME pill BECOMES
-   the next action and then the result (DEPLOY, then "Select a colony",
-   then SHIELD DEPLOYED), so it stays on the card through every stage of
-   the one flow - greyed by its disabled state, never hidden, never joined
-   by a second button. And where Ragnarok's card stops being a welcome the
-   moment it is answered, the shield's reveal keeps the welcome over it:
-   heading, tagline and body sit above the revealed shield as they do on
-   the reference layout. From targeting onward - when the player's eyes are
-   on the blinking board - the welcome makes room for the prompt and the
-   confirmation. Scoped to --kronos; the ragnarok rules above are untouched. */
+   a separate element and the draw disappears. Kronos's SAME pill carries
+   the whole flow (DRAW, DEPLOY, DEPLOY while choosing, DONE once it
+   stands) - greyed by its disabled state, never hidden, never joined by a
+   second button. And the welcome copy does its job exactly once: the
+   heading, tagline and body are the LANDING screen, they stay through the
+   shuffle the player just started (the generic rules above hide them the
+   moment the phase says "revealed", which for this card is the moment of
+   the draw - so they are re-held here while the shuffle is still running),
+   and they are gone for good the instant the face turns over. From the
+   reveal onward the card is the shield: its face, its facts, its colonies.
+   Scoped to --kronos; the ragnarok rules above are untouched. */
 .chest-card--kronos[data-phase="revealed"] .chest-card__draw,
 .chest-card--kronos[data-phase="targeting"] .chest-card__draw,
 .chest-card--kronos[data-phase="deployed"] .chest-card__draw {
   display: inline-flex;
 }
 
-.chest-card--kronos[data-phase="revealed"] .property-card__head {
+/* The welcome, held through the shuffle only: revealed but the face not yet
+   shown means the three backs are still moving. Once data-face-shown lands
+   these selectors no longer match and the generic reveal rules take the
+   welcome away - the reveal moment, with no extra classes or timers. */
+.chest-card--kronos[data-phase="revealed"]:not([data-face-shown="true"]) .property-card__head {
   display: grid;
 }
 
-.chest-card--kronos[data-phase="revealed"] .chest-card__tagline,
-.chest-card--kronos[data-phase="revealed"] .chest-card__body {
+.chest-card--kronos[data-phase="revealed"]:not([data-face-shown="true"]) .chest-card__tagline,
+.chest-card--kronos[data-phase="revealed"]:not([data-face-shown="true"]) .chest-card__body {
   display: block;
 }
 
