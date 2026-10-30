@@ -89,6 +89,7 @@ import {
   drawFightStage,
 } from "./fight-stage.js";
 import { drawEpochStage } from "./epoch-stage.js";
+import { drawHoleStage, playHoleCinematic, renderHole } from "./hole-stage.js";
 
 /**
  * The four corners, and the mark each one carries.
@@ -499,6 +500,9 @@ export function board({
          mark - and the turns its owner has left on it - live on the chip next
          to the weapons it stands against. */
       renderShields(root(), piece.seat, shieldsOf(game, piece.seat));
+      /* And the hole: one seat can be held, and the chip is what says so
+         between the held seat's turns, when the middle is the opponent's. */
+      renderHole(root(), piece.seat, game.hole);
     }
     syncCard(frame, context());
     paintPhase();
@@ -849,6 +853,27 @@ export function board({
       }
     }
 
+    /* THE BLACK HOLE, ON BOTH SCREENS.
+
+       The panel is up only while the held seat's own turn is being played -
+       its DECISION turn (the panel's) and the RESOLVING beat that shows an
+       entropy gain. On the two die turns - the entropy throw and the
+       committed escape - the middle belongs to the die, and the chip is
+       what carries the confinement. */
+    if (
+      game.hole &&
+      game.hole.playerId === game.active &&
+      (game.phase === PHASE.DECISION || game.phase === PHASE.RESOLVING)
+    ) {
+      openHoleStage();
+    } else if (holeStage) {
+      holeStage = null;
+      if (holder()?.dataset.cardKind === "hole") {
+        await dismissCard();
+      }
+    }
+    playHoleVeilOnce();
+
     // A property decision that has just been answered takes its card away. A
     // chest card closes itself, because it has a reveal to finish first.
     if (
@@ -936,6 +961,22 @@ export function board({
             await dismissCard();
           }
         }
+        /* The Black Hole, on both screens - the same rule as the step's own
+           tail: the panel where the held seat's panel turn is being played,
+           the chip everywhere else. */
+        if (
+          game.hole &&
+          game.hole.playerId === game.active &&
+          (game.phase === PHASE.DECISION || game.phase === PHASE.RESOLVING)
+        ) {
+          openHoleStage();
+        } else if (holeStage) {
+          holeStage = null;
+          if (holder()?.dataset.cardKind === "hole") {
+            await dismissCard();
+          }
+        }
+        playHoleVeilOnce();
       } finally {
         busy = false;
         paintPhase();
@@ -1162,6 +1203,38 @@ export function board({
              the chip is where carried things are shown, so the chip is where
              the ending of a carrying is shown. Nothing else speaks: this is a
              fact about an item, not an event in the middle of a decision. */
+          paint({ animate: false });
+          break;
+        }
+
+        case "holeOpened": {
+          /* The confinement is a fact in the state from this moment; the
+             chip says so at once, and the cinematic is played from the
+             stage's own first sight of the capture - never from the event,
+             which a screen that missed it would never replay. */
+          paint({ animate: false });
+          break;
+        }
+
+        case "holeEntropy": {
+          /* THE ENTROPY THROW. The same die and the same tumble both
+             screens already give an ordinary roll - no walk, because
+             nothing moves. The face is held to be read, the meter repaints
+             to the new figure, and the turn is already on its way out. */
+          frame.dataset.throwing = "true";
+          paintPhase();
+          if (die) await throwTo(die, event.face);
+          delete frame.dataset.throwing;
+          paint({ animate: false });
+          break;
+        }
+
+        case "holeBuilt":
+        case "holeCommitted":
+        case "holeVessel": {
+          /* The panel redraws itself from the state in the step's tail - a
+             committed seat's line, a released card - and the chip keeps
+             step with the entropy or with the release. */
           paint({ animate: false });
           break;
         }
@@ -1774,6 +1847,67 @@ export function board({
     paintPhase();
   }
 
+  /* ------------------------------------------------------- the black hole */
+
+  let holeStage = null;
+
+  /** Draw the confinement panel from the state, and wire its presses. */
+  function openHoleStage() {
+    const hole = game?.hole;
+    if (!hole) return;
+
+    cardMode = isMyTurn() ? "decision" : "read";
+    reading = false;
+    cardKey = `hole:${hole.playerId}:${hole.phase}:${hole.startedAt || 0}`;
+
+    const mine = isMyTurn() && hole.playerId === game.active;
+    const stageKey = `hole:${hole.playerId}:${hole.phase}:${hole.startedAt || 0}`;
+    const changed = holeStage !== stageKey;
+    holeStage = stageKey;
+    if (!changed && holder() && !holder().hidden) return;
+
+    const handlers = {};
+    if (mine) {
+      handlers['[data-action="build"]'] = () => {
+        if (game.hole?.phase !== "confined") return;
+        void run({ type: "buildEntropy" });
+      };
+      handlers['[data-action="escape"]'] = () => {
+        if (game.hole?.phase !== "confined") return;
+        void run({ type: "escapeNext" });
+      };
+      handlers['[data-action="vessel"]'] = () => {
+        if (game.hole?.phase !== "confined") return;
+        void run({ type: "acquireVessel" });
+      };
+    }
+
+    drawHoleStage(frame, hole, {
+      mine,
+      ledger: game.ledger,
+      handlers,
+      playerName: chestName(hole.playerId),
+    });
+    paintPhase();
+  }
+
+  /* THE CINEMATIC, ONCE PER CAPTURE.
+
+     Keyed by the capture's own moment: a repaint, a re-render or a snapshot
+     carrying the same `startedAt` cannot play it twice, and a client that
+     reloads mid-confinement - past the capture - never sees it at all,
+     because the moment it was played for is no longer the moment being
+     shown. It carries no effect whatsoever: nothing in the state waits on
+     it, no rule depends on it having been seen, and the panel beneath it is
+     already the state's own truth. */
+  let veilAt = null;
+  function playHoleVeilOnce() {
+    const hole = game?.hole;
+    if (!hole || veilAt === hole.startedAt) return;
+    veilAt = hole.startedAt;
+    void playHoleCinematic(hole);
+  }
+
   /** Ask the server to close the fight, once the board is free.
 
       The war has played to its end on this screen, and the turn ends only
@@ -1807,6 +1941,13 @@ export function board({
   /** Open the card the decision belongs to. */
   async function openDecision() {
     const landing = game.landing;
+    /* A CONFINED TURN HAS NO SQUARE - the panel IS the decision, and it is
+       opened here so the ordinary walk (settle asks for the decision) finds
+       it the same way it finds every other card. */
+    if (game.hole && game.hole.playerId === game.active) {
+      openHoleStage();
+      return;
+    }
     if (!landing) return;
     // The card belongs to whoever is looking at it. On the player whose turn it
     // is it is a decision with buttons; on the other screen it is a read-only

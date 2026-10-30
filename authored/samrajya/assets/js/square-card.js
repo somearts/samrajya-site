@@ -45,7 +45,7 @@ const COPY = {
     kind: "A corner",
     lines: [
       "Where the light stops and the board stops with it.",
-      "This square cannot be owned.",
+      "Landing here holds you: gather entropy across your turns to earn an escape, or buy a Relativistic Escape Vessel for ₹500 and go at once. Holding Event Horizon halves what you need.",
     ],
   },
   fight: {

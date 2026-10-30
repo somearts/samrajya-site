@@ -4238,6 +4238,299 @@ button.board__cell--corner:focus-visible {
   vertical-align: middle;
 }
 
+/* --------------------------------------------------------- the black hole
+
+   THE CINEMATIC, THE PANEL, AND THE MARK.
+
+   The veil takes the whole document to absolute black - board, header, die
+   and every control - holds the singularity's line for a beat, and gives
+   the interface back. One element, one keyframe sequence: three beats of
+   two seconds, written here beside the rest of the board's motion so the
+   timing cannot drift from the stylesheet. It sits above everything at a
+   z-index the board itself never reaches. */
+
+.hole-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: #000;
+  opacity: 0;
+}
+
+.hole-veil.is-live {
+  animation: hole-veil-fall 6s ease-in-out forwards;
+}
+
+@keyframes hole-veil-fall {
+  0% { opacity: 0; }
+  33% { opacity: 1; }
+  66% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* A reader who asked for less motion gets the line, plainly, and then the
+   board again - the same three beats, without the fades. */
+.hole-veil--still {
+  opacity: 1;
+}
+
+.hole-veil__line {
+  margin: 0;
+  display: grid;
+  gap: 0.7em;
+  text-align: center;
+  /* The board's own paper, on absolute black: the interface inverted, not
+     a new colour introduced. */
+  color: var(--cell-ground);
+  opacity: 0;
+}
+
+.hole-veil.is-live .hole-veil__line {
+  animation: hole-veil-line 6s ease-in-out forwards;
+}
+
+.hole-veil--still .hole-veil__line {
+  opacity: 1;
+}
+
+/* The line belongs to the middle beat: it is not there while the interface
+   falls, and it is gone before the interface returns. */
+@keyframes hole-veil-line {
+  0%, 30% { opacity: 0; }
+  38%, 64% { opacity: 1; }
+  72%, 100% { opacity: 0; }
+}
+
+.hole-veil__title {
+  font-size: max(12px, calc(var(--cell) * 0.2));
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  text-indent: 0.3em;
+}
+
+.hole-veil__sub {
+  font-size: max(9.6px, calc(var(--cell) * 0.13));
+  letter-spacing: 0.14em;
+  opacity: 0.66;
+}
+
+/* THE PANEL.
+
+   Dark because the place is dark. It is the board's own paper turned over:
+   the same ink, the same pill and head, the same type scale - only the
+   ground and the type are exchanged, so the card belongs to the same game
+   and to nowhere else.
+
+   THE HOLDER IS GIVEN THE WHOLE MIDDLE, the way the Fight and the Epoch
+   card are: the base .board__card is only three cells tall, and a dark
+   panel clipped to that would be a panel with its actions cut off. The
+   card fills the rectangle and its middle region is the part that may
+   scroll. */
+
+.board__card[data-card-kind="hole"] {
+  height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+  max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+  overflow: hidden;
+}
+
+.board__card[data-card-kind="hole"] .hole-card {
+  height: 100%;
+}
+
+.hole-card {
+  background: color-mix(in srgb, var(--ink) 94%, var(--cell-ground));
+  border-color: color-mix(in srgb, var(--cell-ground) 16%, transparent);
+  color: color-mix(in srgb, var(--cell-ground) 92%, white);
+}
+
+/* The middle row: everything that is said rather than pressed. It takes
+   whatever height is left and scrolls inside itself, so the presses at the
+   foot are pinned at every screen size. */
+.hole-card__body {
+  min-height: 0;
+  display: grid;
+  gap: calc(var(--cell) * 0.16);
+  align-content: start;
+  justify-items: center;
+  width: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.hole-card__body::-webkit-scrollbar {
+  display: none;
+}
+
+.hole-card__actions {
+  display: grid;
+  gap: calc(var(--cell) * 0.09);
+  width: 100%;
+  justify-items: center;
+  padding-top: calc(var(--cell) * 0.08);
+}
+
+.hole-card .property-card__pill {
+  background: var(--accent, #c9a24a);
+}
+
+.hole-card__tag {
+  margin: 0;
+  font-size: max(9.6px, calc(var(--cell) * 0.128));
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--cell-ground) 62%, transparent);
+}
+
+.hole-card__meter-block {
+  display: grid;
+  gap: calc(var(--cell) * 0.1);
+  width: 100%;
+  align-content: start;
+}
+
+.hole-card__label {
+  margin: 0;
+  font-size: max(8.8px, calc(var(--cell) * 0.115));
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--cell-ground) 55%, transparent);
+}
+
+.hole-card__meter {
+  height: max(5px, calc(var(--cell) * 0.075));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--cell-ground) 12%, transparent);
+  overflow: hidden;
+}
+
+.hole-card__meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #c9a24a);
+  transition: width 600ms ease-out;
+}
+
+.hole-card__figure {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--cell-ground) 88%, white);
+}
+
+.hole-card__entropy {
+  font-size: max(13px, calc(var(--cell) * 0.2));
+  font-weight: 500;
+}
+
+.hole-card__of,
+.hole-card__threshold {
+  font-size: max(10px, calc(var(--cell) * 0.14));
+  color: color-mix(in srgb, var(--cell-ground) 60%, transparent);
+}
+
+.hole-card__held {
+  margin: 0;
+  font-size: max(8.8px, calc(var(--cell) * 0.115));
+  letter-spacing: 0.06em;
+  color: var(--accent, #c9a24a);
+}
+
+.hole-card__released {
+  margin: 0;
+  font-size: max(11px, calc(var(--cell) * 0.15));
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--accent, #c9a24a);
+}
+
+.hole-card__watcher,
+.hole-card__waiting {
+  margin: 0;
+  font-size: max(9.4px, calc(var(--cell) * 0.12));
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--cell-ground) 58%, transparent);
+}
+
+.hole-card__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8em;
+  align-self: center;
+  min-height: max(26px, calc(var(--cell) * 0.39));
+  padding: 0 1.5em;
+  margin: 0;
+  border: 1px solid color-mix(in srgb, var(--cell-ground) 30%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: max(11.1px, calc(var(--cell) * 0.1508));
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: inherit;
+  cursor: pointer;
+}
+
+.hole-card__action--primary {
+  border-color: color-mix(in srgb, var(--accent, #c9a24a) 60%, transparent);
+}
+
+.hole-card__action:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cell-ground) 8%, transparent);
+}
+
+.hole-card__action:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.hole-card__action-name {
+  letter-spacing: 0.2em;
+}
+
+.hole-card__action-price {
+  letter-spacing: 0.06em;
+  color: var(--accent, #c9a24a);
+}
+
+/* THE MARK.
+
+   The confinement between the held seat's turns, when the middle belongs to
+   the opponent: a dark dot and the entropy number, in the same eight pixels
+   the weapon dots and shield marks already live in. */
+
+.who__hole {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+  height: 8px;
+}
+
+.who__hole-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 40%, white);
+}
+
+.who__hole-entropy {
+  align-self: center;
+  font-size: max(6.5px, 0.46rem);
+  line-height: 1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
 .fight-card__waiting-line {
   margin: 0;
   text-align: center;

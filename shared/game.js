@@ -96,8 +96,38 @@ const EPOCH = CELLS.find((cell) => cell.id === "epoch") || null;
 /** The Kronos tile, matched the same way. */
 const KRONOS = CELLS.find((cell) => cell.id === "kronos") || null;
 
+/** The Black Hole corner, matched the same way. */
+const HOLE_CELL = CELLS.find((cell) => cell.id === "black-hole") || null;
+
+/** The property whose hold shortens a confinement: Event Horizon. */
+export const EVENT_HORIZON = "event-horizon";
+
 /** How many of the owner's turns a shield stands for, once drawn. */
 export const SHIELD_TURNS = 2;
+
+/* ------------------------------------------------------- Black Hole rules */
+
+/** The entropy a confined player normally needs before they may escape. */
+export const HOLE_THRESHOLD = 10;
+
+/** The entropy needed while the confined player holds Event Horizon. */
+export const HOLE_THRESHOLD_HELD = 5;
+
+/** What the Relativistic Escape Vessel costs: the whole of the price. */
+export const VESSEL_PRICE = 500;
+
+/**
+ * The escape threshold for a confinement, read fresh every time.
+ *
+ * It is a pure read of the ledger rather than a number stored at capture:
+ * holding Event Horizon halves the threshold, a transfer during the
+ * confinement takes the half away (or grants it) at once, and the bonus can
+ * never be applied twice because it is never applied at all - it is asked
+ * for.
+ */
+export function holeThreshold(ledger, seat) {
+  return ownerOf(ledger, EVENT_HORIZON) === seat ? HOLE_THRESHOLD_HELD : HOLE_THRESHOLD;
+}
 
 /** The four phases a turn can be in, plus the two animation phases. */
 export const PHASE = Object.freeze({
@@ -225,6 +255,22 @@ export function createGame(players = [], { opening = STARTING_MONEY, testMode = 
        copy cannot be drawn, a shield cannot be refreshed by redrawing it, and
        the list can never hold two entries that answer the same weapon. */
     shields: [],
+    /* The BLACK HOLE CONFINEMENT, or null.
+
+       Like the chest, the fight and Epoch it is a SHARED screen and a fact
+       in the state - but where they last one visit, a confinement outlives
+       visits: it holds a seat across turns until that seat buys, builds or
+       earns its way out.
+
+         playerId    the seat the singularity holds
+         phase       "confined" | "released" (released is the vessel's beat)
+         startedAt   the moment of capture - when the cinematic is played
+         entropy     the escape energy gathered so far
+         entropyRoll the seat pressed BUILD ENTROPY: their NEXT roll is
+                     entropy, not movement
+         escape      the seat pressed ESCAPE NEXT TURN: their NEXT roll moves
+                     them and frees them, and nothing else may */
+    hole: null,
     /* A Frozen Moment laid on a seat, per seat. One-shot: it cancels a pending
        bonus roll, or nullifies the opponent's next bonus grant within their
        following turn, and is always cleared by the end of that turn. */
@@ -301,6 +347,7 @@ function cloneGame(state) {
     fight: state.fight ? { ...state.fight } : null,
     epoch: state.epoch ? { ...state.epoch } : null,
     shields: (state.shields || []).map((shield) => ({ ...shield })),
+    hole: state.hole ? { ...state.hole } : null,
     bonusRolls: { ...(state.bonusRolls || { 0: 0, 1: 0 }) },
     frozen: { ...(state.frozen || { 0: false, 1: false }) },
     futureSight: { ...(state.futureSight || { 0: null, 1: null }) },
@@ -477,6 +524,19 @@ export function applyAction(state, action, rng = Math.random) {
       if (actor !== active) return refused(state, action, "It is not your turn.");
       if (!piece) return refused(state, action, "That seat has no piece.");
 
+      /* A CONFINED PLAYER ROLLS ONLY WHAT THEIR CONFINEMENT ALLOWS.
+
+         The singularity holds the die: a confined seat whose next roll has
+         not been decided by the panel may not throw at all. The two decided
+         rolls - entropy, and the committed escape - are the only rolls the
+         hole lets through, and each is answered inside this action. */
+      const confined = state.hole?.playerId === active && state.hole?.phase !== "released"
+        ? state.hole
+        : null;
+      if (confined && !confined.escape && !confined.entropyRoll) {
+        return refused(state, action, "The singularity holds you. The panel decides your roll.");
+      }
+
       const drawn = Number(rng());
       const rolledFace = 1 + Math.min(5, Math.floor((Number.isFinite(drawn) ? drawn : 0) * 6));
       /* A FUTURE SIGHT reservation is the die now: the number was fixed when
@@ -485,6 +545,44 @@ export function applyAction(state, action, rng = Math.random) {
          may change it, and a reload keeps it because it lives in the state. */
       const reserved = state.futureSight?.[active];
       const face = Number.isInteger(reserved) ? reserved : rolledFace;
+
+      /* ENTROPY, NOT MOVEMENT.
+
+         The roll is the die the player was always going to throw - same rng,
+         same faces, same tumble on both screens - and its face becomes
+         escape energy instead of steps. Nothing moves, no square is landed
+         on, `lastRoll` is untouched (it records a MOVEMENT and this is not
+         one), and the turn is already over: RESOLVING lets both screens see
+         the gain, and the walk-on carries the turn to the opponent. */
+      if (confined?.entropyRoll) {
+        if (Number.isInteger(reserved)) {
+          next.futureSight = { ...(state.futureSight || { 0: null, 1: null }), [active]: null };
+        }
+        if ((state.bonusRolls?.[active] || 0) > 0) {
+          next.bonusRolls = { ...(state.bonusRolls || { 0: 0, 1: 0 }), [active]: state.bonusRolls[active] - 1 };
+        }
+        const entropy = (confined.entropy || 0) + face;
+        const threshold = holeThreshold(next.ledger, active);
+        next.hole = { ...confined, entropy, entropyRoll: false };
+        next.phase = PHASE.RESOLVING;
+        ok("holeEntropy", {
+          seat: active,
+          face,
+          gained: face,
+          entropy,
+          threshold,
+        });
+        return { state: next, events };
+      }
+
+      /* THE COMMITTED ESCAPE ROLL. It is an ordinary roll in every way - the
+         coin walks, the square answers - and the hole is gone before the
+         walk begins, so the release cannot be lost to a later refusal and
+         the landing that follows is an ordinary landing. */
+      if (confined?.escape) {
+        next.hole = null;
+        ok("holeEscaped", { seat: active, face });
+      }
       const from = piece.position;
       const to = advance(from, face);
       const cell = CELLS.find((entry) => entry.index === to) || CELLS[to];
@@ -701,6 +799,37 @@ export function applyAction(state, action, rng = Math.random) {
           fracturePos: from,
         };
         ok("epochOpened", { seat: active, startedAt: next.epoch.startedAt });
+      } else if (HOLE_CELL && cell?.id === HOLE_CELL.id) {
+        /* THE SINGULARITY TAKES HOLD HERE, IN THE STATE.
+
+           The same shared screen as the chests, the fight and Epoch - the
+           fact lives in the state and every client draws the middle from
+           it. What is its own is that it outlives the visit: `hole` holds
+           the seat across turns, and every later rule of the confinement
+           reads it.
+
+           ONE CONFINEMENT AT A TIME. The corner takes whoever lands on it
+           while nobody is held; a landing while the other seat is already
+           held is an ordinary silent corner - the simplest rule that can
+           never strand two seats in one hole or free the first by force. */
+        if (next.hole) {
+          next.landing.kind = "none";
+        } else {
+          next.landing.kind = "hole";
+          next.hole = {
+            playerId: active,
+            phase: "confined",
+            startedAt: now(),
+            entropy: 0,
+            entropyRoll: false,
+            escape: false,
+          };
+          ok("holeOpened", {
+            seat: active,
+            startedAt: next.hole.startedAt,
+            threshold: holeThreshold(next.ledger, active),
+          });
+        }
       } else {
         next.landing.kind = "none";
       }
@@ -730,7 +859,44 @@ export function applyAction(state, action, rng = Math.random) {
         return refused(state, action, "Test roll must be an integer from 1 to 28.");
       }
 
+      /* The same confinement gate as the ordinary throw: a held seat whose
+         next roll is undecided may not throw; the two decided rolls are
+         answered here, the same way. */
+      const confined = state.hole?.playerId === active && state.hole?.phase !== "released"
+        ? state.hole
+        : null;
+      if (confined && !confined.escape && !confined.entropyRoll) {
+        return refused(state, action, "The singularity holds you. The panel decides your roll.");
+      }
+
       const face = steps;
+
+      /* ENTROPY, NOT MOVEMENT. The test throw's own number becomes the
+         energy - the same conversion the real die makes, so the system can
+         be walked through step by step. */
+      if (confined?.entropyRoll) {
+        const entropy = (confined.entropy || 0) + face;
+        const threshold = holeThreshold(next.ledger, active);
+        next.hole = { ...confined, entropy, entropyRoll: false };
+        next.phase = PHASE.RESOLVING;
+        ok("holeEntropy", {
+          seat: active,
+          face,
+          gained: face,
+          entropy,
+          threshold,
+          test: true,
+        });
+        return { state: next, events };
+      }
+
+      /* THE COMMITTED ESCAPE ROLL: an ordinary throw, and the hole is gone
+         before the walk begins. */
+      if (confined?.escape) {
+        next.hole = null;
+        ok("holeEscaped", { seat: active, face, test: true });
+      }
+
       const from = piece.position;
       const to = advance(from, face);
       const cell = CELLS.find((entry) => entry.index === to) || CELLS[to];
@@ -902,6 +1068,28 @@ export function applyAction(state, action, rng = Math.random) {
           fracturePos: from,
         };
         ok("epochOpened", { seat: active, startedAt: next.epoch.startedAt, test: true });
+      } else if (HOLE_CELL && cell?.id === HOLE_CELL.id) {
+        /* The same confinement as the ordinary throw opens; the Test throw
+           walks here so the whole system can be tried on demand. */
+        if (next.hole) {
+          next.landing.kind = "none";
+        } else {
+          next.landing.kind = "hole";
+          next.hole = {
+            playerId: active,
+            phase: "confined",
+            startedAt: now(),
+            entropy: 0,
+            entropyRoll: false,
+            escape: false,
+          };
+          ok("holeOpened", {
+            seat: active,
+            startedAt: next.hole.startedAt,
+            threshold: holeThreshold(next.ledger, active),
+            test: true,
+          });
+        }
       } else {
         next.landing.kind = "none";
       }
@@ -1237,6 +1425,118 @@ export function applyAction(state, action, rng = Math.random) {
         turnsLeft: SHIELD_TURNS,
         slot: next.chest.result.slot,
         startedAt: next.chest.startedAt,
+      });
+      return { state: next, events };
+    }
+
+    /* ---------------------------------------------------- Black Hole panel
+
+       Three presses, and only the held seat may make them, only while the
+       panel is up (its own DECISION turn), and only once each: every press
+       moves the confinement on to a state the other presses refuse. */
+
+    case "buildEntropy": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        !state.hole ||
+        state.hole.playerId !== active ||
+        state.hole.phase !== "confined"
+      ) {
+        return refused(state, action, "There is no confinement here.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.hole.entropyRoll || state.hole.escape) {
+        return refused(state, action, "Your next roll is already decided.");
+      }
+      if ((state.hole.entropy || 0) >= holeThreshold(next.ledger, active)) {
+        return refused(state, action, "You already hold the energy to escape.");
+      }
+
+      /* THE COMMITMENT IS THE PRESS. The next roll this seat throws is
+         entropy - armed here, honoured in `roll` - and this turn ends at
+         once so the opponent plays theirs. Nothing moves and no money
+         changes hands. */
+      next.hole = { ...state.hole, entropyRoll: true };
+      next.phase = PHASE.TURN_END;
+      ok("holeBuilt", {
+        seat: active,
+        entropy: state.hole.entropy || 0,
+        threshold: holeThreshold(next.ledger, active),
+      });
+      return { state: next, events };
+    }
+
+    case "escapeNext": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        !state.hole ||
+        state.hole.playerId !== active ||
+        state.hole.phase !== "confined"
+      ) {
+        return refused(state, action, "There is no confinement here.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.hole.escape) {
+        return refused(state, action, "You have already committed to your escape.");
+      }
+      if (state.hole.entropyRoll) {
+        return refused(state, action, "You have already committed to building entropy.");
+      }
+      const threshold = holeThreshold(next.ledger, active);
+      if ((state.hole.entropy || 0) < threshold) {
+        return refused(state, action, "You do not hold the energy to escape yet.");
+      }
+
+      /* THE COMMITMENT HOLDS THEM UNTIL THE ROLL. Once pressed, no other
+         press may replace it - no more entropy, no vessel - and the turn
+         ends; the seat stays held through the opponent's turn and is
+         released only by its own committed roll. */
+      next.hole = { ...state.hole, escape: true };
+      next.phase = PHASE.TURN_END;
+      ok("holeCommitted", {
+        seat: active,
+        entropy: state.hole.entropy || 0,
+        threshold,
+      });
+      return { state: next, events };
+    }
+
+    case "acquireVessel": {
+      if (
+        state.phase !== PHASE.DECISION ||
+        !state.hole ||
+        state.hole.playerId !== active ||
+        state.hole.phase !== "confined"
+      ) {
+        return refused(state, action, "There is no confinement here.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (state.hole.escape) {
+        return refused(state, action, "You have already committed to your escape.");
+      }
+      const player = state.ledger.players.find((entry) => entry.seat === active);
+      if (!player) return refused(state, action, "That seat is not playing.");
+      if ((player.money || 0) < VESSEL_PRICE) {
+        return refused(state, action, "A Relativistic Escape Vessel costs ₹500, and you do not hold that much.");
+      }
+
+      /* ONE DEDUCTION, ONE RELEASE, ONE ACTION. The price is the whole of
+         the price - no fine is added - the money moves through the ledger's
+         own transaction with the entry that says what it bought, and the
+         confinement is released in the same action that was paid for, so a
+         repeated tap, a retry or a replayed request finds nothing left to
+         buy and nothing left to charge. */
+      adjustMoney(next.ledger, active, -VESSEL_PRICE, {
+        turn: state.turn,
+        kind: "hole",
+        text: "Acquired a Relativistic Escape Vessel",
+      });
+      next.hole = { ...state.hole, phase: "released" };
+      next.phase = PHASE.RESOLVING;
+      ok("holeVessel", {
+        seat: active,
+        price: VESSEL_PRICE,
+        money: (player.money || 0) - VESSEL_PRICE,
       });
       return { state: next, events };
     }
@@ -1894,6 +2194,14 @@ export function applyAction(state, action, rng = Math.random) {
 
       if (state.phase === PHASE.DECISION) {
         const kind = state.landing?.kind;
+        /* A CONFINED TURN HAS NO OTHER WAY OUT. The panel is the whole of
+           the decision - whether the turn began at the capture (its landing
+           IS the hole) or at a later panel turn (no landing at all) - so a
+           stray `continue` cannot end the turn early and slip the seat past
+           its own confinement. */
+        if (state.hole && state.hole.playerId === active && (kind === "hole" || !state.landing)) {
+          return refused(state, action, "The singularity holds you. The panel decides your turn.");
+        }
         if (kind === "buy" || kind === "own") {
           return refused(state, action, "Choose, then the turn can end.");
         }
@@ -1988,6 +2296,26 @@ export function applyAction(state, action, rng = Math.random) {
         return refused(state, action, "There is no turn to end.");
       }
 
+      /* A CONFINEMENT RELEASED THIS TURN GOES WITH THE TURN. The vessel's
+         release has had its beat (RESOLVING, then this); by the time a new
+         turn is begun the hole is simply gone. */
+      if (next.hole?.phase === "released") next.hole = null;
+
+      /* WHICH PHASE A SEAT'S TURN BEGINS IN.
+
+         An ordinary seat begins with the die. A HELD seat begins with the
+         PANEL - its turn IS the panel - unless its confinement has already
+         decided the roll it owes: entropy to gather, or the escape it
+         committed to. Those two begin with the die the ordinary way, and
+         the roll they throw is answered inside `roll`. */
+      const turnPhaseFor = (seat) => {
+        const held = next.hole && next.hole.playerId === seat && next.hole.phase !== "released";
+        if (!held) return PHASE.AWAITING_ROLL;
+        return next.hole.entropyRoll || next.hole.escape
+          ? PHASE.AWAITING_ROLL
+          : PHASE.DECISION;
+      };
+
       /* A TEMPORAL LOOP OR A STOLEN MOMENT IS STILL WAITING. The turn does not
          move on while the player holds an unspent bonus roll: the moment
          repeats, and they throw again. The bonus is spent by the throw itself
@@ -1996,7 +2324,7 @@ export function applyAction(state, action, rng = Math.random) {
          eaten the bonus at the moment it was drawn, so nothing is pending here
          for a frozen player. */
       if ((state.bonusRolls?.[state.active] || 0) > 0) {
-        next.phase = PHASE.AWAITING_ROLL;
+        next.phase = turnPhaseFor(state.active);
         next.landing = null;
         next.visit = null;
         next.chest = null;
@@ -2048,7 +2376,7 @@ export function applyAction(state, action, rng = Math.random) {
       next.shields = aged;
 
       next.active = to;
-      next.phase = PHASE.AWAITING_ROLL;
+      next.phase = turnPhaseFor(to);
       next.turn = (state.turn || 0) + 1;
       next.landing = null;
       next.visit = null;
