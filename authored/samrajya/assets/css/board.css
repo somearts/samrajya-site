@@ -5914,6 +5914,14 @@ button.board__cell--corner:focus-visible {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink);
+  /* It is a <summary> now - a disclosure on a phone, open on a wider screen -
+     and the heading itself is the affordance. A stock triangle beside it would
+     be a second one, drawn in the wrong voice. */
+  list-style: none;
+}
+
+.space-card__protocols-name::-webkit-details-marker {
+  display: none;
 }
 
 .space-card__protocols-name::after {
@@ -6094,4 +6102,554 @@ button.board__cell--corner:focus-visible {
   font-size: 0.72em;
   color: var(--ink-soft);
   text-decoration: line-through;
+}
+
+/* ==========================================================================
+   THE PHONE LAYER
+
+   Everything above is a board drawn inside the four-by-eight hole in the
+   middle of the ring: a beautiful miniature on a desktop, and a 49px cell on a
+   360px phone. At that size a property card is 190px wide, its type is 8-12px,
+   its buttons are 20-32px tall, and the Outer Space counter cannot show a rule
+   at a size a person can read. None of that is a colour or a rule problem, so
+   none of it is fixed by changing the game - it is fixed by giving a phone a
+   different stage.
+
+   Three things happen here, and only for widths up to 480px:
+
+   1. THE BOARD FITS THE GLASS. Its height is the viewport (dvh, not vh, so a
+      phone's collapsing address bar cannot crop it), the safe areas are read
+      from --safe-top/--safe-bottom with env() as the fallback, and the two
+      reserves are the real heights of the header and the footer rather than
+      guesses. The cells keep a 44px floor wherever the glass can give it.
+
+   2. THE CARD BECOMES A SHEET. A decision is not a miniature any more: the
+      card leaves the hole and covers the screen, on the board's own paper,
+      clear of the notch and the home indicator, with 14px type and 44px
+      controls. The board is still underneath, so dismissing a read card gives
+      it straight back.
+
+   3. THE COUNTER AND THE PROPERTY CARD RE-FLOW. Three portrait suits become
+      three rows (art, name, price, one press), the protocols become a
+      disclosure, and the property card's table is read at 14px with its two
+      answers pinned at 44px. The order of information does not change; only
+      its size does.
+   ========================================================================== */
+
+@media (max-width: 480px) {
+  /* ---------------------------------------------------------- the screen */
+
+  .board-screen {
+    /* The two reservations, measured from the real chrome: 64px above the
+       board (6px stage + 6px body + a 44px roster + an 8px gap) and 56px below
+       it (6px body + a 44px footer + 6px stage). The safe insets are added on
+       top, because a notch is not part of either. */
+    --reserve-top: calc(64px + var(--safe-top, env(safe-area-inset-top)));
+    --reserve-bottom: calc(56px + var(--safe-bottom, env(safe-area-inset-bottom)));
+    gap: 8px;
+  }
+
+  .stage--board {
+    height: 100dvh;
+    min-height: 100dvh;
+    grid-template-rows: minmax(0, 1fr) auto;
+    padding: max(6px, var(--safe-top, env(safe-area-inset-top))) 8px
+      max(6px, var(--safe-bottom, env(safe-area-inset-bottom)));
+  }
+
+  .stage--board .stage__body {
+    padding-block: 6px;
+    align-content: center;
+  }
+
+  .stage--board .stage__foot {
+    padding-top: 0;
+  }
+
+  .board-foot .btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* ------------------------------------------------------- the two players
+
+     One line of name and turn, one line of money, and a 44px frame around
+     both. The civilization goes - it is already carried by the coin and it is
+     the first thing that can be spared at 360px (the desktop rule above says
+     so too, at 430px). */
+
+  .board-who {
+    gap: 6px;
+  }
+
+  .who {
+    min-height: 44px;
+    padding: 3px 8px;
+    column-gap: 6px;
+    row-gap: 1px;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1.2;
+  }
+
+  .who__name {
+    font-size: 14px;
+  }
+
+  .who__money {
+    margin-top: 1px;
+    font-size: 14px;
+  }
+
+  .who__rupee {
+    font-size: 14px;
+  }
+
+  .who__turn {
+    padding: 1px 5px;
+    font-size: 14px;
+    letter-spacing: 0.06em;
+  }
+
+  .who__vs {
+    padding: 0 2px;
+    font-size: 14px;
+  }
+
+  .who__civ {
+    display: none;
+  }
+
+  /* ---------------------------------------------------------------- the die
+
+     A die is the board's primary control; 30px is a decoration. 44px is the
+     floor, and the centre has room for it at every size in the range. */
+
+  .board-screen {
+    --die-size: max(44px, calc(var(--cell) * 0.62));
+  }
+
+  /* WAITING IS SAID ON THE DIE ITSELF.
+
+     The middle already says whose turn it is in words. The die is the one thing
+     a thumb reaches for, so it says the same thing in its own language: full
+     strength when it is this seat's to throw, half strength while the other
+     seat has the turn, and fainter still while a request is in flight and the
+     board has stopped taking presses. Nothing here is the lock - the lock is
+     `data-rollable` and `data-busy` in board.js - this is only the lock made
+     visible. */
+  .board[data-rollable="false"] .board__dice {
+    opacity: 0.55;
+  }
+
+  .board[data-busy="true"] .board__dice {
+    opacity: 0.38;
+  }
+
+  .board[data-busy="true"] {
+    cursor: progress;
+  }
+
+  /* The corner marks and names used container units (cqi) from .board; the
+     card below has to escape that container to be a fixed sheet, so these two
+     labels size off the cell instead. Same drawing, same floors. */
+  .board {
+    container-type: normal;
+  }
+
+  .board__mark--corner {
+    width: clamp(13px, calc(var(--cell) * 0.36), 18px);
+    height: clamp(13px, calc(var(--cell) * 0.36), 18px);
+  }
+
+  .board__corner-name {
+    font-size: clamp(8px, calc(var(--cell) * 0.22), 11px);
+  }
+
+  /* --------------------------------------------------------------- the card
+
+     The sheet. Inset 0 against the viewport (the board no longer contains a
+     fixed descendant), on the board's paper, padded clear of the notch and
+     the home indicator, and allowed to scroll only if a stage genuinely has
+     more to say than the glass can hold. */
+
+  .board__card {
+    position: fixed;
+    inset: 0;
+    left: 0;
+    top: 0;
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    padding: max(10px, var(--safe-top, env(safe-area-inset-top))) 16px
+      max(10px, var(--safe-bottom, env(safe-area-inset-bottom)));
+    border: 0;
+    border-radius: 0;
+    background: var(--cell-ground);
+    box-shadow: none;
+    z-index: 250;
+    display: block;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    pointer-events: auto;
+    font-size: 15px;
+    line-height: 1.4;
+  }
+
+  .board__card[hidden] {
+    display: none;
+  }
+
+  /* Every text run in a card is at least 14px. The rules below name the
+     components that used to be miniature, so a future card cannot silently
+     inherit the old 8px scale. `:where()` keeps this floor at the sheet's own
+     specificity, so a component's larger size still wins. */
+  .board__card :where(h3, h4, p, li, summary, span, b) {
+    font-size: max(14px, 1em);
+  }
+
+  /* -------------------------------------------------------- property card */
+
+  .board__card[data-card-kind="property"],
+  .board__card[data-card-kind="space"],
+  .board__card[data-card-kind="chest"],
+  .board__card[data-card-kind="epoch"],
+  .board__card[data-card-kind="fight"],
+  .board__card[data-card-kind="hole"],
+  .board__card[data-card-kind="hole-lore"] {
+    left: 0;
+    top: 0;
+    width: auto;
+    height: auto;
+    max-height: none;
+    display: block;
+    overflow-y: auto;
+    padding: max(10px, var(--safe-top, env(safe-area-inset-top))) 16px
+      max(10px, var(--safe-bottom, env(safe-area-inset-bottom)));
+  }
+
+  .board__card[data-card-kind="property"] .property-card {
+    height: auto;
+    min-height: 0;
+    grid-template-rows: auto auto auto auto auto;
+    gap: 14px;
+    padding: 4px 0 8px 12px;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .property-card::before {
+    width: 4px;
+    border-radius: 4px;
+  }
+
+  .property-card__head {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .property-card__art {
+    width: 64px;
+    border-radius: 8px;
+  }
+
+  .property-card__pill {
+    width: 32px;
+    height: 6px;
+  }
+
+  .property-card__name {
+    font-size: 20px;
+    line-height: 1.15;
+  }
+
+  .property-card__price {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    font-size: 20px;
+  }
+
+  .property-card__price > span:first-child {
+    font-size: 1em;
+  }
+
+  .property-card__price-was {
+    font-size: 14px;
+  }
+
+  .property-card__description,
+  .property-card__advantage-text,
+  .property-card__status,
+  .property-card__rent,
+  .property-card__fullset {
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .property-card__label {
+    margin-bottom: 2px;
+    font-size: 14px;
+    letter-spacing: 0.06em;
+  }
+
+  .property-card__description {
+    gap: 2px;
+  }
+
+  .property-card__advantage {
+    padding-top: 12px;
+  }
+
+  .property-card__buy {
+    min-height: 48px;
+    padding: 0 14px;
+    border-radius: 8px;
+    font-size: 16px;
+  }
+
+  .property-card__next,
+  .property-card__sell {
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .property-card__close {
+    top: 0;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+
+  /* The builds, when a read card shows them, are rows of 44px presses rather
+     than three miniature columns. */
+  .board__card[data-card-kind="property"] .builds {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    overflow: visible;
+  }
+
+  .board__card[data-card-kind="property"] .build {
+    min-height: 44px;
+  }
+
+  /* THE UPGRADES ARE NOT ON A DECISION ON A PHONE.
+
+     Three build rows are what the desktop card gives the middle of the board,
+     and on a 360px glass they push the Pass pill past the fold - a decision
+     whose second answer cannot be reached without scrolling. Nothing in that
+     block can be acted on mid-decision either (the set is not held yet, and
+     building is a roll-phase action), so on a phone the decision keeps the two
+     answers and the reasoning, and the upgrades stay where they belong: on the
+     read card, opened from the square itself. */
+  .board__card[data-mode="decision"] .builds {
+    display: none;
+  }
+
+  /* ----------------------------------------------------------- the counter */
+
+  .board__card[data-card-kind="space"] .space-card {
+    gap: 12px;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .space-card__bar {
+    align-items: flex-start;
+    gap: 12px;
+    padding: 0;
+  }
+
+  .space-card__headline {
+    font-size: 16px;
+    letter-spacing: 0.04em;
+  }
+
+  .space-card__close {
+    width: 44px;
+    height: 44px;
+    font-size: 22px;
+  }
+
+  .space-card__myth {
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  /* Three rows, each one press. The art is a 56px square so the suit is still
+     recognisable without making the reader scroll to the third one. */
+  .space-card__suits {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .space-suit {
+    display: grid;
+    grid-template-columns: 56px minmax(0, 1fr) 116px;
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 2px 12px;
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .space-suit__art {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    width: 56px;
+    height: 56px;
+    overflow: hidden;
+  }
+
+  .space-suit__art svg {
+    width: 100%;
+    height: 100%;
+  }
+
+  .space-suit__name {
+    grid-column: 2;
+    grid-row: 1;
+    text-align: left;
+    font-size: 16px;
+    line-height: 1.2;
+  }
+
+  .space-suit__price {
+    grid-column: 2;
+    grid-row: 2;
+    text-align: left;
+    font-size: 14px;
+  }
+
+  .space-suit__buy {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    width: 100%;
+    min-height: 44px;
+    margin: 0;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+
+  /* The protocols: a 44px summary at 16px and, when opened, rules at 14px. */
+  .space-card__protocols {
+    display: block;
+    padding-top: 10px;
+    border-top: 1px solid rgb(18 17 16 / 0.12);
+  }
+
+  .space-card__protocols-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    margin: 0;
+    font-size: 16px;
+    cursor: pointer;
+  }
+
+  .space-card__protocols-name::after {
+    content: "";
+    flex: 1;
+    min-width: 1em;
+    border-top: 1px solid rgb(18 17 16 / 0.16);
+  }
+
+  .space-card__protocols[open] .space-card__protocols-name {
+    margin-bottom: 8px;
+  }
+
+  .space-card__protocols-list {
+    gap: 8px;
+  }
+
+  .space-card__protocols-list li {
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  /* ------------------------------------------------------- the two popups */
+
+  .space-popup {
+    gap: 12px;
+    padding: 4px 0 8px;
+  }
+
+  .space-popup__art {
+    width: 130px;
+  }
+
+  .space-popup__title {
+    font-size: 22px;
+  }
+
+  .space-popup__text {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .space-popup__cta {
+    min-height: 48px;
+    padding: 0 20px;
+    font-size: 16px;
+  }
+
+  /* --------------------------------------------------- the waiting message */
+
+  .board__announce--status .announce__sub,
+  .board__announce--turn .announce__sub,
+  .announce__sub {
+    font-size: 14px;
+  }
+
+  /* A card that could not be drawn says so, rather than leaving a blank
+     middle. It carries the one thing that can fix it. */
+  .draw-failure {
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    gap: 12px;
+    min-height: 60vh;
+    padding: 24px 8px;
+    text-align: center;
+  }
+
+  .draw-failure__title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .draw-failure__note {
+    margin: 0;
+    max-width: 30ch;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--ink-soft);
+  }
+
+  .draw-failure__retry {
+    min-height: 44px;
+    min-width: 132px;
+    padding: 0 18px;
+    border: 1px solid var(--ink);
+    border-radius: 8px;
+    background: var(--ink);
+    font: inherit;
+    font-size: 15px;
+    color: var(--cell-ground);
+    cursor: pointer;
+  }
 }

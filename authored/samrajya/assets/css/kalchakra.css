@@ -566,10 +566,14 @@ input {
 /* ------------------------------------------------------- the board screen */
 
 /* The board is the first thing that has to fit on a phone, so its screen takes
-   the whole viewport and nothing else is allowed to compete for the height. */
+   the whole viewport and nothing else is allowed to compete for the height.
+   The safe areas are read through the same custom properties the rest of the
+   mobile layout uses (falling back to env() on a device that only has those). */
 .stage--board {
-  padding: max(0.6rem, env(safe-area-inset-top)) max(0.6rem, env(safe-area-inset-right))
-    max(0.6rem, env(safe-area-inset-bottom)) max(0.6rem, env(safe-area-inset-left));
+  padding: max(0.6rem, var(--safe-top, env(safe-area-inset-top)))
+    max(0.6rem, env(safe-area-inset-right))
+    max(0.6rem, var(--safe-bottom, env(safe-area-inset-bottom)))
+    max(0.6rem, env(safe-area-inset-left));
 }
 
 .stage--board .stage__body {

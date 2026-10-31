@@ -334,6 +334,9 @@ export function board({
   let cardMode = "read";
   let reading = false;
   let busy = false;
+  /* The last action a person asked for, and when. A double-tap is one press;
+     see `run` for why the in-flight lock is not enough on a fast network. */
+  let lastPress = { type: null, at: 0 };
   /* TRUE WHILE THE BLACK HOLE'S FIVE-SECOND BLACKOUT HOLDS THIS SCREEN.
      Declared with the other board-wide flags because everything that draws
      or acts reads it: no panel opens, no action leaves, the die is not
@@ -349,6 +352,7 @@ export function board({
   let pendingSnapshot = null;
 
   frame.game = game;
+  frame.seat = mySeat;
   frame.ledger = game?.ledger ?? null;
   frame.announce = announce;
 
@@ -742,6 +746,28 @@ export function board({
        swallows every pointer event; this is the keyboard's door, and the
        server-side rules remain the final word whatever arrives. */
     if (busy || cinematic) return null;
+    /* ONE PRESS IS ONE ACTION, EVEN ON A GLASS SCREEN.
+
+       `busy` closes the door while a request is in flight, but a local server
+       answers in under the 45ms between two taps of a double-tap, so the lock
+       can be down again while the button the thumb just hit is still under
+       it - and the same action goes out twice. A second press of the SAME
+       action within 600ms is a double-tap, not a second decision: every
+       action on this board changes the screen or ends the turn, so nothing
+       legitimate repeats that fast. Refusals are excluded because they change
+       nothing and a player may well try again immediately. */
+    const now = Date.now();
+    if (action.type === lastPress.type && now - lastPress.at < 600) return null;
+    lastPress = { type: action.type, at: now };
+    /* The presses this board actually accepted, for the mobile harness. It is
+       a passive record - nothing reads it in the app - and it exists because a
+       continue that ends a turn makes the board settle itself, and that settle
+       sends a continue of its own: the wire count alone cannot tell a thumb
+       from the state machine. Test-mode rooms only. */
+    if (game?.testMode) {
+      (frame.presses ||= []).push(action.type);
+      if (frame.presses.length > 50) frame.presses.shift();
+    }
     busy = true;
     paintPhase();
     try {
@@ -756,6 +782,9 @@ export function board({
       const refusedHere = result?.events?.some(
         (event) => event.type === "refused" && event.action === action.type,
       );
+      /* A refusal is not a decision: the player may well try the same thing
+         again at once, so the double-tap guard stands down for it. */
+      if (refusedHere) lastPress = { type: null, at: 0 };
       if (!refusedHere) await settle();
       return result;
     } finally {
@@ -2221,6 +2250,69 @@ export function board({
 
   /** Open the card the decision belongs to. */
   async function openDecision() {
+    try {
+      /* A TEST-ONLY FAULT INJECTION. It exists so the fallback below can be
+         proved in a real browser: set `data-fail-draw="1"` on the board and
+         the next decision draw throws exactly as a broken stage would. Only
+         test-mode rooms can reach it. */
+      if (game?.testMode && frame.dataset.failDraw === "1") {
+        frame.dataset.failDraw = "0";
+        throw new Error("test: the decision draw threw");
+      }
+      await openDecisionUnsafe();
+    } catch (error) {
+      drawFailure(error);
+    }
+  }
+
+  /* A CARD THAT THREW IS NOT A BLANK SCREEN.
+
+     Every stage draws from the state, and the state can name a card a stage
+     cannot build - a bad suit id, a missing record, a bug in a brand new
+     branch. The old failure mode was the worst one: the draw threw mid-way,
+     the holder kept whatever was in it, and the turn sat in DECISION with
+     nothing to press and no way out but a reload.
+
+     So a throw is caught at the one place all decisions pass through, and the
+     holder is given a card that says what happened and a 44px TRY AGAIN that
+     redraws from the same state. The turn is untouched; retrying is safe
+     because drawing reads the game and never changes it. */
+  function drawFailure(error) {
+    console.error("Samrajya: a card could not be drawn", error);
+    const box = holder();
+    if (!box) return;
+    // The stage keys guard against redrawing; a retry must not be mistaken for
+    // "the same stage is already on screen".
+    spaceStage = null;
+    chestStage = null;
+    epochStage = null;
+    holeStage = null;
+    cardKey = null;
+    cardMode = isMyTurn() ? "decision" : "read";
+    reading = false;
+    box.dataset.cardKind = "fallback";
+    box.hidden = false;
+    box.scrollTop = 0;
+    box.replaceChildren(el("div", { class: "draw-failure" }, [
+      el("p", { class: "draw-failure__title", text: "This card did not draw" }),
+      el("p", {
+        class: "draw-failure__note",
+        text: "Your turn is safe. Try drawing it again.",
+      }),
+      el("button", {
+        type: "button",
+        class: "draw-failure__retry",
+        text: "Try again",
+        onclick: () => {
+          box.hidden = true;
+          void openDecision();
+        },
+      }),
+    ]));
+    paintPhase();
+  }
+
+  async function openDecisionUnsafe() {
     const landing = game.landing;
     /* A CONFINED TURN HAS NO SQUARE - the panel IS the decision, and it is
        opened here so the ordinary walk (settle asks for the decision) finds

@@ -303,8 +303,17 @@ function suitCard(suit, { mine, money }) {
 
 /** The counter: headline with the close X beside it, the mythology line,
     the one row of three portrait cards, and the Mission Protocols beneath
-    them - the order the space asks for, nothing else. */
+    them - the order the space asks for, nothing else.
+
+    ON A PHONE THE PROTOCOLS ARE A DISCLOSURE. Six rule rows at a readable
+    size are taller than the glass, and the suits - the thing being chosen -
+    must never be pushed below the fold. The summary is the heading; the
+    rule stays one press away and no smaller than the rest of the card. */
 function selectionContent(space, { mine, money }) {
+  const roomy =
+    typeof window === "undefined" ||
+    typeof window.matchMedia !== "function" ||
+    !window.matchMedia("(max-width: 480px)").matches;
   return [
     el("div", { class: "space-card__bar" }, [
       el("h3", { class: "space-card__headline", text: HEADLINE }),
@@ -320,8 +329,8 @@ function selectionContent(space, { mine, money }) {
     ]),
     el("p", { class: "space-card__myth", text: MYTH }),
     el("div", { class: "space-card__suits" }, SUITS.map((suit) => suitCard(suit, { mine, money }))),
-    el("section", { class: "space-card__protocols" }, [
-      el("h4", { class: "space-card__protocols-name", text: "Mission protocols" }),
+    el("details", { class: "space-card__protocols", open: roomy }, [
+      el("summary", { class: "space-card__protocols-name", text: "Mission protocols" }),
       el("ul", { class: "space-card__protocols-list" },
         PROTOCOLS.map(([label, text]) =>
           el("li", {}, [el("b", { text: label }), el("span", { text: ` ${text}` })]),
