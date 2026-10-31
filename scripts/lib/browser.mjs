@@ -88,18 +88,44 @@ export class Page {
     });
   }
 
-  /** The uncaught errors the page has thrown, as one string. */
-  errors() {
+  /** The uncaught errors the page has thrown, as one string.
+   *
+   *  `ignore` is the one error a test caused on purpose: a fault injection is
+   *  reported by the app exactly like a real one (a console error and a trace),
+   *  and the test that injected it is the only caller that may say so. Every
+   *  other entry is a failure. */
+  errors(ignore = null) {
     return this.logs
       .filter((entry) => entry.kind === "error" || entry.kind === "assert")
+      .filter((entry) => !(ignore && ignore.test(entry.text)))
       .map((entry) => entry.text)
       .join("\n");
   }
 
-  send(method, params = {}) {
+  send(method, params = {}, timeout = 30000) {
     const id = ++this.nextId;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      /* A COMMAND THAT NEVER COMES BACK IS A BUG REPORT, NOT A HANG.
+
+         The protocol answers every command or reports an error, and a harness
+         that waits forever on a missing answer produces nothing at all - no
+         screenshot, no failure, no line saying which call went quiet. So a
+         command that has not been answered in half a minute fails loudly with
+         its own name. */
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`CDP ${method} did not answer in ${timeout}ms`));
+      }, timeout);
+      this.pending.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
       this.ws.send(JSON.stringify({ id, method, params }));
     });
   }
@@ -290,7 +316,14 @@ export async function launch({ port = 9777 } = {}) {
     async close() {
       child.kill();
       await sleep(300);
-      await rm(profile, { recursive: true, force: true }).catch(() => {});
+      /* Bounded: on Windows a profile directory can still be held by the
+         dying renderer, and `fs.rm` will retry a locked file for a long time.
+         A harness that cannot exit is worse than a temporary directory that
+         outlives it. */
+      await Promise.race([
+        rm(profile, { recursive: true, force: true }).catch(() => {}),
+        sleep(5000),
+      ]);
     },
   };
 }

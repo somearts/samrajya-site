@@ -6,6 +6,11 @@ public/
 
 node_modules/
 
+# Screenshots and measurements from `npm run test:mobile`. They are evidence
+# for a change, not part of the site: they are regenerated on every run and a
+# phone-sized PNG is a megabyte.
+mobile-shots/
+
 # Editors and operating systems.
 .vscode/
 .idea/
