@@ -254,9 +254,15 @@ async function capture(page, viewport, name, extra = {}) {
   const dir = join(SHOTS, viewport.name);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, `${name}.png`), await page.screenshot());
+  /* The record keeps the honest error list: everything the page threw, minus
+     the one fault the draw-failure stage injected on purpose - and it says
+     when it took one out, so a reader of the JSON is not asked to trust that
+     a blank list means a clean page. */
+  const pageErrors = page.errors(INJECTED_FAULT) || "";
+  const injectedFault = pageErrors !== (page.errors() || "");
   await writeFile(
     join(dir, `${name}.json`),
-    JSON.stringify({ ...report, extra, pageErrors: page.errors() || "" }, null, 2),
+    JSON.stringify({ ...report, extra, pageErrors, injectedFault }, null, 2),
   );
   const line = summarise(`${viewport.name} ${name}`, report);
   console.log(line);
