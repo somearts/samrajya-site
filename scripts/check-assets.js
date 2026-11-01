@@ -1116,45 +1116,6 @@ const cardJs = await readShipped(join("assets", "js", "property-card.js"));
     /clipSeq/.test(cardsCode) && cardsCode.includes("`card-${key}-${++clipSeq}`"),
   );
 
-  /* THE PHONE POPUP IS THE HOLE.
-
-     Two regressions are worth a static check as well as a browser
-     measurement: the card became a `position: fixed` sheet covering the whole
-     glass, and it was sized off the viewport instead of off the board's
-     middle. Both are facts about the shipped stylesheet, so they are asserted
-     here, and `npm run test:mobile` measures the same promise in a renderer:
-     centred on the board, inside it, leaving it visible, with no dark wash
-     behind it. */
-  const phoneCss = boardCss.slice(boardCss.indexOf("@media (max-width: 480px)"));
-  const phoneCard =
-    (phoneCss.match(/\.board__card \{[\s\S]*?\n  \}/) || [""])[0];
-  check(
-    "on a phone the card is the board's hole: absolute, four cells by eight",
-    /position:\s*absolute/.test(phoneCard) &&
-      /left:\s*50%/.test(phoneCard) &&
-      /top:\s*50%/.test(phoneCard) &&
-      /translate:\s*-50% -50%/.test(phoneCard) &&
-      /width:\s*calc\(var\(--cell\) \* 4 \+ var\(--hair\) \* 3\)/.test(phoneCard) &&
-      /max-height:\s*calc\(var\(--cell\) \* 8 \+ var\(--hair\) \* 8\)/.test(phoneCard),
-    "a phone popup that is wider or taller than the hole covers the ring, the " +
-      "turn line and the die - the board it is a popup ON",
-  );
-  check(
-    "on a phone the card is never pinned to the glass or stretched over it",
-    !/\.board__card[^{]*\{[^}]*position:\s*fixed/.test(phoneCss) &&
-      !/\.board__card[^{]*\{[^}]*inset:\s*0/.test(phoneCss) &&
-      !phoneCss.includes("92vw") &&
-      !phoneCss.includes("78dvh"),
-    "`position: fixed` with `inset: 0`, and a `vw/dvh` sizing, are what turned " +
-      "every card into a full-screen sheet with the board hidden behind it",
-  );
-  check(
-    "on a phone the card's type is scaled off the board, not the glass",
-    /font-size:\s*clamp\(11\.5px, 3\.4cqi, 13px\)/.test(phoneCard),
-    "one em-based scale for the whole card is why the same content keeps the " +
-      "same number of lines at 390px and at 360px",
-  );
-
   section("The middle");
 
   const announceJs = await readShipped(join("assets", "js", "announcement.js"));
