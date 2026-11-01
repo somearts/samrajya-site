@@ -6251,7 +6251,7 @@ button.board__cell--corner:focus-visible {
   }
 
   /* The corner marks and names used container units (cqi) from .board; the
-     card below has to escape that container to be a fixed sheet, so these two
+     card below has to escape that container to be a fixed popup, so these two
      labels size off the cell instead. Same drawing, same floors. */
   .board {
     container-type: normal;
@@ -6268,27 +6268,43 @@ button.board__cell--corner:focus-visible {
 
   /* --------------------------------------------------------------- the card
 
-     The sheet. Inset 0 against the viewport (the board no longer contains a
-     fixed descendant), on the board's paper, padded clear of the notch and
-     the home indicator, and allowed to scroll only if a stage genuinely has
-     more to say than the glass can hold. */
+     A CENTRED SHEET, NOT A FULL-SCREEN ONE.
+
+     The card is a popup on a phone the way it is on a desktop: it floats over
+     the middle of the board, the board and the turn stay visible around it,
+     and it is dismissed by the same press it always was. What changes at this
+     width is only its size: it is measured against the glass rather than
+     against the cells, because four cells on a 390px screen is 260px and that
+     is not a card anybody can read. `--sheet-w`/`--sheet-h` are the two
+     numbers the rules below share.
+
+     It is centred with `translate`, not `transform`. A card is thrown onto the
+     screen with a WAAPI rotateY that owns `transform` for the length of the
+     turn - and, with `fill: "both"`, for good - so a transform of our own here
+     would be the first thing that animation threw away.
+
+     It scrolls inside itself when a stage has more to say than the glass can
+     hold, which is the one thing the sheet got right and is kept. */
 
   .board__card {
+    --sheet-w: min(92vw, 400px);
+    --sheet-h: min(78dvh, 720px);
+
     position: fixed;
-    inset: 0;
-    left: 0;
-    top: 0;
-    width: auto;
+    inset: auto;
+    left: 50%;
+    top: 50%;
+    translate: -50% -50%;
+    width: var(--sheet-w);
     height: auto;
     max-width: none;
-    max-height: none;
+    max-height: var(--sheet-h);
     margin: 0;
-    padding: max(10px, var(--safe-top, env(safe-area-inset-top))) 16px
-      max(10px, var(--safe-bottom, env(safe-area-inset-bottom)));
-    border: 0;
-    border-radius: 0;
+    padding: 16px 18px;
+    border: 1px solid rgb(18 17 16 / 0.14);
+    border-radius: 12px;
     background: var(--cell-ground);
-    box-shadow: none;
+    box-shadow: 0 10px 32px rgb(18 17 16 / 0.3);
     z-index: 250;
     display: block;
     overflow-x: hidden;
@@ -6321,15 +6337,14 @@ button.board__cell--corner:focus-visible {
   .board__card[data-card-kind="fight"],
   .board__card[data-card-kind="hole"],
   .board__card[data-card-kind="hole-lore"] {
-    left: 0;
-    top: 0;
-    width: auto;
+    left: 50%;
+    top: 50%;
+    width: var(--sheet-w);
     height: auto;
-    max-height: none;
+    max-height: var(--sheet-h);
     display: block;
     overflow-y: auto;
-    padding: max(10px, var(--safe-top, env(safe-area-inset-top))) 16px
-      max(10px, var(--safe-bottom, env(safe-area-inset-bottom)));
+    padding: 16px 18px;
   }
 
   .board__card[data-card-kind="property"] .property-card {
