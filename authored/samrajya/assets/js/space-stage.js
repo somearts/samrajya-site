@@ -249,27 +249,27 @@ const SUIT_ART = Object.freeze({
 
 /* ------------------------------------------------------------------ copy */
 
-const HEADLINE = "HERE BEGINS YOUR INTERSTELLAR JOURNEY";
+const HEADLINE = "YOUR INTERSTELLAR JOURNEY";
 
 const MYTH =
-  "Beyond the boundaries of Earth lies a universe governed by forces no " +
-  "civilization can fully comprehend. Survival belongs to those who evolve, " +
-  "adapt, and master the technology of the unknown. Your journey beyond the " +
-  "familiar begins here.";
+  "Survival belongs to those who evolve, adapt, and master the unknown.";
 
 /* THE PROTOCOLS ARE THE MECHANICS' OWN WORDS, not new rules: one discount
    per purchase (the suit flips to `used` by its first eligible buy), any
    eligible property during the circuit, one suit per seat (the server
    refuses a second), retirement on the seat's return to Outer Space, the
    expiry notice when the discount was never spent, and the purchase price
-   only - rent, upgrades and fees never see the discount. */
+   only - rent, upgrades and fees never see the discount.
+
+   FOUR LINES, NOT SIX. On a phone the card is the board's hole - four cells
+   wide - and six labelled rules were a screen and a half of small print. Each
+   rule below still says the whole of its rule; the label is what got shorter,
+   and the two that were one idea (when, and how many) now share a line. */
 const PROTOCOLS = [
-  ["One acquisition:", "Each suit grants a discount on one eligible property purchase."],
-  ["Choose your target:", "Apply the discount to any eligible property during your circuit."],
-  ["No stacking:", "Only one suit can be active per player."],
-  ["Circuit limit:", "Your suit remains active until you complete one full circuit and return to Outer Space."],
-  ["Unclaimed advantage:", "If you have not used the discount when you return to Outer Space, the suit expires."],
-  ["Purchase only:", "Discounts apply to property purchase prices, not rent, upgrades, or fees."],
+  ["One purchase:", "a suit discounts one eligible property."],
+  ["During your circuit:", "any target, one suit per player."],
+  ["Expiry:", "unspent when you return to Outer Space, it lapses."],
+  ["Price only:", "not rent, upgrades or fees."],
 ];
 
 /** Which suit's notice this visit has already shown, so a repaint cannot
@@ -305,15 +305,12 @@ function suitCard(suit, { mine, money }) {
     the one row of three portrait cards, and the Mission Protocols beneath
     them - the order the space asks for, nothing else.
 
-    ON A PHONE THE PROTOCOLS ARE A DISCLOSURE. Six rule rows at a readable
-    size are taller than the glass, and the suits - the thing being chosen -
-    must never be pushed below the fold. The summary is the heading; the
-    rule stays one press away and no smaller than the rest of the card. */
+    THE PROTOCOLS ARE ALWAYS OPEN. They were a disclosure on a phone because
+    six rule rows at a readable size were taller than the glass. Rows instead
+    of columns gave the height back, so the rules are visible while the suit is
+    being chosen - the one moment they matter - and there is no press between
+    a player and the rules of the thing they are buying. */
 function selectionContent(space, { mine, money }) {
-  const roomy =
-    typeof window === "undefined" ||
-    typeof window.matchMedia !== "function" ||
-    !window.matchMedia("(max-width: 480px)").matches;
   return [
     el("div", { class: "space-card__bar" }, [
       el("h3", { class: "space-card__headline", text: HEADLINE }),
@@ -329,7 +326,7 @@ function selectionContent(space, { mine, money }) {
     ]),
     el("p", { class: "space-card__myth", text: MYTH }),
     el("div", { class: "space-card__suits" }, SUITS.map((suit) => suitCard(suit, { mine, money }))),
-    el("details", { class: "space-card__protocols", open: roomy }, [
+    el("details", { class: "space-card__protocols", open: true }, [
       el("summary", { class: "space-card__protocols-name", text: "Mission protocols" }),
       el("ul", { class: "space-card__protocols-list" },
         PROTOCOLS.map(([label, text]) =>

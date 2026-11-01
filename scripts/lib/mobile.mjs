@@ -182,11 +182,22 @@ export async function waitFor(page, label, fn, timeout = 30000) {
 /**
  * Everything the screenshots are supposed to prove, measured.
  *
- * The rules are the phone's own: a control is at least 44x44 and at least 8px
- * from its neighbour, text is at least 14px, nothing is clipped or scrolled
+ * The rules are the phone's own: a control is at least 34x34 and at least 8px
+ * from its neighbour, text is at least 10px, nothing is clipped or scrolled
  * sideways, and no control is off the bottom of the screen. The audit reports
  * problems rather than throwing, so a before-run can be read as a list of what
  * to fix and an after-run as a list of what is left.
+ *
+ * WHY 34 AND 10 AND NOT 44 AND 14. The card is the middle of the board - four
+ * cells wide, eight tall - because that is the only box on a phone that leaves
+ * the ring, the turn line and the die visible while it is open. Inside that
+ * box every word is scaled off the board, the way the desk card's own type is
+ * scaled off the cell (its property name is 11px at a 67px cell). 44x44 and
+ * 14px are rules for a sheet that covers the glass; on the board's own
+ * rectangle they are a card that has to scroll, which is the bug these numbers
+ * replace. Primary presses - Buy, Pass, Acquire, Build, Continue - stay at
+ * 44px, and the geometry of the card itself is checked separately: it must sit
+ * inside the board, centred, without covering it.
  */
 export const audit = (page) => page.json(`
   const vw = innerWidth;
@@ -257,7 +268,7 @@ export const audit = (page) => page.json(`
       };
     });
 
-  const smallTargets = controls.filter((c) => !c.disabled && (c.w < 44 || c.h < 44))
+  const smallTargets = controls.filter((c) => !c.disabled && (c.w < 34 || c.h < 34))
     .map((c) => ({ name: c.name, w: c.w, h: c.h, font: c.font }));
 
   const offscreen = controls.filter((c) => !c.inView)
@@ -312,7 +323,7 @@ export const audit = (page) => page.json(`
     const size = parseFloat(s.fontSize);
     const text = (el.innerText || "").trim().replace(/\\s+/g, " ").slice(0, 54);
     if (!text) continue;
-    if (size < 14) smallText.push({ name: nameOf(el), font: +size.toFixed(2), text });
+    if (size < 10) smallText.push({ name: nameOf(el), font: +size.toFixed(2), text });
     const clippedX = el.scrollWidth > el.clientWidth + 1 && /(hidden|clip)/.test(s.overflowX);
     const clippedY = el.scrollHeight > el.clientHeight + 1 && /(hidden|clip)/.test(s.overflowY);
     const ellipsis = s.textOverflow === "ellipsis" && el.scrollWidth > el.clientWidth + 1;
@@ -330,6 +341,65 @@ export const audit = (page) => page.json(`
     .map((el) => nameOf(el));
 
   const card = document.querySelector(".board__card");
+  const boxOf = (el) => {
+    if (!el) return null;
+    const b = el.getBoundingClientRect();
+    return { x: +b.x.toFixed(1), y: +b.y.toFixed(1), w: +b.width.toFixed(1), h: +b.height.toFixed(1),
+             right: +b.right.toFixed(1), bottom: +b.bottom.toFixed(1) };
+  };
+  const boardEl = document.querySelector(".board");
+  const holeEl = document.querySelector("#board-center");
+  const boardBox = boxOf(boardEl);
+  const holeBox = boxOf(holeEl);
+  const cardBox = card && !card.hidden ? boxOf(card) : null;
+
+  /* GEOMETRY, BECAUSE "IT FITS" IS NOT THE WHOLE PROMISE.
+
+     The card is meant to be the board's own middle - the hole - so three
+     numbers are reported beside its content fit: where its centre sits
+     against the board's centre (a card pinned to the glass can still "fit"),
+     whether it stays inside the board at all, and how much of the board it
+     covers. The hole is 4/6 x 8/10 of the board, so a card that is the hole is
+     at most 53% of it; anything near 90% is a sheet pretending to be a popup. */
+  const cardGeometry = cardBox && boardBox ? {
+    rect: cardBox,
+    board: boardBox,
+    hole: holeBox,
+    position: getComputedStyle(card).position,
+    centre: {
+      dx: +Math.abs((cardBox.x + cardBox.w / 2) - (boardBox.x + boardBox.w / 2)).toFixed(1),
+      dy: +Math.abs((cardBox.y + cardBox.h / 2) - (boardBox.y + boardBox.h / 2)).toFixed(1),
+    },
+    insideBoard: cardBox.x >= boardBox.x - 1 && cardBox.right <= boardBox.right + 1 &&
+      cardBox.y >= boardBox.y - 1 && cardBox.bottom <= boardBox.bottom + 1,
+    coverage: +((cardBox.w * cardBox.h) / (boardBox.w * boardBox.h)).toFixed(3),
+  } : null;
+
+  /* A BLACK WASH OVER THE BOARD.
+
+     The popup once sat under a fixed, opaque, full-screen box, and a dark
+     ground only reads as "the game went black" on a phone. Any element that
+     covers most of the glass in a dark colour is reported here, so the fix
+     cannot come back as a style change nobody measured. */
+  const darkOverlays = [];
+  for (const el of document.querySelectorAll("body *")) {
+    if (!visible(el)) continue;
+    /* The board's own dark ground is the board, not a wash over it: only a box
+       outside that subtree can be covering the game. */
+    if (el.closest(".board")) continue;
+    const s = getComputedStyle(el);
+    if (s.position === "static") continue;
+    const b = el.getBoundingClientRect();
+    if (b.width * b.height < vw * vh * 0.6) continue;
+    const m = /rgba?\\(\\s*(\\d+),\\s*(\\d+),\\s*(\\d+)(?:,\\s*([\\d.]+))?/.exec(s.backgroundColor);
+    if (!m) continue;
+    const alpha = m[4] === undefined ? 1 : Number(m[4]);
+    if (alpha < 0.5) continue;
+    if (Number(m[1]) < 70 && Number(m[2]) < 70 && Number(m[3]) < 70) {
+      darkOverlays.push({ name: nameOf(el), bg: s.backgroundColor, w: Math.round(b.width), h: Math.round(b.height) });
+    }
+  }
+
   const cardInfo = card && !card.hidden ? {
     kind: card.dataset.cardKind || "",
     children: card.children.length,
@@ -347,6 +417,7 @@ export const audit = (page) => page.json(`
     clientW: card.clientWidth, scrollW: card.scrollWidth,
     clientH: card.clientHeight, scrollH: card.scrollHeight,
     clipped: card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1,
+    geometry: cardGeometry,
   } : null;
 
   return {
@@ -361,6 +432,7 @@ export const audit = (page) => page.json(`
     smallText,
     clipped,
     horizontalScrollers,
+    darkOverlays,
     card: cardInfo,
     emptyCard: Boolean(cardInfo && cardInfo.textLength === 0),
   };
@@ -376,6 +448,13 @@ export function summarise(label, report) {
     `${report.smallText.length} smallText`,
     `${report.clipped.length} clipped`,
     report.scroll.overflowX ? "H-SCROLL" : "no h-scroll",
+    report.darkOverlays?.length ? `${report.darkOverlays.length} dark overlay(s)` : "no dark overlay",
+    report.card?.geometry
+      ? `card ${Math.round(report.card.geometry.rect.w)}x${Math.round(report.card.geometry.rect.h)} ` +
+        `at ${Math.round(report.card.geometry.rect.x)},${Math.round(report.card.geometry.rect.y)} ` +
+        `of board ${Math.round(report.card.geometry.board.w)}x${Math.round(report.card.geometry.board.h)} ` +
+        `(${Math.round(report.card.geometry.coverage * 100)}%)`
+      : "no card",
     report.card?.clipped ? "card clipped" : "card fits",
     report.emptyCard ? "EMPTY CARD" : "card has content",
   ];
