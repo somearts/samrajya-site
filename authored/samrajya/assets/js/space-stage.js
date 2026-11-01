@@ -252,24 +252,26 @@ const SUIT_ART = Object.freeze({
 const HEADLINE = "HERE BEGINS YOUR INTERSTELLAR JOURNEY";
 
 const MYTH =
-  "Beyond the boundaries of Earth lies a universe governed by forces no " +
-  "civilization can fully comprehend. Survival belongs to those who evolve, " +
-  "adapt, and master the technology of the unknown. Your journey beyond the " +
-  "familiar begins here.";
+  "A universe governed by forces no civilization commands. " +
+  "Survival belongs to those who evolve, adapt and master the unknown. " +
+  "Your journey beyond the familiar begins here.";
 
 /* THE PROTOCOLS ARE THE MECHANICS' OWN WORDS, not new rules: one discount
    per purchase (the suit flips to `used` by its first eligible buy), any
    eligible property during the circuit, one suit per seat (the server
    refuses a second), retirement on the seat's return to Outer Space, the
    expiry notice when the discount was never spent, and the purchase price
-   only - rent, upgrades and fees never see the discount. */
+   only - rent, upgrades and fees never see the discount.
+
+   CONDENSED FOR MOBILE: each rule is a short statement so all six fit inside
+   the central panel on a phone without overflowing. */
 const PROTOCOLS = [
-  ["One acquisition:", "Each suit grants a discount on one eligible property purchase."],
-  ["Choose your target:", "Apply the discount to any eligible property during your circuit."],
-  ["No stacking:", "Only one suit can be active per player."],
-  ["Circuit limit:", "Your suit remains active until you complete one full circuit and return to Outer Space."],
-  ["Unclaimed advantage:", "If you have not used the discount when you return to Outer Space, the suit expires."],
-  ["Purchase only:", "Discounts apply to property purchase prices, not rent, upgrades, or fees."],
+  ["One acquisition:", "one discounted property purchase per suit."],
+  ["Choose your target:", "use the discount on an eligible property."],
+  ["No stacking:", "one active suit per player."],
+  ["Circuit limit:", "expires on return to Outer Space if unused."],
+  ["Unclaimed advantage:", "lapses on return to Outer Space if never spent."],
+  ["Purchase only:", "applies to property prices, not rent or upgrades."],
 ];
 
 /** Which suit's notice this visit has already shown, so a repaint cannot
