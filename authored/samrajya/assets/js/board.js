@@ -47,7 +47,7 @@ import { DICE_DELAY_MS, DICE_HOLD_MS, DICE_ROLL_MS, pause } from "./timing.js";
 // goes by - are in coins.js, which imports nothing and is tested on its own.
 import { coins } from "./coin-layer.js";
 import { renderShieldTiles, renderWeapons } from "./chest-card.js";
-import { squareCard } from "./square-card.js";
+import { cornerCard, squareCard } from "./square-card.js";
 import { KRONOS_CHEST, RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
 import { NEXUS } from "./shared/nexus-cards.js";
 import { hideCard, showCard, syncCard } from "./property-card.js";
@@ -2558,7 +2558,8 @@ export function board({
       return;
     }
 
-    // A corner, or a chest whose purpose has not been decided: the plain card.
+    // A corner opens its own information panel; an undecided chest keeps the
+    // plain read-only card. Neither changes the turn or any game state.
     const holder = frame.querySelector(".board__card");
     if (!holder) {
       closeRead();
@@ -2567,10 +2568,15 @@ export function board({
     /* The holder is put right before the card is drawn, so that no card is ever
        drawn inside a box the last one left transparent. See `resetHolder`. */
     resetHolder(holder);
-    holder.replaceChildren(squareCard(cell, { onClose: () => closeRead() }));
+    if (cell.type === "corner") {
+      holder.replaceChildren(cornerCard(cell, { onClose: () => closeRead() }));
+      holder.dataset.cardKind = "corner";
+    } else {
+      holder.replaceChildren(squareCard(cell, { onClose: () => closeRead() }));
+      holder.dataset.cardKind = "property";
+    }
     holder.hidden = false;
     holder.dataset.property = cell.id;
-    holder.dataset.cardKind = "property";
     holder.scrollTop = 0;
     frame.dataset.property = cell.id;
     paintPhase();
