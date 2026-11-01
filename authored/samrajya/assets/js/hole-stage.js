@@ -40,6 +40,7 @@
 import { el } from "./dom.js";
 import { resetHolder } from "./board-fx.js";
 import { prefersStill } from "./dice.js";
+import { cornerMark } from "./corner-art.js";
 import { EVENT_HORIZON, holeThreshold } from "./shared/game.js";
 import { ownerOf } from "./shared/ledger.js";
 
@@ -404,58 +405,69 @@ export function drawHoleStage(board, hole, {
 /**
  * BLACK HOLE, READ ONLY - what the tile opens when nobody is held.
  *
- * A reading card in the square card's own style: the title, the subtitle,
- * the creation myth, why escape costs entropy or a vessel, both thresholds,
- * the vessel's price and its fuel - and the warning that landing here traps
- * you. No meter, no presses, no state: it explains the tile, it does not
- * play it. The close button takes it away exactly as every other reading
- * card does.
+ * A reading card in the corner-panel style: the hole's mark as logo, the
+ * heading, the subtitle, the creation myth, why escape costs entropy or a
+ * vessel, both thresholds, the vessel's price and its fuel - and the warning
+ * that landing here traps you. No meter, no presses, no state: it explains
+ * the tile, it does not play it. The close button takes it away exactly as
+ * every other corner panel does.
+ *
+ * Uses the same corner-card container as START, OUTER SPACE and FIGHT so all
+   four corners share one design system. The lore is organized into sections
+   beneath the shared heading/subtitle/divider, with the full Entropy
+   Protocol and Relativistic Escape Vessel information preserved.
  */
 export function drawHoleLoreCard({ onClose = null } = {}) {
   const card = el("article", {
-    class: "property-card hole-card hole-lore",
-    "data-property": "black-hole",
-    "data-square": "black-hole",
-    style: { "--accent": "var(--ink)" },
+    class: "corner-card",
+    "data-corner": "black-hole",
+    style: { "--accent": "var(--corner-black-hole)" },
     "aria-live": "polite",
   }, [
     el("button", {
       type: "button",
-      class: "property-card__close",
+      class: "corner-card__close",
       "aria-label": "Close",
-      title: "Close",
       "data-action": "close",
       text: "\u00d7",
     }),
-    el("div", { class: "property-card__head" }, [
-      el("div", { class: "property-card__title" }, [
-        el("span", { class: "property-card__pill", "aria-hidden": "true" }),
-        el("h3", {
-          class: "property-card__name",
-          html: "<span>BLACK</span><span>HOLE</span>",
-        }),
+    el("div", { class: "corner-card__logo", html: cornerMark("hole") }),
+    el("h2", { class: "corner-card__heading", text: "BLACK HOLE" }),
+    el("p", { class: "corner-card__subtitle", text: "THE WOUND IN KAALCHAKRA" }),
+    el("div", { class: "corner-card__divider" }),
+    el("p", { class: "corner-card__description",
+      text: "Born from a fracture in the cosmic cycle, the Black Hole devours light, matter, and time itself. Astronomers called it the Wound of Kaalchakra. Those caught within must bend entropy to escape - or pay for passage beyond the event horizon." }),
+    ...LORE.map((text) => el("p", { class: "corner-card__lore-prose", text })),
+    el("div", { class: "corner-card__lore-section" }, [
+      el("h4", { class: "corner-card__lore-section-name", text: "The Entropy Protocol" }),
+      el("p", { class: "corner-card__lore-prose", text: PROTOCOL[0] }),
+      el("p", { class: "corner-card__lore-caption",
+        text: "Track your entropy as you gather the energy to escape." }),
+      el("div", { class: "corner-card__lore-meter-head" }, [
+        el("span", { class: "corner-card__lore-figure-label", text: "Entropy\u00a0" }),
+        el("span", { class: "corner-card__lore-figure", text: "0" }),
+        el("span", { class: "corner-card__lore-of", text: " / " }),
+        el("span", { class: "corner-card__lore-threshold", text: "10" }),
+      ]),
+      el("div", { class: "corner-card__lore-meter" }, [
+        el("span", { class: "corner-card__lore-meter-fill" }),
       ]),
     ]),
-    el("div", { class: "hole-card__body" }, [
-      el("p", { class: "hole-lore__subtitle", text: "The Wound in Kaalchakra" }),
-      ...LORE.map((text) => el("p", { class: "hole-card__prose", text })),
-      section(PROTOCOL_HEADING, [
-        PROTOCOL[0],
-        "The singularity's hold can be broken two ways: entropy, generated over your turns, or a Relativistic Escape Vessel bought outright.",
-        `Normal escape threshold: 10 entropy. While you hold Event Horizon: 5 entropy.`,
-      ]),
-      section(VESSEL_HEADING, [
-        ...VESSEL_MYTH,
-        "The price of passage is \u20b9500. The fuel is consumed. The singularity is left behind.",
-      ]),
-      section("If you fall into the singularity", [
-        "You cannot move normally while trapped. You may sacrifice your current turn to begin building entropy, then use subsequent turns to gather enough energy to breach the singularity. Alternatively, you may acquire a Relativistic Escape Vessel for \u20b9500 and escape according to the vessel's turn rules.",
-      ]),
-      el("p", {
-        class: "hole-lore__warning",
-        text: "Warning: landing on Black Hole traps you. Your movement stops and you must pay the price of escape - entropy, or \u20b9500.",
-      }),
+    el("div", { class: "corner-card__lore-section" }, [
+      el("h4", { class: "corner-card__lore-section-name", text: "Relativistic Escape Vessel \u00b7 \u20b9500" }),
+      ...VESSEL_MYTH.map((text) => el("p", { class: "corner-card__lore-prose", text })),
+      el("p", { class: "corner-card__lore-prose",
+        text: "The price of passage is \u20b9500. The fuel is consumed. The singularity is left behind." }),
     ]),
+    el("div", { class: "corner-card__lore-section" }, [
+      el("h4", { class: "corner-card__lore-section-name", text: "If you fall into the singularity" }),
+      el("p", { class: "corner-card__lore-prose",
+        text: "You cannot move normally while trapped. You may sacrifice your current turn to begin building entropy, then use subsequent turns to gather enough energy to breach the singularity. Alternatively, you may acquire a Relativistic Escape Vessel for \u20b9500 and escape according to the vessel's turn rules." }),
+    ]),
+    el("p", {
+      class: "corner-card__lore-warning",
+      text: "Warning: landing on Black Hole traps you. Your movement stops and you must pay the price of escape - entropy, or \u20b9500.",
+    }),
   ]);
 
   const close = card.querySelector('[data-action="close"]');

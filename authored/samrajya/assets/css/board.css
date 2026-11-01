@@ -1889,43 +1889,44 @@
 
    The four corner tiles - START, OUTER SPACE, BLACK HOLE and FIGHT - each open
    their own information panel when tapped. All four share one layout inside the
-   central hole of the board: a logo, a heading, a subtitle, a short description
-   and one key fact drawn out in a box. The panel fills the four-by-eight cell
-   hole, the same rectangle on every screen, so nothing is cramped and nothing
-   spills into the board's ring.
+   central hole of the board. The panel fills the four-by-eight cell hole, the
+   same rectangle on every screen, so nothing is cramped and nothing spills into
+   the board's ring.
 
    Colours: off-white ground, black typography, fine dark borders, and each
    corner's own accent colour used sparingly - the logo, the key box edge and
-   the key value. No gradients, no oversized headings, no cards inside cards. */
+   the key value. No gradients, no oversized headings, no cards inside cards.
+
+   Black Hole uses the same container when inspected (nobody held), with its
+   lore organized into sections beneath the shared heading/subtitle/divider. */
 
 .corner-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0;
   height: 100%;
-  padding: calc(var(--cell) * 0.18) calc(var(--cell) * 0.22);
+  padding: calc(var(--cell) * 0.3) calc(var(--cell) * 0.34);
   border-radius: 10px;
   background: var(--cell-ground);
-  border: 1px solid rgb(18 17 16 / 0.08);
+  border: 1px solid rgb(18 17 16 / 0.1);
   box-sizing: border-box;
   overflow: hidden;
 }
 
 .corner-card__close {
   position: absolute;
-  top: calc(var(--cell) * 0.05);
-  right: calc(var(--cell) * 0.05);
+  top: calc(var(--cell) * 0.07);
+  right: calc(var(--cell) * 0.07);
   z-index: 3;
   display: grid;
   place-items: center;
-  width: max(24px, calc(var(--cell) * 0.36));
-  height: max(24px, calc(var(--cell) * 0.36));
+  width: max(26px, calc(var(--cell) * 0.4));
+  height: max(26px, calc(var(--cell) * 0.4));
   padding: 0;
   border: 1px solid rgb(18 17 16 / 0.14);
   border-radius: 999px;
   background: color-mix(in srgb, var(--cell-ground) 86%, transparent);
-  font-size: max(13px, calc(var(--cell) * 0.2));
+  font-size: max(13px, calc(var(--cell) * 0.22));
   line-height: 1;
   color: var(--ink);
   cursor: pointer;
@@ -1936,13 +1937,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: calc(var(--cell) * 0.08);
+  gap: calc(var(--cell) * 0.1);
   flex: 0 0 auto;
+  margin-bottom: calc(var(--cell) * 0.08);
 }
 
 .corner-card__logo {
-  width: clamp(26px, calc(var(--cell) * 0.55), 38px);
-  height: clamp(26px, calc(var(--cell) * 0.55), 38px);
+  width: clamp(30px, calc(var(--cell) * 0.62), 44px);
+  height: clamp(30px, calc(var(--cell) * 0.62), 44px);
   color: var(--accent);
 }
 
@@ -1954,9 +1956,9 @@
 
 .corner-card__heading {
   margin: 0;
-  font-size: clamp(16px, calc(var(--cell) * 0.26), 22px);
+  font-size: clamp(17px, calc(var(--cell) * 0.28), 24px);
   font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   line-height: 1.1;
   text-transform: uppercase;
   text-align: center;
@@ -1965,9 +1967,9 @@
 
 .corner-card__subtitle {
   margin: 0;
-  font-size: clamp(9px, calc(var(--cell) * 0.13), 11px);
+  font-size: clamp(10px, calc(var(--cell) * 0.145), 12px);
   font-weight: 500;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   line-height: 1.2;
   text-transform: uppercase;
   text-align: center;
@@ -1975,46 +1977,123 @@
 }
 
 .corner-card__divider {
-  width: calc(var(--cell) * 0.6);
+  width: calc(var(--cell) * 0.7);
   height: 1px;
   background: rgb(18 17 16 / 0.1);
-  margin: calc(var(--cell) * 0.06) 0;
+  margin: calc(var(--cell) * 0.12) 0;
 }
 
 .corner-card__description {
   margin: 0;
   align-self: center;
-  max-width: 90%;
-  font-size: clamp(9.5px, calc(var(--cell) * 0.13), 11.5px);
-  line-height: 1.45;
+  max-width: 92%;
+  font-size: clamp(10px, calc(var(--cell) * 0.14), 12px);
+  line-height: 1.5;
   color: var(--ink);
   text-align: center;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
 }
 
 .corner-card__key {
   display: flex;
   align-items: center;
-  gap: calc(var(--cell) * 0.12);
-  padding: calc(var(--cell) * 0.14) calc(var(--cell) * 0.16);
+  gap: calc(var(--cell) * 0.14);
+  padding: calc(var(--cell) * 0.16) calc(var(--cell) * 0.18);
   border-radius: 8px;
   border: 1px solid rgb(18 17 16 / 0.1);
   background: color-mix(in srgb, var(--accent) 8%, var(--cell-ground));
   flex: 0 0 auto;
+  margin-top: calc(var(--cell) * 0.06);
 }
 
 .corner-card__key-icon {
   flex: 0 0 auto;
-  width: clamp(14px, calc(var(--cell) * 0.3), 20px);
-  height: clamp(14px, calc(var(--cell) * 0.3), 20px);
-  border-radius: 50%;
+  width: clamp(16px, calc(var(--cell) * 0.34), 22px);
+  height: clamp(16px, calc(var(--cell) * 0.34), 22px);
+  border-radius: 999px;
   background: var(--accent);
 }
 
 .corner-card__key-text {
   display: flex;
   flex-direction: column;
-  gap: 0.05em;
+  gap: 0.04em;
+}
+
+/* -------------------------------------------------- Black Hole lore sections
+
+   When Black Hole is inspected (nobody held), the same corner-card container
+   holds its lore: the Entropy Protocol, the Relativistic Escape Vessel, and
+   what happens when trapped. All content is preserved, organized into sections
+   with a consistent typography hierarchy that fits the panel without
+   scrolling. */
+
+.corner-card__lore-section {
+  flex: 0 0 auto;
+  margin-top: calc(var(--cell) * 0.1);
+}
+
+.corner-card__lore-section-name {
+  margin: 0 0 calc(var(--cell) * 0.06);
+  font-size: clamp(9px, calc(var(--cell) * 0.13), 10.5px);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.corner-card__lore-prose {
+  margin: 0 0 calc(var(--cell) * 0.07);
+  font-size: clamp(8.5px, calc(var(--cell) * 0.12), 10.5px);
+  line-height: 1.4;
+  color: var(--ink);
+  text-align: left;
+}
+
+.corner-card__lore-caption {
+  margin: 0;
+  font-size: clamp(8px, calc(var(--cell) * 0.11), 9.5px);
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.corner-card__lore-meter-head {
+  display: flex;
+  align-items: baseline;
+  gap: calc(var(--cell) * 0.04);
+  margin: 0 0 calc(var(--cell) * 0.05);
+}
+
+.corner-card__lore-meter {
+  width: 100%;
+  height: clamp(6px, calc(var(--cell) * 0.13), 10px);
+  border-radius: clamp(3px, calc(var(--cell) * 0.06), 5px);
+  background: rgb(18 17 16 / 0.06);
+  border: 1px solid rgb(18 17 16 / 0.08);
+  overflow: hidden;
+  flex: 0 0 auto;
+  margin-top: calc(var(--cell) * 0.04);
+}
+
+.corner-card__lore-meter-fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+.corner-card__lore-warning {
+  margin: calc(var(--cell) * 0.08) 0 0;
+  padding: calc(var(--cell) * 0.1) calc(var(--cell) * 0.12);
+  border-radius: 6px;
+  border: 1px solid rgb(18 17 16 / 0.1);
+  background: color-mix(in srgb, var(--corner-black-hole) 10%, var(--cell-ground));
+  font-size: clamp(8.5px, calc(var(--cell) * 0.12), 10px);
+  line-height: 1.4;
+  color: var(--ink);
+  flex: 0 0 auto;
+}
+
+/* ============================================================== the nexus
 }
 
 .corner-card__key-label {
