@@ -8,7 +8,7 @@
    that fact, so a device that reconnects, joined late, or missed a message
    shows exactly the same confinement.
 
-   THREE SCREENS IN ONE FILE
+   TWO SCREENS IN ONE FILE
 
    1. THE CINEMATIC - a full-screen veil that takes the whole interface to
       absolute black, holds the singularity's line for five seconds, and
@@ -25,9 +25,11 @@
       buttons are the held seat's alone; the other player reads the same
       card with the buttons dead.
 
-   3. THE INSPECTION CARD - the lore-only peek a tap on the tile opens when
-      NOBODY is held: pure explanation, no meter, no presses, no state. It
-      is a reading card, the way every other tile's card is.
+   THE TILE'S OWN INSPECTION PANEL (a tap on the corner while nobody is
+   held) is not drawn here: it is the shared `cornerCard` panel - the same
+   design system as START, OUTER SPACE and FIGHT - and the board draws it
+   from `square-card.js`. Everything about the tile's look lives in one
+   place, so this file only renders the screen the game actually plays.
 
    NOTHING HERE DECIDES ANYTHING
 
@@ -40,7 +42,6 @@
 import { el } from "./dom.js";
 import { resetHolder } from "./board-fx.js";
 import { prefersStill } from "./dice.js";
-import { cornerMark } from "./corner-art.js";
 import { EVENT_HORIZON, holeThreshold } from "./shared/game.js";
 import { ownerOf } from "./shared/ledger.js";
 
@@ -49,39 +50,6 @@ export const CINEMATIC_MS = 5500;
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
-/* ------------------------------------------------------------- the lore */
-
-/* THE WRITING, IN ONE PLACE, SO BOTH CARDS CANNOT DRIFT.
-
-   Ancient, cosmic, and specific to Kaalchakra: what the Black Hole is,
-   where it came from, and what it does to whoever enters - told in short
-   paragraphs with room to breathe, never one enormous block. The gameplay
-   sections beneath say exactly what the server does and nothing else. */
-
-const LORE = [
-  "Before the first star was born, before the celestial kingdoms claimed their territories, Kaalchakra was already turning. Its cycles governed creation, destruction, and rebirth. But there was one moment the cycle could not contain: the instant in which creation and oblivion touched.",
-  "From that collision came the Black Hole.",
-  "Ancient astronomers called it the Wound in Kaalchakra. The oldest legends claim it was not born from a dying star, but from a fracture in the fabric of existence itself. Matter fell into its depths. Light surrendered. And time, stripped of its authority, began to fold back upon itself.",
-  "Nothing that enters emerges unchanged. Distance loses meaning. Memories become fragments. A moment may stretch into an eternity, while centuries collapse into a single heartbeat.",
-  "The Black Hole does not simply imprison its victims. It severs their connection to the ordinary flow of time. Those caught within cannot advance through the cosmos by ordinary means - they must force a breach in the temporal prison, or buy passage aboard a vessel built to survive the impossible.",
-  "You may enter by chance. You will leave only by paying the price of escape.",
-];
-
-const PROTOCOL_HEADING = "The Entropy Protocol";
-
-const PROTOCOL = [
-  "Inside the singularity, the laws that govern the outer universe no longer hold. To escape, a prisoner must create an imbalance powerful enough to tear open a temporary passage through the event horizon. That imbalance is called entropy.",
-  "By invoking the Protocol you surrender your current turn to the singularity. On your next turn your dice roll is converted into entropy rather than movement - every point contributes to the energy needed to breach the temporal prison. You remain trapped while the accumulated energy falls short.",
-  "Once the threshold is reached you must commit to your escape, and it completes on your next turn: you roll, you move, and you are free.",
-];
-
-const VESSEL_HEADING = "Relativistic Escape Vessel";
-
-const VESSEL_MYTH = [
-  "There is another way out, though few can afford it. Beyond the outer colonies the last surviving vesselwrights craft vessels able to navigate the tidal forces around the singularity, their engines fed by a rare interstellar radioactive substance harvested from unstable celestial remnants.",
-  "The fuel decays almost as quickly as it is produced, and every launch consumes an irreplaceable charge. The vessel does not defeat the Black Hole - it forces a narrow corridor through the event horizon and carries its passenger out before the corridor collapses.",
-];
-
 /* --------------------------------------------------- the active popup copy
 
    THREE ZONES, ONE SCREEN, NO SCROLL - so every word here is budgeted
@@ -89,7 +57,9 @@ const VESSEL_MYTH = [
    360x640 phone, where the popup is four cells wide and eight cells tall.
    What survives is the whole of what a player needs: the epithet, the best
    line of the myth, the Protocol and its meter, the vessel and its price.
-   Anything longer moves to the inspection card, where there is room. */
+   These lines also carry the tile's ESSENTIAL gameplay facts for its
+   inspection panel (drawn from `square-card.js` as the shared corner
+   panel), so there is exactly one copy of each fact in the game. */
 
 const ACTIVE_SUBTITLE = "The Wound of Kaalchakra";
 
@@ -397,86 +367,6 @@ export function drawHoleStage(board, hole, {
 
   holder.replaceChildren(card);
   holder.hidden = false;
-  return card;
-}
-
-/* --------------------------------------------------- the inspection card */
-
-/**
- * BLACK HOLE, READ ONLY - what the tile opens when nobody is held.
- *
- * A reading card in the corner-panel style: the hole's mark as logo, the
- * heading, the subtitle, the creation myth, why escape costs entropy or a
- * vessel, both thresholds, the vessel's price and its fuel - and the warning
- * that landing here traps you. No meter, no presses, no state: it explains
- * the tile, it does not play it. The close button takes it away exactly as
- * every other corner panel does.
- *
- * Uses the same corner-card container as START, OUTER SPACE and FIGHT so all
-   four corners share one design system. The lore is organized into sections
-   beneath the shared heading/subtitle/divider, with the full Entropy
-   Protocol and Relativistic Escape Vessel information preserved.
- */
-export function drawHoleLoreCard({ onClose = null } = {}) {
-  const card = el("article", {
-    class: "corner-card",
-    "data-corner": "black-hole",
-    style: { "--accent": "var(--corner-black-hole)" },
-    "aria-live": "polite",
-  }, [
-    el("button", {
-      type: "button",
-      class: "corner-card__close",
-      "aria-label": "Close",
-      "data-action": "close",
-      text: "\u00d7",
-    }),
-    el("div", { class: "corner-card__logo", html: cornerMark("hole") }),
-    el("h2", { class: "corner-card__heading", text: "BLACK HOLE" }),
-    el("p", { class: "corner-card__subtitle", text: "THE WOUND IN KAALCHAKRA" }),
-    el("div", { class: "corner-card__divider" }),
-    el("p", { class: "corner-card__description",
-      text: "Born from a fracture in the cosmic cycle, the Black Hole devours light, matter, and time itself. Astronomers called it the Wound of Kaalchakra. Those caught within must bend entropy to escape - or pay for passage beyond the event horizon." }),
-    ...LORE.map((text) => el("p", { class: "corner-card__lore-prose", text })),
-    el("div", { class: "corner-card__lore-section" }, [
-      el("h4", { class: "corner-card__lore-section-name", text: "The Entropy Protocol" }),
-      el("p", { class: "corner-card__lore-prose", text: PROTOCOL[0] }),
-      el("p", { class: "corner-card__lore-caption",
-        text: "Track your entropy as you gather the energy to escape." }),
-      el("div", { class: "corner-card__lore-meter-head" }, [
-        el("span", { class: "corner-card__lore-figure-label", text: "Entropy\u00a0" }),
-        el("span", { class: "corner-card__lore-figure", text: "0" }),
-        el("span", { class: "corner-card__lore-of", text: " / " }),
-        el("span", { class: "corner-card__lore-threshold", text: "10" }),
-      ]),
-      el("div", { class: "corner-card__lore-meter" }, [
-        el("span", { class: "corner-card__lore-meter-fill" }),
-      ]),
-    ]),
-    el("div", { class: "corner-card__lore-section" }, [
-      el("h4", { class: "corner-card__lore-section-name", text: "Relativistic Escape Vessel \u00b7 \u20b9500" }),
-      ...VESSEL_MYTH.map((text) => el("p", { class: "corner-card__lore-prose", text })),
-      el("p", { class: "corner-card__lore-prose",
-        text: "The price of passage is \u20b9500. The fuel is consumed. The singularity is left behind." }),
-    ]),
-    el("div", { class: "corner-card__lore-section" }, [
-      el("h4", { class: "corner-card__lore-section-name", text: "If you fall into the singularity" }),
-      el("p", { class: "corner-card__lore-prose",
-        text: "You cannot move normally while trapped. You may sacrifice your current turn to begin building entropy, then use subsequent turns to gather enough energy to breach the singularity. Alternatively, you may acquire a Relativistic Escape Vessel for \u20b9500 and escape according to the vessel's turn rules." }),
-    ]),
-    el("p", {
-      class: "corner-card__lore-warning",
-      text: "Warning: landing on Black Hole traps you. Your movement stops and you must pay the price of escape - entropy, or \u20b9500.",
-    }),
-  ]);
-
-  const close = card.querySelector('[data-action="close"]');
-  if (close) {
-    close.addEventListener("click", () => {
-      if (typeof onClose === "function") onClose();
-    });
-  }
-
   return card;
 }
 

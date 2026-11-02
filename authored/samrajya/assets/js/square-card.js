@@ -20,9 +20,9 @@
    -----------------
    The four corner tiles - START, OUTER SPACE, BLACK HOLE and FIGHT - each open
    their own information panel when tapped. Each panel shares one layout: a
-   logo, a heading, a subtitle, a short description, and one key fact drawn out
-   in a box. The panels sit in the central hole of the board, sized to the same
-   four-by-eight cell rectangle on every screen.
+   logo, a heading, a subtitle, a short description, and a single poetic line
+   in the info block at the foot. The panels sit in the central hole of the
+   board, sized to the same four-by-eight cell rectangle on every screen.
 
    Only the inspection UI changes here. Landing on a corner, its rules, and its
    effect on the turn are untouched.
@@ -49,7 +49,9 @@ const CHEST_COPY = {
   },
 };
 
-/** One corner panel each. The accent colour is the corner tile's own stamp. */
+/** One corner panel each. The accent colour is the corner tile's own stamp.
+    Every panel carries a single poetic line in its info block - no stacked
+    label/subtitle, one continuous line that names what the tile offers. */
 const CORNER_PANEL = {
   start: {
     accent: "var(--corner-start)",
@@ -57,8 +59,7 @@ const CORNER_PANEL = {
     subtitle: "THE LAUNCH TILE",
     description:
       "Begin your journey across worlds, timelines, and lost civilizations.",
-    keyLabel: "Cross START and receive",
-    keyValue: "₹200 for the lap.",
+    key: "Every great odyssey begins with a single step.",
     mark: cornerMark("start"),
   },
   "outer-space": {
@@ -67,8 +68,7 @@ const CORNER_PANEL = {
     subtitle: "THE EDGE OF KNOWN",
     description:
       "The gateway beyond the board. Here you can acquire a Suit, prepare for the cycle, and seek an advantage.",
-    keyLabel: "Land here to",
-    keyValue: "choose a Suit.",
+    key: "Choose your celestial armour and venture beyond the stars.",
     mark: cornerMark("space"),
   },
   "black-hole": {
@@ -76,9 +76,8 @@ const CORNER_PANEL = {
     heading: "BLACK HOLE",
     subtitle: "THE WOUND IN KAALCHAKRA",
     description:
-      "A gravity of its own. Land here and you are pulled out of play — trapped until you find a way to break free.",
-    keyLabel: "Land here and face",
-    keyValue: "the Black Hole's setback.",
+      "Land here and you are pulled out of play. Break free by building entropy over your turns, or buy passage aboard a Relativistic Escape Vessel for \u20b9500.",
+    key: "Defy the void, or surrender to its gravity.",
     mark: cornerMark("hole"),
   },
   fight: {
@@ -87,8 +86,7 @@ const CORNER_PANEL = {
     subtitle: "THE ARENA",
     description:
       "Where empires collide. Land here to challenge your opponent and test your strength, strategy, or fortune.",
-    keyLabel: "Trigger a",
-    keyValue: "Fight challenge.",
+    key: "Where destinies collide, only one prevails.",
     mark: cornerMark("fight"),
   },
 };
@@ -198,10 +196,7 @@ export function cornerCard(cell, { onClose = null } = {}) {
 
       el("div", { class: "corner-card__key" }, [
         el("span", { class: "corner-card__key-icon" }),
-        el("div", { class: "corner-card__key-text" }, [
-          el("span", { class: "corner-card__key-label", text: panel.keyLabel }),
-          el("span", { class: "corner-card__key-value", text: panel.keyValue }),
-        ]),
+        el("p", { class: "corner-card__key-copy", text: panel.key }),
       ]),
     ],
   );

@@ -1895,15 +1895,20 @@
 
    Colours: off-white ground, black typography, fine dark borders, and each
    corner's own accent colour used sparingly - the logo, the key box edge and
-   the key value. No gradients, no oversized headings, no cards inside cards.
+   the accent rule. No gradients, no oversized headings, no cards inside cards.
 
-   Black Hole uses the same container when inspected (nobody held), with its
-   lore organized into sections beneath the shared heading/subtitle/divider. */
+   One panel, one line of poetry: the bottom info block carries a single
+   contextual line - never a stacked label and subtitle - written for that
+   corner's place in the Samrajya universe. Black Hole is drawn by the same
+   component as START, OUTER SPACE and FIGHT; there is no separate legacy
+   reading card. */
 
 .corner-card {
   position: relative;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  gap: calc(var(--cell) * 0.1);
   height: 100%;
   padding: calc(var(--cell) * 0.3) calc(var(--cell) * 0.34);
   border-radius: 10px;
@@ -1911,6 +1916,16 @@
   border: 1px solid rgb(18 17 16 / 0.1);
   box-sizing: border-box;
   overflow: hidden;
+}
+
+/* The corner holder holds ONE child - the panel itself - so it is a plain
+   box, not the property card's three-row grid. Without this the panel is
+   auto-placed into the first auto row and only grows to its content, leaving
+   the rest of the four-by-eight hole empty. `display: block` lets the panel's
+   own `height: 100%` fill the rectangle. This rule touches the corner holder
+   only; the property holder keeps its grid. */
+.board__card[data-card-kind="corner"] {
+  display: block;
 }
 
 .corner-card__close {
@@ -1933,19 +1948,11 @@
   pointer-events: auto;
 }
 
-.corner-card__head {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: calc(var(--cell) * 0.1);
-  flex: 0 0 auto;
-  margin-bottom: calc(var(--cell) * 0.08);
-}
-
 .corner-card__logo {
   width: clamp(30px, calc(var(--cell) * 0.62), 44px);
   height: clamp(30px, calc(var(--cell) * 0.62), 44px);
   color: var(--accent);
+  flex: 0 0 auto;
 }
 
 .corner-card__logo svg {
@@ -1980,29 +1987,35 @@
   width: calc(var(--cell) * 0.7);
   height: 1px;
   background: rgb(18 17 16 / 0.1);
-  margin: calc(var(--cell) * 0.12) 0;
+  margin: 0 auto;
+  flex: 0 0 auto;
 }
 
 .corner-card__description {
   margin: 0;
-  align-self: center;
-  max-width: 92%;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
   font-size: clamp(10px, calc(var(--cell) * 0.14), 12px);
   line-height: 1.5;
   color: var(--ink);
   text-align: center;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .corner-card__key {
   display: flex;
   align-items: center;
-  gap: calc(var(--cell) * 0.08);
-  padding: calc(var(--cell) * 0.08) calc(var(--cell) * 0.12);
+  gap: calc(var(--cell) * 0.1);
+  padding: calc(var(--cell) * 0.1) calc(var(--cell) * 0.14);
   border-radius: 6px;
   border: 1px solid rgb(18 17 16 / 0.1);
   background: color-mix(in srgb, var(--accent) 6%, var(--cell-ground));
   flex: 0 0 auto;
+  align-self: stretch;
   margin-top: calc(var(--cell) * 0.04);
 }
 
@@ -2014,115 +2027,12 @@
   background: var(--accent);
 }
 
-.corner-card__key-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.02em;
-}
-
-.corner-card__key-label {
+.corner-card__key-copy {
   margin: 0;
-  font-size: clamp(7px, calc(var(--cell) * 0.095), 8px);
-  line-height: 1.25;
-  color: var(--ink-soft);
-}
-
-.corner-card__key-value {
-  margin: 0;
-  font-size: clamp(8px, calc(var(--cell) * 0.11), 9.5px);
-  line-height: 1.3;
-  color: var(--ink);
-}
-
-/* -------------------------------------------------- Black Hole lore sections
-
-   When Black Hole is inspected (nobody held), the same corner-card container
-   holds its lore: the Entropy Protocol, the Relativistic Escape Vessel, and
-   what happens when trapped. All content is preserved, organized into sections
-   with a consistent typography hierarchy that fits the panel without
-   scrolling. */
-
-.corner-card__lore-section {
-  flex: 0 0 auto;
-  margin-top: calc(var(--cell) * 0.1);
-}
-
-.corner-card__lore-section-name {
-  margin: 0 0 calc(var(--cell) * 0.06);
-  font-size: clamp(9px, calc(var(--cell) * 0.13), 10.5px);
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  line-height: 1.2;
-  text-transform: uppercase;
-  color: var(--accent);
-}
-
-.corner-card__lore-prose {
-  margin: 0 0 calc(var(--cell) * 0.07);
-  font-size: clamp(8.5px, calc(var(--cell) * 0.12), 10.5px);
-  line-height: 1.4;
-  color: var(--ink);
-  text-align: left;
-}
-
-.corner-card__lore-caption {
-  margin: 0;
-  font-size: clamp(8px, calc(var(--cell) * 0.11), 9.5px);
+  font-size: clamp(11px, calc(var(--cell) * 0.15), 13px);
   line-height: 1.35;
-  color: var(--ink-soft);
-}
-
-.corner-card__lore-meter-head {
-  display: flex;
-  align-items: baseline;
-  gap: calc(var(--cell) * 0.04);
-  margin: 0 0 calc(var(--cell) * 0.05);
-}
-
-.corner-card__lore-meter {
-  width: 100%;
-  height: clamp(6px, calc(var(--cell) * 0.13), 10px);
-  border-radius: clamp(3px, calc(var(--cell) * 0.06), 5px);
-  background: rgb(18 17 16 / 0.06);
-  border: 1px solid rgb(18 17 16 / 0.08);
-  overflow: hidden;
-  flex: 0 0 auto;
-  margin-top: calc(var(--cell) * 0.04);
-}
-
-.corner-card__lore-meter-fill {
-  height: 100%;
-  background: var(--accent);
-}
-
-.corner-card__lore-warning {
-  margin: calc(var(--cell) * 0.08) 0 0;
-  padding: calc(var(--cell) * 0.1) calc(var(--cell) * 0.12);
-  border-radius: 6px;
-  border: 1px solid rgb(18 17 16 / 0.1);
-  background: color-mix(in srgb, var(--corner-black-hole) 10%, var(--cell-ground));
-  font-size: clamp(8.5px, calc(var(--cell) * 0.12), 10px);
-  line-height: 1.4;
   color: var(--ink);
-  flex: 0 0 auto;
-}
-
-/* ============================================================== the nexus
-}
-
-.corner-card__key-label {
-  margin: 0;
-  font-size: clamp(8px, calc(var(--cell) * 0.11), 9.5px);
-  line-height: 1.3;
-  color: var(--ink-soft);
-}
-
-.corner-card__key-value {
-  margin: 0;
-  font-size: clamp(9px, calc(var(--cell) * 0.125), 10.5px);
-  font-weight: 500;
-  line-height: 1.3;
-  color: var(--ink);
+  text-wrap: pretty;
 }
 
 /* ============================================================== the nexus
@@ -4841,8 +4751,7 @@ button.board__cell--corner:focus-visible {
    clipped to that would have its actions cut off. The card fills the
    rectangle and its middle region is the part that may scroll. */
 
-.board__card[data-card-kind="hole"],
-.board__card[data-card-kind="hole-lore"] {
+.board__card[data-card-kind="hole"] {
   height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
   max-height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
   overflow: hidden;
@@ -4858,8 +4767,7 @@ button.board__cell--corner:focus-visible {
   container-name: hole-popup;
 }
 
-.board__card[data-card-kind="hole"] .hole-card,
-.board__card[data-card-kind="hole-lore"] .hole-card {
+.board__card[data-card-kind="hole"] .hole-card {
   height: 100%;
 }
 
@@ -4908,20 +4816,6 @@ button.board__cell--corner:focus-visible {
   color: var(--ink);
 }
 
-/* THE READING CARD KEEPS THE ONE THING THE ACTIVE POPUP REFUSES: its body
-   may scroll. A tile's full lore is a page of reading, not a decision to
-   fit on one screen - the no-scroll rule belongs to the escape screen and
-   to the press that ends a turn. */
-.hole-lore .hole-card__body {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: none;
-}
-
-.hole-lore .hole-card__body::-webkit-scrollbar {
-  display: none;
-}
-
 /* THE WRITING'S MEASURE. Every paragraph and every titled block sits on
    one centred column of a readable length - never edge to edge, never
    narrow enough to break a word into single characters - with natural
@@ -4931,8 +4825,7 @@ button.board__cell--corner:focus-visible {
 .hole-card__prose,
 .hole-card__section,
 .hole-card__notice,
-.hole-card__caption,
-.hole-lore__warning {
+.hole-card__caption {
   width: min(100%, 46ch);
   margin-inline: auto;
   overflow-wrap: break-word;
@@ -5000,8 +4893,7 @@ button.board__cell--corner:focus-visible {
   margin-right: 0.35em;
 }
 
-/* THE READING CARD'S OWN TWO LINES: the tile's epithet under its name,
-   and the warning that closes the reading. */
+/* THE ACTIVE PANEL'S EPITHET: the tile's line under its name. */
 .hole-lore__subtitle {
   margin: 0;
   font-size: max(9px, calc(var(--cell) * 0.118));
@@ -5012,16 +4904,6 @@ button.board__cell--corner:focus-visible {
   text-transform: uppercase;
   color: var(--ink);
   text-wrap: balance;
-}
-
-.hole-lore__warning {
-  margin-block: calc(var(--cell) * 0.06);
-  padding: calc(var(--cell) * 0.11) calc(var(--cell) * 0.13);
-  border: 1px solid color-mix(in srgb, var(--ink) 28%, var(--cell-ground));
-  border-radius: 6px;
-  font-size: max(9px, calc(var(--cell) * 0.118));
-  line-height: 1.5;
-  color: var(--ink);
 }
 
 /* ZONE 3 - THE FOOTER: both presses side by side at the bottom, with the
