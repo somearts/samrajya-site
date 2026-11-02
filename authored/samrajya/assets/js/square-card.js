@@ -33,13 +33,6 @@ import { cornerMark } from "./corner-art.js";
 
 /** What each of the quiet chests is, in two lines. */
 const CHEST_COPY = {
-  epoch: {
-    kind: "A chest",
-    lines: [
-      "A chest on the board, and nothing has been decided to come out of it yet.",
-      "The tile says nothing, and so does this card.",
-    ],
-  },
   kronos: {
     kind: "A chest",
     lines: [

@@ -88,7 +88,7 @@ import {
   drawFightMarks,
   drawFightStage,
 } from "./fight-stage.js";
-import { drawEpochStage } from "./epoch-stage.js";
+import { drawEpochPeek, drawEpochStage } from "./epoch-stage.js";
 import { drawHoleStage, playHoleCinematic, renderHole } from "./hole-stage.js";
 import { drawSpaceStage } from "./space-stage.js";
 
@@ -2470,7 +2470,11 @@ export function board({
        landing cinematic. */
     const isBlackHoleRead = cell.id === "black-hole" && !game.hole;
     const isHoleReopen = cell.id === "black-hole" && Boolean(game.hole);
-    if (!isChestTile && !isBlackHoleRead && !isHoleReopen) {
+    /* EPOCH ALSO ANSWERS A TAP ON ANY TURN. Its tap is a read-only
+       introduction - the same card the other special tiles open - so it is
+       not a decision that has to wait for the board to be at rest. */
+    const isEpochRead = cell.id === "epoch" && !game.epoch;
+    if (!isChestTile && !isEpochRead && !isBlackHoleRead && !isHoleReopen) {
       if (game.phase !== PHASE.AWAITING_ROLL) return;
       if (isDecision()) return;
     }
@@ -2523,6 +2527,21 @@ export function board({
         cell.id === NEXUS.id ? "nexus" : cell.id === KRONOS_CHEST.id ? "kronos" : "ragnarok",
         { onClose: () => closeRead() },
       );
+      paintPhase();
+      return;
+    }
+
+    /* EPOCH IS LOOKED AT, NOT VISITED. Its tap opens the same introduction
+       card the special tiles open - the mark, the name, the mythology, no
+       actions. While somebody is actually at Epoch, the tap brings the LIVE
+       screen back instead of drawing a second card over it. */
+    if (cell.id === "epoch") {
+      if (game.epoch) {
+        openEpochStage();
+        paintPhase();
+        return;
+      }
+      drawEpochPeek(frame, { onClose: () => closeRead() });
       paintPhase();
       return;
     }
@@ -2626,10 +2645,10 @@ export function board({
         }
         return;
       }
-      /* The chest tiles answer at any time - the pop-up is read-only and
-         covers nothing that is being decided. Everything else waits for the
-         board to be at rest. */
-      const isChestTile = id === NEXUS.id || id === RAGNAROK.id;
+      /* The chest tiles and Epoch answer at any time - the pop-up is
+         read-only and covers nothing that is being decided. Everything else
+         waits for the board to be at rest. */
+      const isChestTile = id === NEXUS.id || id === RAGNAROK.id || id === "epoch";
       if (!isChestTile) {
         if (isDecision()) return;
         if (game.phase !== PHASE.AWAITING_ROLL) return;

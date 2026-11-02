@@ -78,6 +78,43 @@ export function epochMark(size = 96) {
   );
 }
 
+/* ------------------------------------------------------------- the writing
+
+   The introduction is kept in one place so the landing stage and the tap
+   "peek" cannot drift: both draw the same Epoch. The peek only omits the
+   actions and the waiting line - it is an introduction, not the visit. */
+
+const EPOCH_TAGLINE = "The present is only one of time's possibilities.";
+
+const EPOCH_OPENING = [
+  "Before the first empire rose, the Kaalchakra was already turning. At its heart lies Epoch: the threshold between what has happened and what has not yet come to pass.",
+  "Time does not reward virtue or obey ambition. It merely opens a door. A forgotten moment may return; the future may reveal a fragment of itself; an opponent's advantage may become yours - not because the past has changed, but because the present has been rearranged.",
+];
+
+const EPOCH_DEEP = [
+  "Epoch is not the beginning or the end of time. It is the instant in which time changes direction, pauses, fractures into possibilities, or reveals a future hidden from the present. Every moment holds countless outcomes, but only one becomes history; the rest remain suspended in the unseen architecture of the Kaalchakra.",
+  "Those who arrive here are offered no promise of good fortune. Power is not only the ability to acquire or destroy - it is the ability to influence when things happen, which possibilities survive.",
+  "Every ruler believes they are moving through time. Epoch asks whether time is moving through them.",
+];
+
+/** The mark, the name and the opening mythology - the card's fixed introduction. */
+function epochIntro() {
+  return {
+    figure: el("div", { class: "epoch-card__figure-wrap" }, [
+      el("span", { class: "epoch-card__figure", "aria-hidden": "true", html: epochMark(104) }),
+    ]),
+    heading: el("h3", { class: "epoch-card__title", text: "EPOCH" }),
+    tagline: el("p", { class: "epoch-card__tagline", text: EPOCH_TAGLINE }),
+    mythology: el("div", { class: "epoch-card__mythology" },
+      EPOCH_OPENING.map((text) => el("span", { text }))),
+    more: el("details", { class: "epoch-card__more" }, [
+      el("summary", { class: "epoch-card__more-summary", text: "The deeper myth" }),
+      el("div", { class: "epoch-card__mythology epoch-card__mythology--deep" },
+        EPOCH_DEEP.map((text) => el("span", { text }))),
+    ]),
+  };
+}
+
 /* --------------------------------------------------------------- the names */
 
 /** The name and civilization a seat goes by, read from the ledger. */
@@ -124,50 +161,15 @@ export function drawEpochStage(
   const card = epoch.cardId ? timeCardById(epoch.cardId) : null;
   const result = epoch.result || null;
 
-  /* The figure and the introduction. These stand down once the card is out, so
-     the revealed Time Card has the room to be read - the same way the Nexus
-     mythology gives way to the deck. */
-  const figure = el("div", { class: "epoch-card__figure-wrap" }, [
-    el("span", { class: "epoch-card__figure", "aria-hidden": "true", html: epochMark(104) }),
-  ]);
-
-  const heading = el("h3", { class: "epoch-card__title", text: "EPOCH" });
-  const tagline = el("p", {
-    class: "epoch-card__tagline",
-    text: "The present is only one of time's possibilities.",
-  });
-
-  /* A few short paragraphs, not a wall. The full mythology folds open beneath
-     the concise opening, so the card stays readable and the action stays
-     within reach. */
-  const mythology = el("div", { class: "epoch-card__mythology" }, [
-    el("span", {
-      text:
-        "Before the first empire rose, the Kaalchakra was already turning. At its heart lies Epoch: the threshold between what has happened and what has not yet come to pass.",
-    }),
-    el("span", {
-      text:
-        "Time does not reward virtue or obey ambition. It merely opens a door. A forgotten moment may return; the future may reveal a fragment of itself; an opponent's advantage may become yours - not because the past has changed, but because the present has been rearranged.",
-    }),
-  ]);
-
-  const more = el("details", { class: "epoch-card__more" }, [
-    el("summary", { class: "epoch-card__more-summary", text: "The deeper myth" }),
-    el("div", { class: "epoch-card__mythology epoch-card__mythology--deep" }, [
-      el("span", {
-        text:
-          "Epoch is not the beginning or the end of time. It is the instant in which time changes direction, pauses, fractures into possibilities, or reveals a future hidden from the present. Every moment holds countless outcomes, but only one becomes history; the rest remain suspended in the unseen architecture of the Kaalchakra.",
-      }),
-      el("span", {
-        text:
-          "Those who arrive here are offered no promise of good fortune. Power is not only the ability to acquire or destroy - it is the ability to influence when things happen, which possibilities survive.",
-      }),
-      el("span", {
-        text:
-          "Every ruler believes they are moving through time. Epoch asks whether time is moving through them.",
-      }),
-    ]),
-  ]);
+  /* The figure and the introduction, shared with the tile's tap "peek". These
+     stand down once the card is out, so the revealed Time Card has the room to
+     be read - the same way the Nexus mythology gives way to the deck. */
+  const intro = epochIntro();
+  const figure = intro.figure;
+  const heading = intro.heading;
+  const tagline = intro.tagline;
+  const mythology = intro.mythology;
+  const more = intro.more;
 
   const explain = el("p", {
     class: "epoch-card__explain",
@@ -282,6 +284,61 @@ export function drawEpochStage(
   holder.replaceChildren(card_);
   holder.hidden = false;
   return card_;
+}
+
+/* ------------------------------------------------------------- the peek */
+
+/**
+ * EPOCH, LOOKED AT RATHER THAN VISITED.
+ *
+ * The card a tap on the Epoch tile opens when nobody is at it: the same
+ * figure, title, tagline and mythology as the landing stage - drawn by the
+ * same `epochIntro` helper - with no DRAW, no Time Card and no "waiting" line.
+ * It introduces the tile without playing it and without revealing a card's
+ * face, exactly as the Nexus, Ragnarok and Kronos peeks introduce theirs.
+ *
+ * It takes the "epoch" holder kind, so it inherits the landing card's own
+ * rectangle and typography; only the action zone is absent. The close button
+ * dismisses it the way every other read-only card is dismissed.
+ */
+export function drawEpochPeek(board, { onClose = null } = {}) {
+  const holder = board.querySelector(".board__card");
+  if (!holder) return null;
+
+  resetHolder(holder);
+  holder.dataset.cardKind = "epoch";
+  holder.dataset.property = "epoch";
+  board.dataset.property = "epoch";
+
+  const intro = epochIntro();
+  const card = el("article", {
+    class: "property-card epoch-card",
+    "data-property": "epoch",
+    "data-epoch": "peek",
+    style: { "--accent": "var(--ink)" },
+    "aria-live": "polite",
+  }, [
+    el("button", {
+      type: "button",
+      class: "property-card__close",
+      "aria-label": "Close",
+      title: "Close",
+      "data-action": "close",
+      text: "\u00d7",
+      onclick: () => {
+        if (typeof onClose === "function") onClose();
+      },
+    }),
+    intro.figure,
+    intro.heading,
+    intro.tagline,
+    el("div", { class: "epoch-card__scroll" }, [intro.mythology, intro.more]),
+  ]);
+
+  holder.replaceChildren(card);
+  holder.hidden = false;
+  holder.scrollTop = 0;
+  return card;
 }
 
 /** Where a seat's coin stands, read from the pieces. */
