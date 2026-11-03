@@ -73,13 +73,24 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms
 /** The god's picture, the name, and the line that says what the place is. */
 /* THE CARD IS BUILT FOR ITS STAGE.
 
-   The two options are what the card is while nobody has chosen. Once the
-   choice is made, the options are GONE and the deck is what the card is: a
-   player who has pressed "Take My Chances" must not still be offered a
-   choice, and a card that shows the buttons and the deck at once is a card
-   that says two things at the same time.
+   The two options are what the card is while nobody has chosen. Once a
+   choice is made the options are GONE - a player who has pressed "Take My
+   Chances" must not still be offered a choice, and a card that shows the
+   buttons and the deck at once is a card that says two things at the same
+   time. So the card is built for its stage, and the stage is the server's.
 
-   So the card is built for its stage, and the stage is the server's. */
+   WHAT SHAPE THAT STAGE HAS.
+
+   THE DECK IS THE DRAW. Only a draw deals a card, so only a draw takes the
+   deck shape. The offering (praying) draws nothing, so it keeps the card it
+   was paid on and gives up its options - it does not become a deck.
+
+   Treating every answered stage as "deck" is what made the payment flash:
+   the whole card was torn down and rebuilt (picture, title, buttons and all)
+   around a deck that the offering never deals, and then the deck was fitted
+   into it a beat later. */
+const showsDeck = (phase) => phase !== "open" && phase !== "praying";
+
 function nexusCard({ drawable, phase, caption }) {
   const answered = phase !== "open";
 
@@ -115,7 +126,7 @@ function nexusCard({ drawable, phase, caption }) {
     "data-property": "nexus",
     "data-chest": "nexus",
     "data-phase": phase,
-    "data-shape": answered ? "deck" : "options",
+    "data-shape": showsDeck(phase) ? "deck" : "options",
     style: { "--accent": "var(--ink)" },
     "aria-live": "polite",
   }, [
@@ -146,7 +157,7 @@ function nexusCard({ drawable, phase, caption }) {
     actions,
     /* The deck's place is reserved from the start, so the card does not jump
        when the deck arrives. */
-    el("div", { class: "nexus-card__deck-slot", hidden: !answered }),
+    el("div", { class: "nexus-card__deck-slot", hidden: !showsDeck(phase) }),
     el("div", { class: "nexus-card__result", hidden: true }),
   ]);
 
@@ -601,9 +612,9 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
      card over is wiped with it, so the card is left showing its BACK.
 
      So the card that is already up is kept, and only its stage is written
-     into it. The card IS rebuilt when its shape changes: the Nexus card has
-     the options while nobody has chosen and the deck afterwards, and a card
-     showing both is a card saying two things at once. */
+     into it. The card IS rebuilt when its shape changes - a draw replaces a
+     choice with a deck, and a card showing both is a card saying two things
+     at once - but a payment changes no shape, so it keeps its card. */
   const existing = holder.querySelector(".nexus-card, .chest-card");
   /* WHICH CHEST'S CARD IS ALREADY UP - answered by the card's OWN data, not
      by its class. The Ragnarok and the Kronos card wear the same class, and a
@@ -616,7 +627,7 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
      has not changed is a card that keeps its stage rather than being rebuilt
      over it. */
   const shape = chest.kind === "nexus"
-    ? (phase) => (phase === "open" ? "options" : "deck")
+    ? (phase) => (showsDeck(phase) ? "deck" : "options")
     : () => "chest";
   const sameShape = sameKind && existing.dataset.shape === shape(chest.phase);
 
@@ -642,6 +653,16 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
     holder.replaceChildren(card);
   } else {
     card.dataset.phase = chest.phase;
+    /* AN ANSWERED CARD DOES NOT STILL OFFER THE CHOICE.
+
+       The payment keeps the card it was paid on - that is what stops the
+       middle flashing - so the two options have to come out of it when the
+       choice is made. They are taken out here, once, in the same pass that
+       writes the new stage into the card, rather than by tearing the whole
+       card down and drawing it again. */
+    if (chest.kind === "nexus" && chest.phase !== "open") {
+      card.querySelector(".nexus-card__actions")?.remove();
+    }
   }
   /* KRONOS'S PILL FOLLOWS ITS PHASE: the kept card's button must become
      COLLECT when the card is revealed and grey itself through the shuffle -
@@ -735,7 +756,7 @@ export async function playNexusStage(board, chest, { chip = null, elapsed = 0 } 
      The deck goes where the options were, so the card does not grow a second
      thing and the options are not left on the screen beside it. */
   const slot = card.querySelector(".nexus-card__deck-slot");
-  if (slot && chest.phase !== "open" && !slot.querySelector(".nexus-card__deck-wrap")) {
+  if (slot && showsDeck(chest.phase) && !slot.querySelector(".nexus-card__deck-wrap")) {
     slot.hidden = false;
     slot.append(buildDeck());
   }
@@ -787,7 +808,11 @@ export async function playNexusStage(board, chest, { chip = null, elapsed = 0 } 
     }
   }
 
-  /* The offering, after Pray. */
+  /* The offering, after Pray.
+     The card is the one that was paid on: the stage has already taken the
+     options out of it, and nothing here rebuilds it - the picture, the title
+     and the mythology stay exactly as they were, and only the offering is
+     written under them. */
   if (chest.phase === "praying") {
     const result = card.querySelector(".nexus-card__result");
     if (result) {

@@ -1562,12 +1562,24 @@ export function board({
       const handlers = {};
       if (mine) {
         if (chest.kind === "nexus") {
-          handlers['[data-action="pray"]'] = () => {
-            void run({ type: "pray" });
-          };
-          handlers['[data-action="draw"]'] = () => {
-            void run({ type: "drawNexus" });
-          };
+          /* THE TWO OPTIONS ANSWER ONLY WHILE THEY ARE STILL A CHOICE.
+
+             Paying is one press. The card is not rebuilt when the choice is
+             made - it is kept, and the options are taken out of it - so the
+             handlers are only wired for the stage that is actually offering
+             them, and each one re-checks the phase before it sends. A second
+             press can never become a second payment, and a card that has
+             already moved on cannot still be pressed. */
+          if (chest.phase === "open") {
+            handlers['[data-action="pray"]'] = () => {
+              if (game.chest?.phase !== "open") return;
+              void run({ type: "pray" });
+            };
+            handlers['[data-action="draw"]'] = () => {
+              if (game.chest?.phase !== "open") return;
+              void run({ type: "drawNexus" });
+            };
+          }
         } else if (chest.kind === "kronos") {
           /* KRONOS OFFERS THREE SHIELD FACES, and the player touches one of
              them - or THE ONE PILL, which is the whole flow in one button:

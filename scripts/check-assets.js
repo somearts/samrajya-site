@@ -1230,10 +1230,13 @@ const cardJs = await readShipped(join("assets", "js", "property-card.js"));
   );
   check(
     "the options go when the draw begins, and the deck takes their place",
-    /"data-shape": answered \? "deck" : "options"/.test(chestStageJs) &&
+    /"data-shape": showsDeck\(phase\) \? "deck" : "options"/.test(chestStageJs) &&
+      /const showsDeck = \(phase\) => phase !== "open" && phase !== "praying";/.test(chestStageJs) &&
       /\.nexus-card\[data-phase="shuffling"\] \.nexus-card__mythology/.test(boardCss),
     "a card that shows the options AND the deck is a card saying two things at " +
-      "once, and the player pressed a button that is still there",
+      "once, and the player pressed a button that is still there. The deck " +
+      "belongs to the draw alone: the offering keeps the card it was paid on, " +
+      "so paying never tears the card down and rebuilds it around a deck",
   );
   check(
     "the card that is turned over shows its face, and not its back",
