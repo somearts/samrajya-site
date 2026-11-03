@@ -10,9 +10,10 @@
    - Boundary transactions: vessel at 500/499, suits at price/price-1,
      discounts applied exactly once, double presses refused with the state
      untouched, prayers charged once.
-   - START: a die landing on Start pays ₹200 once per lap; Epoch forward
-     movement and backward rewinds do NOT pay (pinning the established
-     implementation - see the report's ambiguity note).
+   - START: a die landing on Start pays ₹200 once per lap; an Epoch card's
+     move crossing Start earns the same lap on the same terms (it is a
+     movement, and it lands by the same rules), and a backward rewind never
+     earns.
    - Out-of-turn and duplicate actions change nothing and do not advance seq.
    - Circuit expiry of a carried suit, with and without an unused discount.
    ========================================================================== */
@@ -29,7 +30,7 @@ import {
   restoreGame,
 } from "../shared/game.js";
 import { CELLS } from "../shared/spaces.js";
-import { priceOf } from "../shared/economy.js";
+import { priceOf, REDEMPTION } from "../shared/economy.js";
 import { SUITS, suitById, discountPrice } from "../shared/suits.js";
 import { moneyOf, rentAt, sheetFor } from "../shared/ledger.js";
 import { drawNexusCard, NEXUS_PRAY_COST } from "../shared/nexus-cards.js";
@@ -276,10 +277,10 @@ test("landing exactly on Start pays the lap reward once, at the turn's end", () 
   assert.equal(ended.visit, null, "the visit is cleared with the turn - a later lap must earn again");
 });
 
-test("Epoch forward movement across START does not pay the lap reward (established behavior)", () => {
-  // Time Leap (3 forward) from 26 lands on 1: past Start, no wrap reward.
-  // This PINS the current implementation: only the die paths (roll/testRoll)
-  // compute crossedStart. The audit report carries the ambiguity note.
+test("Epoch forward movement across START earns the lap reward like a throw", () => {
+  // Time Leap (3 forward) from 26 lands on 1: the same crossing a throw makes.
+  // A Time Card's move is a movement, and a movement crossing START earns the
+  // lap - recorded on the visit, paid when the turn resolves, never twice.
   const leapRng = rngFor(drawTimeCard, (card) => card.effect === "leap");
   const state = createGame(PLAYERS, {});
   state.pieces[0].position = 26;
@@ -288,14 +289,19 @@ test("Epoch forward movement across START does not pay the lap reward (establish
   state.visit = { seat: 0, bought: false, upgrades: 0, drawn: null, collected: false, rent: 0, paid: false, short: 0, redemption: 0 };
   state.epoch = { playerId: 0, phase: "open", startedAt: 1, cardId: null, result: null, rewindSteps: 0, fracturePos: 0 };
 
-  const { state: moved, events } = take(state, { type: "drawTimeCard" }, leapRng);
-  assert.equal(moved.pieces[0].position, 1, "the leap crossed Start positionally");
-  assert.equal(moved.visit.redemption, 0, "no lap credit is recorded");
-  assert.equal(events.some((e) => e.type === "redemption"), false, "and no reward is paid");
-  assert.equal(moneyOf(moved.ledger, 0), 2000, "the purse did not move");
+  // The draw reads the card; the wheel has not turned yet.
+  const { state: drawn } = take(state, { type: "drawTimeCard" }, leapRng);
+  assert.equal(drawn.pieces[0].position, 26, "nothing moves on the draw");
+
+  // DONE walks it across START, and the square answers by the normal rules.
+  const { state: moved, events } = take(drawn, { type: "continue" });
+  assert.equal(moved.pieces[0].position, 1, "the leap crossed START");
+  assert.equal(moved.visit.redemption, REDEMPTION, "the lap credit rides on the visit");
+  assert.equal(events.some((e) => e.type === "redemption"), false, "the reward is paid when the turn resolves, not now");
+  assert.equal(moneyOf(moved.ledger, 0), 2000, "the purse did not move yet");
 });
 
-test("the Alternate Timeline's forward step across START pays nothing either", () => {
+test("the Alternate Timeline's forward step across START earns the same reward", () => {
   const state = createGame(PLAYERS, {});
   state.pieces[0].position = 27;
   state.phase = PHASE.DECISION;
@@ -303,11 +309,13 @@ test("the Alternate Timeline's forward step across START pays nothing either", (
   state.visit = { seat: 0, bought: false, upgrades: 0, drawn: null, collected: false, rent: 0, paid: false, short: 0, redemption: 0 };
   state.epoch = { playerId: 0, phase: "choosing", startedAt: 1, cardId: "timeline", result: {}, rewindSteps: 0, fracturePos: 0 };
 
-  const { state: chosen, events } = take(state, { type: "epochChoice", option: "forward" });
-  assert.equal(chosen.pieces[0].position, 1, "27 + 2 wrapped to 1");
-  assert.equal(chosen.visit.redemption, 0, "no lap credit");
-  assert.equal(events.some((e) => e.type === "redemption"), false, "no reward");
-  assert.equal(moneyOf(chosen.ledger, 0), 2000, "the purse did not move");
+  const { state: chosen } = take(state, { type: "epochChoice", option: "forward" });
+  assert.equal(chosen.pieces[0].position, 27, "the choice is read before the wheel turns");
+  const { state: moved, events } = take(chosen, { type: "continue" });
+  assert.equal(moved.pieces[0].position, 1, "27 + 2 wrapped to 1");
+  assert.equal(moved.visit.redemption, REDEMPTION, "the lap credit rides on the visit");
+  assert.equal(events.some((e) => e.type === "redemption"), false, "no reward before the turn resolves");
+  assert.equal(moneyOf(moved.ledger, 0), 2000, "the purse did not move");
 });
 
 test("a Time Rewind never earns a reward going backward", () => {
@@ -319,8 +327,10 @@ test("a Time Rewind never earns a reward going backward", () => {
   state.visit = { seat: 0, bought: false, upgrades: 0, drawn: null, collected: false, rent: 0, paid: false, short: 0, redemption: 0 };
   state.epoch = { playerId: 0, phase: "open", startedAt: 1, cardId: null, result: null, rewindSteps: 5, fracturePos: 0 };
 
-  const { state: moved, events } = take(state, { type: "drawTimeCard" }, rewindRng);
-  assert.equal(moved.pieces[0].position, 25, "wrapped backward around Start");
+  const { state: drawn } = take(state, { type: "drawTimeCard" }, rewindRng);
+  assert.equal(drawn.pieces[0].position, 2, "the rewind waits for DONE");
+  const { state: moved, events } = take(drawn, { type: "continue" });
+  assert.equal(moved.pieces[0].position, 25, "wrapped backward around START");
   assert.equal(moved.visit.redemption, 0, "backward movement never earns");
   assert.equal(events.some((e) => e.type === "redemption"), false, "no reward");
   assert.equal(moneyOf(moved.ledger, 0), 2000, "the purse did not move");

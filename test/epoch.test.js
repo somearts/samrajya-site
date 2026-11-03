@@ -122,10 +122,16 @@ test("the draw is refused for the wrong player, away from Epoch, or twice", () =
 test("Time Rewind steps back by the most recent completed throw", () => {
   // Landed on Epoch with a throw of 1 (from 16). Rewind goes back 1.
   let state = atEpoch({ lastFace: 1 });
-  const { state: after, events } = take(state, { type: "drawTimeCard" }, pick(IDX["time-rewind"]));
-  assert.equal(after.epoch.result.card, "time-rewind");
-  assert.equal(pos(after), EPOCH_INDEX - 1, "back one from Epoch");
+  const { state: drawn, events } = take(state, { type: "drawTimeCard" }, pick(IDX["time-rewind"]));
+  assert.equal(drawn.epoch.result.card, "time-rewind");
+  // The draw shows the card; the coin has not moved yet.
+  assert.equal(pos(drawn), EPOCH_INDEX, "nothing moves until the card is done");
+  assert.equal(drawn.epoch.pending.steps, -1);
   assert.ok(epochEvents(events).length, "the draw is announced once");
+
+  // DONE walks the wheel.
+  const { state: after } = take(drawn, { type: "continue" });
+  assert.equal(pos(after), EPOCH_INDEX - 1, "back one from Epoch");
 });
 
 test("Time Rewind uses the real last roll, and wraps the board", () => {
@@ -135,15 +141,21 @@ test("Time Rewind uses the real last roll, and wraps the board", () => {
   state = take(state, { type: "roll" }, face(3)).state;
   state = take(state, { type: "continue" }).state;
   assert.equal(pos(state), EPOCH_INDEX);
-  const { state: after } = take(state, { type: "drawTimeCard" }, pick(IDX["time-rewind"]));
+  const { state: drawn } = take(state, { type: "drawTimeCard" }, pick(IDX["time-rewind"]));
+  const { state: after } = take(drawn, { type: "continue" });
   assert.equal(pos(after), EPOCH_INDEX - 3);
 });
 
 test("Time Leap advances exactly three further along the path", () => {
   let state = atEpoch();
-  const { state: after } = take(state, { type: "drawTimeCard" }, pick(IDX["time-leap"]));
+  const { state: drawn } = take(state, { type: "drawTimeCard" }, pick(IDX["time-leap"]));
+  assert.equal(drawn.epoch.result.outcomeKind, "moved");
+  assert.equal(pos(drawn), EPOCH_INDEX, "the leap waits for DONE");
+  assert.equal(drawn.epoch.pending.steps, 3);
+
+  const { state: after, events } = take(drawn, { type: "continue" });
   assert.equal(pos(after), advance(EPOCH_INDEX, 3));
-  assert.equal(after.epoch.result.outcomeKind, "moved");
+  assert.ok(events.some((e) => e.type === "epochMoved"), "the wheel is announced");
 });
 
 test("Time Fracture returns to the stored previous position", () => {
@@ -152,7 +164,9 @@ test("Time Fracture returns to the stored previous position", () => {
   state = take(state, { type: "roll" }, face(3)).state; // 14 -> 17 (Epoch)
   state = take(state, { type: "continue" }).state;
   assert.equal(state.epoch.fracturePos, 14, "the genuine previous position is stored");
-  const { state: after } = take(state, { type: "drawTimeCard" }, pick(IDX["time-fracture"]));
+  const { state: drawn } = take(state, { type: "drawTimeCard" }, pick(IDX["time-fracture"]));
+  assert.equal(pos(drawn), EPOCH_INDEX, "the fracture waits for DONE");
+  const { state: after } = take(drawn, { type: "continue" });
   assert.equal(pos(after), 14, "fractured back to where the move began");
 });
 
@@ -213,12 +227,17 @@ test("Alternate Timeline waits for a choice, then moves two the chosen way", () 
   refuse(after, { type: "continue" });
 
   const forward = take(after, { type: "epochChoice", option: "forward" }).state;
-  assert.equal(pos(forward), advance(EPOCH_INDEX, 2));
   assert.equal(forward.epoch.phase, "revealed");
+  assert.equal(pos(forward), EPOCH_INDEX, "the choice is read before the wheel turns");
+  assert.equal(forward.epoch.pending.steps, 2);
+  const { state: forwardMoved } = take(forward, { type: "continue" });
+  assert.equal(pos(forwardMoved), advance(EPOCH_INDEX, 2));
 
   // The backward option from the same starting state.
   const backward = take(after, { type: "epochChoice", option: "backward" }).state;
-  assert.equal(pos(backward), advance(EPOCH_INDEX, -2));
+  assert.equal(backward.epoch.pending.steps, -2);
+  const { state: backwardMoved } = take(backward, { type: "continue" });
+  assert.equal(pos(backwardMoved), advance(EPOCH_INDEX, -2));
 });
 
 test("Time Theft takes an opponent's bonus, or reports there is none", () => {
@@ -261,29 +280,48 @@ test("Frozen Moment freezes the opponent and eats their next loop", () => {
 
 test("Epoch never duplicates a draw or a ledger entry", () => {
   let state = atEpoch();
-  const { state: after, events } = take(state, { type: "drawTimeCard" }, pick(IDX["time-leap"]));
+  const { state: drawn, events } = take(state, { type: "drawTimeCard" }, pick(IDX["time-leap"]));
   const drew = epochEvents(events);
   assert.equal(drew.length, 1, "exactly one draw event");
-  // The draw and the movement are recorded once each, and nothing else.
-  const entries = after.ledger.history.filter((h) => h.kind === "epoch");
+  // The draw is recorded once; the movement is recorded when it happens.
+  let entries = drawn.ledger.history.filter((h) => h.kind === "epoch");
   assert.ok(entries.some((h) => /Drew Time Leap/.test(h.text)));
-  assert.ok(entries.some((h) => /Time Leap · forward 3/.test(h.text)));
+  assert.ok(!entries.some((h) => /Time Leap · forward 3/.test(h.text)),
+    "the wheel has not turned yet");
   // A second draw is refused and changes nothing.
-  const seqBefore = after.seq;
-  refuse(after, { type: "drawTimeCard" }, pick(IDX["time-leap"]));
-  assert.equal(after.seq, seqBefore, "a refused draw leaves the sequence alone");
+  const seqBefore = drawn.seq;
+  refuse(drawn, { type: "drawTimeCard" }, pick(IDX["time-leap"]));
+  assert.equal(drawn.seq, seqBefore, "a refused draw leaves the sequence alone");
+
+  // DONE moves the coin, and the movement is recorded exactly once.
+  const { state: after } = take(drawn, { type: "continue" });
+  entries = after.ledger.history.filter((h) => h.kind === "epoch");
+  assert.equal(entries.filter((h) => /Time Leap · forward 3/.test(h.text)).length, 1,
+    "the movement is recorded once");
 });
 
-test("Epoch movement is positional: it never buys, rents, or chains", () => {
-  // Leap from Epoch onto an unowned property: no purchase is opened.
+test("an Epoch card's movement lands like a throw's landing", () => {
+  // The user's own example: leap 3 ahead of Epoch and land on the Wormhole.
+  // The square answers the way a dice landing answers - a purchase is offered,
+  // the visit is the destination's own, and the turn has NOT ended.
   let state = atEpoch();
-  // Epoch+3 from 17 = 20. Put nothing there; it is a normal unowned square.
-  const { state: after } = take(state, { type: "drawTimeCard" }, pick(IDX["time-leap"]));
-  assert.equal(pos(after), 20);
-  // No landing decision was raised by the card movement.
-  assert.equal(after.epoch.phase, "revealed");
-  assert.equal(ownerOf(after.ledger, CELLS.find((c) => c.index === 20).id), null,
-    "the card did not buy the square it landed on");
+  state = take(state, { type: "drawTimeCard" }, pick(IDX["time-leap"])).state;
+  state = take(state, { type: "continue" }).state;
+
+  assert.equal(pos(state), 20, "the coin stands on the Wormhole");
+  assert.equal(state.epoch, null, "the Epoch visit is over");
+  assert.equal(state.phase, PHASE.MOVING, "the coin is walking to the square");
+  assert.equal(state.active, 0, "the turn has NOT ended");
+
+  // The walk ends, and the square answers the way a dice landing answers.
+  state = take(state, { type: "continue" }).state;
+  assert.equal(state.landing.kind, "buy", "the Wormhole offers its purchase");
+  assert.equal(state.landing.id, CELLS.find((c) => c.index === 20).id);
+  assert.equal(state.phase, PHASE.DECISION, "the destination is a decision to answer");
+
+  // And the purchase can be made, exactly as a dice landing's can.
+  const { state: bought } = take(state, { type: "buy" });
+  assert.equal(ownerOf(bought.ledger, "wormhole"), 0, "the Wormhole changes hands");
 });
 
 test("a card effect cannot be skipped: continue waits for the card", () => {

@@ -18,11 +18,16 @@
 
    THE FINISH
    ----------
-   A thin rim with a metallic gradient across it, a soft highlight in the
-   upper left, and a drop shadow beneath - the three things that separate a die
-   from a rounded square. The shadow is a CSS filter rather than a box-shadow
-   precisely because a filter paints outside the element without taking part in
-   layout, so throwing the die cannot move anything around it.
+   A cube, seen slightly from above and to the left: the side material shows
+   under and beside the face, so the die has thickness rather than an outline.
+   The face is the board's brightest paper with a thin metallic rim, a soft
+   highlight in the upper left and a little weight in the lower right; the
+   pips are drilled into it, each in its own set colour so a face is
+   recognisable before it is read. The shadow beneath is a CSS filter rather
+   than a box-shadow precisely because a filter paints outside the element
+   without taking part in layout, so throwing the die cannot move anything
+   around it - and it deepens while the die tumbles, which is what lifting an
+   object off a table looks like.
 
    Note that this is a departure from the flat, gradient-free vocabulary the
    rest of the board is drawn in. It was asked for by name, and the die is the
@@ -31,7 +36,7 @@
 
    UNTHROWN
    --------
-   A die that has not been thrown shows its rim and nothing else - no pips, no
+   A die that has not been thrown shows the die and nothing else - no pips, no
    number. It is thrown on tap and only on tap: the number arrives because a
    player asked for it, which is the whole difference between a die and a
    decoration with digits in it.
@@ -77,18 +82,46 @@ const LAYOUT = Object.freeze({
   6: [[A, A], [C, A], [A, B], [C, B], [A, C], [C, C]],
 });
 
-const pips = (n, size) =>
+/**
+ * One pip, drilled rather than painted.
+ *
+ * A dot on a die is a hole in the material, and two circles are enough to
+ * say so: the pip's own colour fills the drill, and a smaller, darker centre
+ * sitting a hair down and to the right is the depth below the rim - the
+ * light comes from the upper left, so the shadow is in the lower right. It
+ * costs nothing to draw and it is what separates a die from a card with
+ * dots printed on it.
+ */
+const pips = (n) =>
   LAYOUT[n]
-    .map(([x, y]) => `<circle class="dice__pip" cx="${x}" cy="${y}" r="${size}"/>`)
+    .map(
+      ([x, y]) =>
+        `<circle class="dice__pip" cx="${x}" cy="${y}" r="7.2"/>` +
+        `<circle class="dice__pip-hole" cx="${x + 0.8}" cy="${y + 1}" r="4.4"/>`,
+    )
     .join("");
 
-/** The die's markup: unthrown, rim and highlight only. */
+/**
+ * The die's markup: a cube with one face turned towards the reader.
+ *
+ * THE SHAPE IS THREE-DIMENSIONAL. The body is the die's material and it is
+ * drawn 4.5 units down and to the right of the face, so the side shows under
+ * and beside it - thickness, which is the whole difference between a die and
+ * a rounded square. The face is the board's brightest paper, rimmed with the
+ * metallic hairline, and it carries the light in one corner and a little
+ * weight in the other. Under it: the pips, drilled.
+ *
+ * Everything else about the markup is as it was - the six faces are all in
+ * the DOM at once and a throw is a `hidden` attribute - so a throw is still
+ * one attribute and no redraw, and the rules that turn the die later do not
+ * care how it is drawn.
+ */
 export function dice(faceColors = []) {
   const faces = DICE_FACES.map((n) => {
-    const colour = faceColors[n - 1];
+    const colour = faceColors[n - 1] || "var(--ink)";
     return (
       `<g class="dice__face" data-face="${n}" hidden style="--pip: ${colour}">` +
-      `${pips(n, 6.2)}</g>`
+      `${pips(n)}</g>`
     );
   }).join("");
 
@@ -103,15 +136,22 @@ export function dice(faceColors = []) {
     `<stop offset="0.68" stop-color="currentColor" stop-opacity="0.55"/>` +
     `<stop offset="1" stop-color="currentColor" stop-opacity="0.90"/>` +
     `</linearGradient>` +
+    `<linearGradient id="dice-shade" x1="0" y1="0" x2="1" y2="1">` +
+    `<stop class="dice__shade-stop" offset="0.28" stop-opacity="0"/>` +
+    `<stop class="dice__shade-stop" offset="1" stop-opacity="0.17"/>` +
+    `</linearGradient>` +
     `<radialGradient id="dice-sheen" cx="0.32" cy="0.24" r="0.62">` +
     `<stop offset="0" stop-color="#FFFFFF" stop-opacity="0.55"/>` +
     `<stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>` +
     `</radialGradient>` +
-    `<clipPath id="dice-clip"><rect x="8" y="8" width="84" height="84" rx="15"/></clipPath>` +
+    `<clipPath id="dice-clip"><rect x="8" y="8" width="84" height="84" rx="16"/></clipPath>` +
     `</defs>` +
-    `<rect class="dice__body" x="8" y="8" width="84" height="84" rx="15"/>` +
+    /* The side material, drawn first so the face always sits on top of it. */
+    `<rect class="dice__side" x="12.5" y="12.5" width="84" height="84" rx="16"/>` +
+    `<rect class="dice__body" x="8" y="8" width="84" height="84" rx="16"/>` +
     `<g clip-path="url(#dice-clip)">` +
-    `<rect class="dice__sheen" x="8" y="8" width="84" height="84" rx="15"/>` +
+    `<rect class="dice__shade" x="8" y="8" width="84" height="84" rx="16"/>` +
+    `<rect class="dice__sheen" x="8" y="8" width="84" height="84" rx="16"/>` +
     `</g>` +
     faces +
     `</svg>`

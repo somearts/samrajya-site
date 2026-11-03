@@ -510,6 +510,284 @@ const event = (seq, type, data = {}) => ({ type, seq, ...data });
  */
 const now = () => Date.now();
 
+/* ---------------------------------------------------------------- the square */
+
+/**
+ * WHAT THE SQUARE WANTS, DECIDED ONCE.
+ *
+ * One piece of code answers a landing, for the throw that starts a turn and
+ * for the movement an Epoch Time Card makes later in the same turn. It opens
+ * the square's own decision in the state - the purchase, the rent, the chest,
+ * the fight, Epoch, the singularity, the suits - and leaves the phase at
+ * MOVING so the coin's walk finishes before anything is asked of the player.
+ * It never ends a turn: what happens after the square has been answered is
+ * the turn's own walk (`continue`), exactly as for a throw.
+ *
+ * It reads only what it is handed - the state it copies the visit's carried
+ * facts from, the copy it writes into, and the facts of the move - so a card
+ * movement and a throw land on the same rules by construction, not by
+ * agreement.
+ */
+function openLanding(next, ok, { state, seat, from, to, face, redemption = 0 }) {
+  const cell = CELLS.find((entry) => entry.index === to) || CELLS[to];
+
+  next.landing = {
+    seat,
+    index: to,
+    id: cell?.id || "",
+    kind: "none",
+  };
+  next.chest = null;
+  next.space = null;
+  next.visit = {
+    seat,
+    bought: false,
+    upgrades: 0,
+    drawn: null,
+    collected: false,
+    /* KRONOS ONLY. What the shield draw found: the shield id, the
+       sentinel "none" for a draw that found nothing left to offer, or
+       null while the chest has not been drawn from - the same three
+       states `drawn` holds at Ragnarok. */
+    shieldDrawn: null,
+    rent: 0,
+    paid: false,
+    short: 0,
+    /* What completing a lap is owed, paid when the turn is resolved. A
+       landing in the middle of a turn - an Epoch card's move - carries
+       forward what the throw that opened the turn had already earned, so
+       the two crossings are paid together and neither is lost. */
+    redemption: Number(redemption) || 0,
+    /* Nexus only. */
+    prayed: false,
+    nexusDrawn: false,
+    nexusCard: null,
+    /* The player left the Nexus without praying or drawing. */
+    declined: false,
+  };
+  next.phase = PHASE.MOVING;
+
+  ok("landed", {
+    seat,
+    index: to,
+    id: cell?.id || "",
+    name: cell?.name || "",
+  });
+
+  /* What the square wants. A property is the only kind that can hold a
+     decision except Ragnarok; a corner or a silent chest goes straight on
+     to RESOLVING and the UI sweeps it away. */
+  if (cell?.type === "property" && isPriced(cell.id)) {
+    const owner = ownerOf(next.ledger, cell.id);
+
+    if (owner === null) {
+      next.landing.kind = "buy";
+    } else if (owner === seat) {
+      next.landing.kind = "own";
+    } else {
+      next.landing.kind = "rent";
+      const verdict = payRent(next.ledger, cell.id, seat);
+      next.visit.rent = verdict.rent || 0;
+      next.visit.paid = Boolean(verdict.paid);
+      next.visit.short = verdict.shortfall || 0;
+
+      /* The two sides of one payment, written for the two people who will
+         read them. Both devices read the same ledger, so the payer's history
+         says what they paid and the holder's says what they received. */
+      recordEntry(next.ledger, {
+        turn: state.turn,
+        seat,
+        kind: "rent",
+        text: `Rent paid to ${nameOfSeat(next.ledger, owner)} · ${cell.name}`,
+        amount: -(verdict.amount || 0),
+      });
+      if ((verdict.amount || 0) > 0) {
+        recordEntry(next.ledger, {
+          turn: state.turn,
+          seat: owner,
+          kind: "rent",
+          text: `Rent received from ${nameOfSeat(next.ledger, seat)} · ${cell.name}`,
+          amount: verdict.amount || 0,
+        });
+      }
+
+      if (verdict.shortfall > 0) {
+        /* The payer could not meet the whole rent. They have paid everything
+           they hold and the ledger has recorded the rest as a short. This is
+           not a refusal and not a penalty: the visit continues exactly as a
+           paid rent would, and the notice is the only thing that says the two
+           were different. */
+        ok("rentShort", {
+          id: cell.id,
+          from: seat,
+          to: owner,
+          rent: verdict.rent || 0,
+          amount: verdict.amount || 0,
+          short: verdict.short || 0,
+          shortfall: verdict.shortfall || 0,
+          payer: verdict.payer,
+          holder: verdict.holder,
+        });
+      } else {
+        ok("rentPaid", {
+          id: cell.id,
+          from: seat,
+          to: owner,
+          amount: verdict.rent || 0,
+          payer: verdict.payer,
+          holder: verdict.holder,
+          rent: rentAt(next.ledger, cell.id),
+        });
+      }
+    }
+  } else if (
+    cell?.id === RAGNAROK.id ||
+    cell?.id === NEXUS.id ||
+    (KRONOS && cell?.id === KRONOS.id)
+  ) {
+    next.landing.kind = "chest";
+    /* THE CHEST IS OPENED HERE, IN THE STATE.
+
+       The chest is a shared screen, so it is a fact about the game and not
+       a thing one browser invented. It is opened when the coin stops on
+       the square, and every client draws the middle from it - so a client
+       that missed a message, or that joined late, or that reconnected,
+       reads the same chest out of the same state and shows the same
+       screen. Nothing about it has to be announced to be seen.
+
+       The phase starts at "open": the chest is there, the acting player
+       may press, and the other player is watching. */
+    next.chest = {
+      kind: cell.id === RAGNAROK.id
+        ? "ragnarok"
+        : cell.id === NEXUS.id
+          ? "nexus"
+          : "kronos",
+      playerId: seat,
+      phase: "open",
+      startedAt: now(),
+      choice: null,
+      result: null,
+    };
+    ok("chestOpened", {
+      kind: next.chest.kind,
+      seat,
+      startedAt: next.chest.startedAt,
+    });
+  } else if (cell?.id === FIGHT.id) {
+    /* THE FIGHT IS OPENED HERE, IN THE STATE.
+
+       The corner is a shared screen the same way the two chests are: the
+       fact lives in the state, and every client draws the middle from it.
+       The player who landed acts; the other player watches the same
+       screen read-only. Nothing about it has to be announced to be seen. */
+    next.landing.kind = "fight";
+    next.fight = {
+      playerId: seat,
+      phase: "open",
+      selectedWeaponId: null,
+      armed: false,
+      targetId: null,
+      result: null,
+      startedAt: now(),
+    };
+    ok("fightOpened", { seat, startedAt: next.fight.startedAt });
+  } else if (EPOCH && cell?.id === EPOCH.id) {
+    /* EPOCH OPENS HERE, IN THE STATE. The same shared screen as the two
+       chests and the fight: the fact lives in the state and every client
+       draws the middle from it. The player who landed acts; the other
+       watches read-only. The two facts the movement cards need - how far
+       the last throw went, and where the coin stood before it - are read
+       from the move that landed here, never guessed. */
+    next.landing.kind = "epoch";
+    next.epoch = {
+      playerId: seat,
+      phase: "open",
+      startedAt: now(),
+      cardId: null,
+      result: null,
+      /* The two facts the movement cards read: how far this move went,
+         and where the coin stood before it. Both are the move that just
+         landed here - the genuine values, never a guess. */
+      rewindSteps: face,
+      fracturePos: from,
+    };
+    ok("epochOpened", { seat, startedAt: next.epoch.startedAt });
+  } else if (HOLE_CELL && cell?.id === HOLE_CELL.id) {
+    /* THE SINGULARITY TAKES HOLD HERE, IN THE STATE.
+
+       The same shared screen as the chests, the fight and Epoch - the
+       fact lives in the state and every client draws the middle from
+       it. What is its own is that it outlives the visit: `hole` holds
+       the seat across turns, and every later rule of the confinement
+       reads it.
+
+       ONE CONFINEMENT AT A TIME. The corner takes whoever lands on it
+       while nobody is held; a landing while the other seat is already
+       held is an ordinary silent corner - the simplest rule that can
+       never strand two seats in one hole or free the first by force. */
+    if (next.hole) {
+      next.landing.kind = "none";
+    } else {
+      next.landing.kind = "hole";
+      next.hole = {
+        playerId: seat,
+        phase: "confined",
+        startedAt: now(),
+        entropy: 0,
+        entropyRoll: false,
+        escape: false,
+      };
+      ok("holeOpened", {
+        seat,
+        startedAt: next.hole.startedAt,
+        threshold: holeThreshold(next.ledger, seat),
+      });
+    }
+  } else if (SPACE_CELL && cell?.id === SPACE_CELL.id) {
+    /* OUTER SPACE OFFERS THE SUITS, AND RETIRES THE OLD ONE.
+
+       The screen is a shared fact like every chest and panel; arriving
+       here is also the far side of the circuit a suit was bought on, so
+       any suit this seat still carries is retired on this landing -
+       announced when its discount was never spent, silently when it
+       was. The turn itself is untouched: the screen decides what comes
+       next, and `continue` leaves it the way every visit is left. */
+    next.landing.kind = "space";
+    next.space = {
+      playerId: seat,
+      phase: "selecting",
+      startedAt: now(),
+      expired: null,
+      expiredNotice: false,
+    };
+    const carried = (state.suits || {})[seat] || null;
+    if (carried) {
+      next.suits = { ...(state.suits || {}), [seat]: null };
+      if (!carried.used) {
+        next.space.expired = carried.id;
+        next.space.expiredNotice = true;
+      }
+      ok("suitExpired", {
+        seat,
+        suit: carried.id,
+        used: Boolean(carried.used),
+      });
+    }
+    ok("spaceOpened", { seat, startedAt: next.space.startedAt });
+  } else {
+    next.landing.kind = "none";
+  }
+
+  /* MOVING is the phase the coin is walking in. What the square wants is
+     already known (`landing.kind`), but the card is not up yet: `continue`
+     is what the client sends when the coin has stopped, and that is the
+     step that opens the decision. A square that wants nothing goes to
+     RESOLVING instead, so the highlight has its own moment. */
+  next.phase = PHASE.MOVING;
+  return next;
+}
+
 /* ----------------------------------------------------------------- the rules */
 
 /**
@@ -691,39 +969,6 @@ function applyActionInner(state, action, rng = Math.random) {
         ...(Number.isInteger(reserved) ? { reserved: "future-sight" } : {}),
       };
 
-      next.landing = {
-        seat: active,
-        index: to,
-        id: cell?.id || "",
-        kind: "none",
-      };
-      next.chest = null;
-      next.space = null;
-      next.visit = {
-        seat: active,
-        bought: false,
-        upgrades: 0,
-        drawn: null,
-        collected: false,
-        /* KRONOS ONLY. What the shield draw found: the shield id, the
-           sentinel "none" for a draw that found nothing left to offer, or
-           null while the chest has not been drawn from - the same three
-           states `drawn` holds at Ragnarok. */
-        shieldDrawn: null,
-        rent: 0,
-        paid: false,
-        short: 0,
-        /* What completing a lap is owed, paid when the turn is resolved. */
-        redemption: crossedStart ? REDEMPTION : 0,
-        /* Nexus only. */
-        prayed: false,
-        nexusDrawn: false,
-        nexusCard: null,
-        /* The player left the Nexus without praying or drawing. */
-        declined: false,
-      };
-      next.phase = PHASE.MOVING;
-
       ok("moved", {
         seat: active,
         from,
@@ -732,224 +977,17 @@ function applyActionInner(state, action, rng = Math.random) {
         path: pathFrom(from, face),
         face,
       });
-      ok("landed", {
+
+      /* What the square wants, decided by the one landing rule every move
+         shares - the throw's own, and (since Epoch) a Time Card's. */
+      openLanding(next, ok, {
+        state,
         seat: active,
-        index: to,
-        id: cell?.id || "",
-        name: cell?.name || "",
+        from,
+        to,
+        face,
+        redemption: crossedStart ? REDEMPTION : 0,
       });
-
-      /* What the square wants. A property is the only kind that can hold a
-         decision except Ragnarok; a corner or a silent chest goes straight on
-         to RESOLVING and the UI sweeps it away. */
-      if (cell?.type === "property" && isPriced(cell.id)) {
-        const owner = ownerOf(next.ledger, cell.id);
-
-        if (owner === null) {
-          next.landing.kind = "buy";
-        } else if (owner === active) {
-          next.landing.kind = "own";
-        } else {
-          next.landing.kind = "rent";
-          const verdict = payRent(next.ledger, cell.id, active);
-          next.visit.rent = verdict.rent || 0;
-          next.visit.paid = Boolean(verdict.paid);
-          next.visit.short = verdict.shortfall || 0;
-
-          /* The two sides of one payment, written for the two people who will
-             read them. Both devices read the same ledger, so the payer's history
-             says what they paid and the holder's says what they received. */
-          recordEntry(next.ledger, {
-            turn: state.turn,
-            seat: active,
-            kind: "rent",
-            text: `Rent paid to ${nameOfSeat(next.ledger, owner)} · ${cell.name}`,
-            amount: -(verdict.amount || 0),
-          });
-          if ((verdict.amount || 0) > 0) {
-            recordEntry(next.ledger, {
-              turn: state.turn,
-              seat: owner,
-              kind: "rent",
-              text: `Rent received from ${nameOfSeat(next.ledger, active)} · ${cell.name}`,
-              amount: verdict.amount || 0,
-            });
-          }
-
-          if (verdict.shortfall > 0) {
-            /* The payer could not meet the whole rent. They have paid everything
-               they hold and the ledger has recorded the rest as a short. This is
-               not a refusal and not a penalty: the visit continues exactly as a
-               paid rent would, and the notice is the only thing that says the two
-               were different. */
-            ok("rentShort", {
-              id: cell.id,
-              from: active,
-              to: owner,
-              rent: verdict.rent || 0,
-              amount: verdict.amount || 0,
-              short: verdict.short || 0,
-              shortfall: verdict.shortfall || 0,
-              payer: verdict.payer,
-              holder: verdict.holder,
-            });
-          } else {
-            ok("rentPaid", {
-              id: cell.id,
-              from: active,
-              to: owner,
-              amount: verdict.rent || 0,
-              payer: verdict.payer,
-              holder: verdict.holder,
-              rent: rentAt(next.ledger, cell.id),
-            });
-          }
-        }
-      } else if (
-        cell?.id === RAGNAROK.id ||
-        cell?.id === NEXUS.id ||
-        (KRONOS && cell?.id === KRONOS.id)
-      ) {
-        next.landing.kind = "chest";
-        /* THE CHEST IS OPENED HERE, IN THE STATE.
-
-           The chest is a shared screen, so it is a fact about the game and not
-           a thing one browser invented. It is opened when the coin stops on
-           the square, and every client draws the middle from it - so a client
-           that missed a message, or that joined late, or that reconnected,
-           reads the same chest out of the same state and shows the same
-           screen. Nothing about it has to be announced to be seen.
-
-           The phase starts at "open": the chest is there, the acting player
-           may press, and the other player is watching. */
-        next.chest = {
-          kind: cell.id === RAGNAROK.id
-            ? "ragnarok"
-            : cell.id === NEXUS.id
-              ? "nexus"
-              : "kronos",
-          playerId: active,
-          phase: "open",
-          startedAt: now(),
-          choice: null,
-          result: null,
-        };
-        ok("chestOpened", {
-          kind: next.chest.kind,
-          seat: active,
-          startedAt: next.chest.startedAt,
-        });
-      } else if (cell?.id === FIGHT.id) {
-        /* THE FIGHT IS OPENED HERE, IN THE STATE.
-
-           The corner is a shared screen the same way the two chests are: the
-           fact lives in the state, and every client draws the middle from it.
-           The player who landed acts; the other player watches the same
-           screen read-only. Nothing about it has to be announced to be seen. */
-        next.landing.kind = "fight";
-        next.fight = {
-          playerId: active,
-          phase: "open",
-          selectedWeaponId: null,
-          armed: false,
-          targetId: null,
-          result: null,
-          startedAt: now(),
-        };
-        ok("fightOpened", { seat: active, startedAt: next.fight.startedAt });
-      } else if (EPOCH && cell?.id === EPOCH.id) {
-        /* EPOCH OPENS HERE, IN THE STATE. The same shared screen as the two
-           chests and the fight: the fact lives in the state and every client
-           draws the middle from it. The player who landed acts; the other
-           watches read-only. The two facts the movement cards need - how far
-           the last throw went, and where the coin stood before it - are read
-           from the genuine `lastRoll`, never guessed. */
-        next.landing.kind = "epoch";
-        next.epoch = {
-          playerId: active,
-          phase: "open",
-          startedAt: now(),
-          cardId: null,
-          result: null,
-          /* The two facts the movement cards read: how far this throw went,
-             and where the coin stood before it. Both are the throw that just
-             landed here - the genuine values, never a guess. */
-          rewindSteps: face,
-          fracturePos: from,
-        };
-        ok("epochOpened", { seat: active, startedAt: next.epoch.startedAt });
-      } else if (HOLE_CELL && cell?.id === HOLE_CELL.id) {
-        /* THE SINGULARITY TAKES HOLD HERE, IN THE STATE.
-
-           The same shared screen as the chests, the fight and Epoch - the
-           fact lives in the state and every client draws the middle from
-           it. What is its own is that it outlives the visit: `hole` holds
-           the seat across turns, and every later rule of the confinement
-           reads it.
-
-           ONE CONFINEMENT AT A TIME. The corner takes whoever lands on it
-           while nobody is held; a landing while the other seat is already
-           held is an ordinary silent corner - the simplest rule that can
-           never strand two seats in one hole or free the first by force. */
-        if (next.hole) {
-          next.landing.kind = "none";
-        } else {
-          next.landing.kind = "hole";
-          next.hole = {
-            playerId: active,
-            phase: "confined",
-            startedAt: now(),
-            entropy: 0,
-            entropyRoll: false,
-            escape: false,
-          };
-          ok("holeOpened", {
-            seat: active,
-            startedAt: next.hole.startedAt,
-            threshold: holeThreshold(next.ledger, active),
-          });
-        }
-      } else if (SPACE_CELL && cell?.id === SPACE_CELL.id) {
-        /* OUTER SPACE OFFERS THE SUITS, AND RETIRES THE OLD ONE.
-
-           The screen is a shared fact like every chest and panel; arriving
-           here is also the far side of the circuit a suit was bought on, so
-           any suit this seat still carries is retired on this landing -
-           announced when its discount was never spent, silently when it
-           was. The turn itself is untouched: the screen decides what comes
-           next, and `continue` leaves it the way every visit is left. */
-        next.landing.kind = "space";
-        next.space = {
-          playerId: active,
-          phase: "selecting",
-          startedAt: now(),
-          expired: null,
-          expiredNotice: false,
-        };
-        const carried = (state.suits || {})[active] || null;
-        if (carried) {
-          next.suits = { ...(state.suits || {}), [active]: null };
-          if (!carried.used) {
-            next.space.expired = carried.id;
-            next.space.expiredNotice = true;
-          }
-          ok("suitExpired", {
-            seat: active,
-            suit: carried.id,
-            used: Boolean(carried.used),
-          });
-        }
-        ok("spaceOpened", { seat: active, startedAt: next.space.startedAt });
-      } else {
-        next.landing.kind = "none";
-      }
-
-      /* MOVING is the phase the coin is walking in. What the square wants is
-         already known (`landing.kind`), but the card is not up yet: `continue`
-         is what the client sends when the coin has stopped, and that is the
-         step that opens the decision. A square that wants nothing goes to
-         RESOLVING instead, so the highlight has its own moment. */
-      next.phase = PHASE.MOVING;
       return { state: next, events };
     }
 
@@ -2280,7 +2318,15 @@ function applyActionInner(state, action, rng = Math.random) {
 
       /* Resolve the effect against the real state. Every branch writes the same
          `result`, so the client always has one outcome to show, and every state
-         change is made here and nowhere else. */
+         change is made here and nowhere else.
+
+         A MOVEMENT CARD DOES NOT MOVE YET. The draw shows the card, and the
+         card is what the player reads; the wheel turns when they have finished
+         reading it - on the press that closes the visit. The move is carried
+         in `epoch.pending` as the signed distance it will travel, and the
+         press that closes Epoch walks it and lands on the destination by the
+         same rules a throw lands by. Nothing about the square it will reach
+         is decided here, so a card can never buy, rent or chain in secret. */
       switch (card.effect) {
         case "rewind": {
           const steps = Number(state.epoch.rewindSteps);
@@ -2289,25 +2335,24 @@ function applyActionInner(state, action, rng = Math.random) {
             result.outcome = "No completed throw to rewind by.";
             break;
           }
-          const from = piece.position;
-          const to = advance(from, -steps);
-          const path = pathFrom(from, -steps);
-          piece.position = to;
+          next.epoch.pending = {
+            steps: -steps,
+            note: `Time Rewind · back ${steps} to ${CELLS.find((c) => c.index === advance(piece.position, -steps))?.name || advance(piece.position, -steps)}`,
+          };
           result.outcomeKind = "moved";
-          result.outcome = `Rewound ${steps} ${steps === 1 ? "space" : "spaces"}.`;
-          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Time Rewind · back ${steps} to ${CELLS.find((c) => c.index === to)?.name || to}`, amount: 0 });
-          ok("epochMoved", { seat: active, from, to, path, steps: -steps, backward: true });
+          result.outcome = steps === 1
+            ? "The wheel will carry you one space back."
+            : `The wheel will carry you ${steps} spaces back.`;
           break;
         }
         case "leap": {
-          const from = piece.position;
-          const to = advance(from, 3);
-          const path = pathFrom(from, 3);
-          piece.position = to;
+          const to = advance(piece.position, 3);
+          next.epoch.pending = {
+            steps: 3,
+            note: `Time Leap · forward 3 to ${CELLS.find((c) => c.index === to)?.name || to}`,
+          };
           result.outcomeKind = "moved";
-          result.outcome = `Leapt 3 spaces to ${CELLS.find((c) => c.index === to)?.name || to}.`;
-          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Time Leap · forward 3 to ${CELLS.find((c) => c.index === to)?.name || to}`, amount: 0 });
-          ok("epochMoved", { seat: active, from, to, path, steps: 3, backward: false });
+          result.outcome = "The wheel will carry you 3 spaces ahead.";
           break;
         }
         case "fracture": {
@@ -2317,14 +2362,13 @@ function applyActionInner(state, action, rng = Math.random) {
             result.outcome = "No earlier moment to fracture back to.";
             break;
           }
-          const from = piece.position;
           const to = advance(target, 0);
-          const path = pathFrom(from, to - from);
-          piece.position = to;
+          next.epoch.pending = {
+            steps: to - piece.position,
+            note: `Time Fracture · back to ${CELLS.find((c) => c.index === to)?.name || to}`,
+          };
           result.outcomeKind = "moved";
-          result.outcome = `Fractured back to ${CELLS.find((c) => c.index === to)?.name || to}.`;
-          recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Time Fracture · back to ${CELLS.find((c) => c.index === to)?.name || to}`, amount: 0 });
-          ok("epochMoved", { seat: active, from, to, path, steps: to - from, backward: to < from });
+          result.outcome = "The wheel will return you to where the throw began.";
           break;
         }
         case "sight": {
@@ -2432,17 +2476,27 @@ function applyActionInner(state, action, rng = Math.random) {
       }
       const option = action.option === "backward" ? "backward" : "forward";
       const steps = option === "forward" ? 2 : -2;
-      const from = piece.position;
-      const to = advance(from, steps);
-      const path = pathFrom(from, steps);
-      piece.position = to;
+      const to = advance(piece.position, steps);
 
-      const result = { ...state.epoch.result, outcomeKind: "moved", option, outcome: `${option === "forward" ? "Advanced" : "Fell back"} 2 to ${CELLS.find((c) => c.index === to)?.name || to}.` };
+      /* The choice is made, and the card says what it chose - but the wheel
+         still waits for the press that closes the visit, exactly as the other
+         movement cards do. */
+      const result = {
+        ...state.epoch.result,
+        outcomeKind: "moved",
+        option,
+        outcome: option === "forward"
+          ? "The wheel will carry you 2 spaces ahead."
+          : "The wheel will return you 2 spaces.",
+      };
       next.epoch.result = result;
+      next.epoch.pending = {
+        steps,
+        option,
+        note: `Alternate Timeline · ${option} 2 to ${CELLS.find((c) => c.index === to)?.name || to}`,
+      };
       next.epoch.phase = "revealed";
 
-      recordEntry(next.ledger, { turn: state.turn, seat: active, kind: "epoch", text: `Alternate Timeline · ${option} 2 to ${CELLS.find((c) => c.index === to)?.name || to}`, amount: 0 });
-      ok("epochMoved", { seat: active, from, to, path, steps, backward: steps < 0 });
       ok("timeCardDrawn", {
         seat: active,
         card: state.epoch.cardId,
@@ -2589,6 +2643,61 @@ function applyActionInner(state, action, rng = Math.random) {
           if (state.epoch.phase === "choosing") {
             return refused(state, action, "Choose a future first.");
           }
+
+          /* THE WHEEL TURNS WHEN THE CARD HAS BEEN READ.
+
+             A movement card does not move on the draw - the draw shows the
+             card, and the card is what the player reads. It moves on THIS
+             press, and then it lands on the destination by the same rules a
+             throw lands by: the purchase, the rent, the chest, the fight,
+             Epoch, the singularity, the suits. The turn does NOT end here -
+             the destination is a visit of its own, and the ordinary walk
+             (MOVING, then whatever the square wants) takes it from here.
+
+             The visit the throw began is replaced by the destination's own,
+             with one thing carried across: a Redemption earned on the way to
+             Epoch is still owed when the turn resolves, and a crossing the
+             card itself makes earns one the same way a throw's crossing does. */
+          const pending = state.epoch.pending;
+          if (pending && piece && Number.isInteger(pending.steps) && pending.steps !== 0) {
+            /* The visit is over the moment the wheel turns: the destination is
+               a landing of its own, and a landing that reaches Epoch must find
+               the threshold closed, not the card that is being left. */
+            next.epoch = null;
+            const from = piece.position;
+            const to = advance(from, pending.steps);
+            const path = pathFrom(from, pending.steps);
+            piece.position = to;
+
+            recordEntry(next.ledger, {
+              turn: state.turn,
+              seat: active,
+              kind: "epoch",
+              text: pending.note ||
+                `Time moved · to ${CELLS.find((c) => c.index === to)?.name || to}`,
+              amount: 0,
+            });
+            ok("epochMoved", {
+              seat: active,
+              from,
+              to,
+              path,
+              steps: pending.steps,
+              backward: pending.steps < 0,
+            });
+
+            const cardCrossed = pending.steps > 0 && from > 0 && from + pending.steps >= BOARD_SIZE;
+            openLanding(next, ok, {
+              state,
+              seat: active,
+              from,
+              to,
+              face: Math.abs(pending.steps),
+              redemption: (Number(state.visit?.redemption) || 0) + (cardCrossed ? REDEMPTION : 0),
+            });
+            return { state: next, events };
+          }
+
           next.epoch = null;
         }
         if (kind === "space") {

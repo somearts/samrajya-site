@@ -609,13 +609,45 @@
   filter: drop-shadow(0 1px 2px rgb(18 17 16 / 0.10));
 }
 
-/* The die's own drawing: a thin rim carrying a metallic gradient, and a
-   highlight in the upper left that sits under the pips rather than over them.
-   Both are clipped to the die's own shape, so neither can escape it. */
+/* THE DIE'S OWN DRAWING: the material, its thickness, the light on it, and
+   the pips drilled into it.
+
+   THE MATERIAL - the face is the board's brightest paper (the same stock a
+   dealt card is made of), so the die belongs to the same palette as the
+   tiles it sits among and is still the brightest thing in the middle. The
+   rim is the metallic hairline; the shade and the sheen are what make it a
+   surface rather than a shape - light from the upper left, a little weight
+   in the lower right.
+
+   THE THICKNESS - a die is a cube, not a rounded square. The side material
+   is the same rect drawn 4.5 units down and to the right of the face, in the
+   face's own colour a shade darker, so it shows under and beside the face.
+   It is drawn first, so the face is always on top of it, and it costs one
+   element.
+
+   Both the shade and the sheen are clipped to the die's own shape, so
+   neither can escape it, and neither touches the pips: the drilling is what
+   gives the face its depth, not a wash over the number. */
+.dice__side {
+  fill: color-mix(in srgb, var(--dealt-paper) 82%, var(--ink));
+}
+
 .dice__body {
-  fill: none;
+  fill: var(--dealt-paper);
   stroke: url(#dice-rim);
   stroke-width: 2.6;
+}
+
+.dice__shade {
+  fill: url(#dice-shade);
+  pointer-events: none;
+}
+
+/* The shade's own colour, taken from the ink token. The stops are inside the
+   gradient's <defs>, so they take the palette the same way everything else
+   does rather than a colour typed twice. */
+.dice__shade-stop {
+  stop-color: var(--ink);
 }
 
 .dice__sheen {
@@ -623,8 +655,17 @@
   pointer-events: none;
 }
 
+/* THE PIPS, DRILLED. Each pip keeps its own set colour - one per face, so a
+   result is recognisable before it is read - and each carries a smaller,
+   darker centre sitting a hair down and to the right: the light comes from
+   the upper left, so the depth is in the lower right. Two circles is what a
+   drilled dimple needs and nothing more. */
 .dice__pip {
   fill: var(--pip);
+}
+
+.dice__pip-hole {
+  fill: color-mix(in srgb, var(--ink) 44%, var(--pip));
 }
 
 /* Only one face is ever shown; the rest carry `hidden`, which is why a throw
@@ -636,23 +677,27 @@
 
 /* THE THROW
 
-   A small, quick wobble, and nothing else. No loop: `data-rolling` is true only
+   The die rocks the way a die rocks in a hand: it lifts off the board,
+   leans one way, comes back through the other, and settles - a little
+   bigger shadow beneath it while it is up, because a lifted object casts a
+   longer shadow. No loop of anything else: `data-rolling` is true only
    while the die is in the air, so the moment it lands the animation stops
    existing. */
 
 .board__dice[data-rolling="true"] {
   animation: dice-throw 240ms ease-in-out infinite;
+  filter: drop-shadow(0 4px 7px rgb(18 17 16 / 0.18));
 }
 
 @keyframes dice-throw {
   0% {
-    transform: translate(-50%, -50%) rotate(-4deg);
+    transform: translate(-50%, -50%) rotate(-5deg) scale(1);
   }
   50% {
-    transform: translate(-50%, calc(-50% - 1.5px)) rotate(4deg);
+    transform: translate(-50%, calc(-50% - 2px)) rotate(5deg) scale(1.02);
   }
   100% {
-    transform: translate(-50%, -50%) rotate(-4deg);
+    transform: translate(-50%, -50%) rotate(-5deg) scale(1);
   }
 }
 
@@ -6357,16 +6402,24 @@ button.board__cell--corner:focus-visible {
      The middle already says whose turn it is in words. The die is the one thing
      a thumb reaches for, so it says the same thing in its own language: full
      strength when it is this seat's to throw, half strength while the other
-     seat has the turn, and fainter still while a request is in flight and the
-     board has stopped taking presses. Nothing here is the lock - the lock is
-     `data-rollable` and `data-busy` in board.js - this is only the lock made
-     visible. */
-  .board[data-rollable="false"] .board__dice {
+     seat has the turn. Nothing here is the lock - the lock is `data-rollable`
+     in board.js - this is only the lock made visible.
+
+     NEVER WHILE A REQUEST IS IN FLIGHT. The lock is taken the instant a die is
+     pressed and released when the answer comes back, so a die that dimmed with
+     the lock faded exactly as it was tapped, under the player's own thumb, and
+     stayed faded through the whole throw. That was the bug: on this breakpoint
+     the die greyed out the moment it was touched and did not come back until
+     the turn was over. A request in flight is the moment the die matters most,
+     so it is full strength for it, and for the tumble and the walk that
+     follow. Only an idle die that is not this seat's to throw is quiet. */
+  .board[data-rollable="false"]:not([data-busy="true"]) .board__dice {
     opacity: 0.55;
   }
 
-  .board[data-busy="true"] .board__dice {
-    opacity: 0.38;
+  .board[data-throwing="true"] .board__dice,
+  .board .board__dice[data-rolling="true"] {
+    opacity: 1;
   }
 
   .board[data-busy="true"] {

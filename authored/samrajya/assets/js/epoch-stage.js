@@ -238,12 +238,14 @@ export function drawEpochStage(
     );
   }
   if (mine && epoch.phase === "revealed") {
+    /* One closing press. For a movement card it is the press the wheel has
+       been waiting for: the coin walks and the destination answers. */
     actions.push(
       el("button", {
         type: "button",
         class: "epoch-card__continue",
         "data-action": "continue",
-        text: "CONTINUE",
+        text: "DONE",
       }),
     );
   }
