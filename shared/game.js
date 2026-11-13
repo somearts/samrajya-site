@@ -55,7 +55,7 @@
    spent. One economy, one ledger, one turn.
    ========================================================================== */
 
-import { MAX_UPGRADE, REDEMPTION, STARTING_MONEY, isPriced, priceOf } from "./economy.js";
+import { MAX_UPGRADE, PRICED_IDS, REDEMPTION, STARTING_MONEY, isPriced, priceOf } from "./economy.js";
 import { suitById } from "./suits.js";
 import {
   adjustMoney,
@@ -64,6 +64,7 @@ import {
   canUpgrade,
   createLedger,
   levelOf,
+  moneyOf,
   nameOfSeat,
   ownerOf,
   payRent,
@@ -83,6 +84,7 @@ import {
   BAD_LUCK,
   IMMUNE as IMMUNE_LIST,
   RAGNAROK,
+  WEAPONS,
   drawShield,
   drawWeapon,
   shieldById,
@@ -109,8 +111,133 @@ const WORMHOLE_CELL = CELLS.find((cell) => cell.id === "wormhole") || null;
 /** The property whose hold shortens a confinement: Event Horizon. */
 export const EVENT_HORIZON = "event-horizon";
 
-/** How many of the owner's turns a shield stands for, once drawn. */
-export const SHIELD_TURNS = 2;
+/** Jupiter: the square Ancient Greek takes without tribute. */
+const JUPITER = CELLS.find((cell) => cell.id === "jupiter") || null;
+
+/* ------------------------------------------------- the civilizations' powers
+
+   EACH CIVILIZATION BRINGS ONE POWER, and every one of them belongs to a
+   player's FIRST throw of the die - never to a later one, and never twice.
+
+   The whole rule lives in two fields of the state the server owns:
+
+     firstRoll  which seats have already thrown their first die. Written by
+                the throw itself, so a refresh, a reconnect, a second turn or
+                a retried press can never make it happen again.
+     civGift    the promise that first throw made, if the landing kept it: a
+                blessing owed to the first purchase, two weapons owed at
+                Ragnarok, Jupiter without tribute. It is spent by the visit
+                that earned it and cleared when the turn resolves, so a
+                promise can never travel into a later turn.
+
+   Ancient Roman's power is the throw itself, so it carries no promise: the
+   six is applied where the face is decided, and nothing is owed afterwards.
+
+   A power is therefore never a thing a browser can ask for - it is written
+   by the one action that earns it, in the same state every device reads. */
+
+/** What each civilization's first throw promises, given the landing it made. */
+const FIRST_THROW_GIFT = Object.freeze({
+  /* The first territory claimed is blessed with ₹50. */
+  "indus-valley": (landing) => (landing?.kind === "buy" ? "first-acquisition" : null),
+  /* Ragnarok answers with two weapons instead of one. */
+  mesopotamian: (landing) => (landing?.id === RAGNAROK.id ? "two-weapons" : null),
+  /* Jupiter is taken without tribute - and only while it is there to take. */
+  "ancient-greek": (landing) =>
+    landing?.kind === "buy" && landing?.id === JUPITER?.id ? "free-jupiter" : null,
+  /* The six is the gift; nothing is carried. */
+  "ancient-roman": () => null,
+});
+
+/** What this civilization's first throw promises, or null. */
+function giftOf(civ, landing) {
+  const decide = FIRST_THROW_GIFT[civ];
+  return decide ? decide(landing) : null;
+}
+
+/** The civilization a seat plays, or null. */
+function civOf(state, seat) {
+  return state.ledger?.players?.find((p) => p.seat === Number(seat))?.civ || null;
+}
+
+/** What Indus Valley's first acquisition returns to the treasury. */
+const FIRST_ACQUISITION_BLESSING = 50;
+
+/* ------------------------------------------------------------ Nexus loans
+
+   A seat may borrow from the Nexus at any time, against the purchase value
+   of the properties it owns. Three fixed amounts: ₹500, ₹1,000, ₹2,000, and
+   the total repayment is one and a half times the amount. The security is
+   the mortgaged properties: they stay owned, keep working under the ordinary
+   rules, and come free when the loan is repaid within five full circuits of
+   the board from the square it was taken on. Miss the deadline and Nexus
+   takes them - back to the bank, unbuilt, and the loan closes as defaulted.
+
+   THE SECURITY IS CHOSEN AUTOMATICALLY.
+
+   The smallest combination of owned properties whose combined purchase value
+   meets or exceeds the amount is mortgaged. A single property worth at least
+   the amount can secure it alone; a combination whose sum is smaller than the
+   amount can never secure it, so such an offer is refused outright. */
+
+export const LOAN_AMOUNTS = Object.freeze([500, 1000, 2000]);
+
+/** What must be repaid for a loan of this amount, interest included. */
+export function loanRepaymentOf(amount) {
+  return Math.round((Number(amount) || 0) * 1.5);
+}
+
+/** The smallest set of owned properties whose combined purchase value meets
+   or exceeds the amount, or null when no combination can. Ties go to the
+   smaller set; an exact amount always wins. */
+/** The smallest set of owned properties whose combined purchase value meets
+   or exceeds the amount, or null when no combination can. Ties go to the
+   smaller set; an exact amount always wins. */
+export function mortgageSelection(ownedIds, amount) {
+  const items = ownedIds
+    .map((id) => ({ id, price: priceOf(id) || 0 }))
+    .sort((a, b) => a.price - b.price || (a.id < b.id ? -1 : 1));
+  const n = items.length;
+  let best = null;
+  for (let mask = 1; mask < 1 << n; mask += 1) {
+    let sum = 0;
+    const ids = [];
+    for (let i = 0; i < n; i += 1) {
+      if (mask & (1 << i)) {
+        sum += items[i].price;
+        ids.push(items[i].id);
+      }
+    }
+    if (sum >= amount && (best === null || sum < best.sum || (sum === best.sum && ids.length < best.ids.length))) {
+      best = { ids, sum };
+      if (sum === amount) return best.ids;
+    }
+  }
+  return best ? best.ids : null;
+}
+
+/** Count the circuits a move completes against an active loan, and tick them.
+
+   One circuit is the coin passing the square the loan was taken on. The count
+   lives on the loan itself, so both devices agree and a refresh cannot rewind
+   it. */
+function tickLoanCircuits(next, state, active, from, face) {
+  const loan = state.loans?.[active] || null;
+  if (!loan || loan.status !== "active") return;
+  let circuits = loan.circuits || 0;
+  for (let n = 1; n <= face; n += 1) {
+    if (advance(from, n) === loan.position) circuits += 1;
+  }
+  if (circuits !== (loan.circuits || 0)) {
+    next.loans = { ...next.loans, [active]: { ...loan, circuits } };
+  }
+}
+
+/** How many turns of the deadline remain for an active loan, never below
+   zero. Zero means the deadline has passed and the loan awaits default. */
+function turnsRemainingOf(loan) {
+  return Math.max(0, 5 - (loan.circuits || 0));
+}
 
 /* ------------------------------------------------------- Black Hole rules */
 
@@ -279,12 +406,13 @@ export function createGame(players = [], { opening = STARTING_MONEY, testMode = 
     bonusRolls: { 0: 0, 1: 0 },
     /* The KRONOS SHIELDS standing in this game, as a list of:
 
-         { id, owner, weapon, turnsLeft }
+         { id, owner, weapon, colony }
 
-       `weapon` is the ONE weapon the shield answers; `turnsLeft` counts the
-       OWNER's turns only, and is spent on a successful block. A shield is
-       added when it is drawn at Kronos, ticked at TURN_END, and removed when
-       it blocks or expires.
+       `weapon` is the ONE weapon the shield answers, and `colony` is the
+       exact ground it stands on. PERMANENT: a shield has no clock and no
+       turn count. It is added when it is deployed at Kronos, is never
+       ticked at TURN_END, and leaves this list only when its colony is
+       captured by force or it blocks the strike it answers.
 
        ONE PER WEAPON, PER PLAYER, AT MOST THREE - the whole of the anti-stacking
        rule, and it is held by the draw itself rather than by a check here: a
@@ -312,6 +440,34 @@ export function createGame(players = [], { opening = STARTING_MONEY, testMode = 
        bonus roll, or nullifies the opponent's next bonus grant within their
        following turn, and is always cleared by the end of that turn. */
     frozen: { 0: false, 1: false },
+    /* THE FIRST THROW OF EACH SEAT, and what it promised.
+
+       `firstRoll[seat]` is true once that seat has thrown their first die -
+       written by the throw itself, in this state, so it survives a refresh,
+       a reconnect and every later turn: a civilization's power can only ever
+       fire once.
+
+       `civGift[seat]` is the promise that throw made when the landing kept
+       it - a blessing for the first purchase, two weapons at Ragnarok,
+       Jupiter without tribute. It is spent by the visit that earned it and
+       cleared when the turn resolves, so a promise can never reach a later
+       turn, and a duplicate press finds nothing left to spend. */
+    firstRoll: { 0: false, 1: false },
+    civGift: { 0: null, 1: null },
+    /* THE NEXUS LOANS, per seat. A seat may borrow against the purchase value
+       of the properties it owns, repay within five full circuits of the
+       board, or forfeit the security. `null` when nothing is owed;
+       otherwise the loan the seat is carrying. */
+    loans: { 0: null, 1: null },
+    /* THE INTRODUCTION, once for the whole game.
+
+       Both players are shown it when the game begins; only `intro.seat` -
+       the player who takes the first throw - has the button that dismisses
+       it and lets the game start. `intro.done` is that press, written into
+       this state, so a refresh or a reconnect reads the same answer rather
+       than showing the introduction again, and the opponent - who never had
+       the button - never sees it once it is done. */
+    intro: { seat: ledger.players[0]?.seat ?? null, done: false },
     /* A Future Sight reservation, per seat: the exact face the next roll must
        produce. Consumed by that roll. */
     futureSight: { 0: null, 1: null },
@@ -384,6 +540,7 @@ function cloneGame(state) {
     fight: state.fight ? { ...state.fight } : null,
     epoch: state.epoch ? { ...state.epoch } : null,
     shields: (state.shields || []).map((shield) => ({ ...shield })),
+    loans: { ...(state.loans || { 0: null, 1: null }) },
     hole: state.hole ? { ...state.hole } : null,
     bonusRolls: { ...(state.bonusRolls || { 0: 0, 1: 0 }) },
     frozen: { ...(state.frozen || { 0: false, 1: false }) },
@@ -865,6 +1022,26 @@ function applyActionInner(state, action, rng = Math.random) {
   if (active === null) return refused(state, action, "Nobody is playing.");
 
   switch (action.type) {
+    /* --------------------------------------------------- the introduction */
+    case "introSeen": {
+      /* ONE PRESS, BY THE PLAYER WHO TAKES THE FIRST THROW.
+
+         Both players are shown the introduction; only `intro.seat` is given
+         the button, so the opponent can read it and nothing more. The press
+         is written into this state, which is what makes it one press for the
+         whole game: a refresh or a reconnect reads it, the opponent's screen
+         goes down with it, and it can never come back. A second press, or
+         one from a seat that was never holding the button, changes nothing. */
+      if (!state.intro || state.intro.done) return { state: next, events };
+      const seat = Number(actor);
+      if (!Number.isInteger(seat) || seat !== Number(state.intro.seat)) {
+        return refused(state, action, "Only the player who takes the first throw can begin.");
+      }
+      next.intro = { ...state.intro, done: true };
+      ok("introSeen", { seat });
+      return { state: next, events };
+    }
+
     /* ------------------------------------------------------------- the roll */
     case "roll": {
       if (state.phase !== PHASE.AWAITING_ROLL) {
@@ -893,7 +1070,17 @@ function applyActionInner(state, action, rng = Math.random) {
          the recorded roll and the movement can never disagree. Nothing else
          may change it, and a reload keeps it because it lives in the state. */
       const reserved = state.futureSight?.[active];
-      const face = Number.isInteger(reserved) ? reserved : rolledFace;
+      let face = Number.isInteger(reserved) ? reserved : rolledFace;
+
+      /* ANCIENT ROMAN'S POWER IS THE THROW ITSELF.
+
+         Their first die is a six - the real one, decided here where every
+         other face is decided, so the recorded roll, the walk and the die on
+         the screen are all the same six. It is applied to the FIRST throw
+         only (`firstRoll` is written by this same action, below), and every
+         throw after it takes whatever the rng says, exactly as before. */
+      const firstThrow = !state.firstRoll?.[active];
+      if (firstThrow && civOf(state, active) === "ancient-roman") face = 6;
 
       /* ENTROPY, NOT MOVEMENT - AND THE PANEL, NOT THE WALK.
 
@@ -963,6 +1150,10 @@ function applyActionInner(state, action, rng = Math.random) {
       const crossedStart = from > 0 && from + face >= BOARD_SIZE;
 
       piece.position = to;
+      /* A loan's deadline is measured in full circuits of the board from the
+         square it was taken on - every pass of that square counts, whoever's
+         throw made it. */
+      tickLoanCircuits(next, state, active, from, face);
       next.lastRoll = {
         seat: active, face, from, to, id: cell?.id || "",
         ...(bonus ? { bonus: true } : {}),
@@ -988,6 +1179,28 @@ function applyActionInner(state, action, rng = Math.random) {
         face,
         redemption: crossedStart ? REDEMPTION : 0,
       });
+
+      /* THE FIRST THROW IS SPENT HERE, AND WHAT IT PROMISED IS WRITTEN WITH
+         IT.
+
+         Both facts live in this state: `firstRoll` says the seat has thrown
+         their first die, so no refresh, reconnect, later turn or retried
+         press can make the power fire again; `civGift` is the promise this
+         throw made now that the landing is known - a blessing for the first
+         purchase, two weapons at Ragnarok, Jupiter without tribute - waiting
+         for the visit that earned it.
+
+         A throw that is NOT the first clears any promise still standing: a
+         bonus roll is a new throw, and it can never inherit the first one's
+         gift. Ancient Roman carries nothing here, because its gift was the
+         six the die already threw. */
+      if (firstThrow) {
+        next.firstRoll = { ...(state.firstRoll || {}), [active]: true };
+      }
+      next.civGift = {
+        ...(state.civGift || {}),
+        [active]: firstThrow ? giftOf(civOf(state, active), next.landing) : null,
+      };
       return { state: next, events };
     }
 
@@ -1059,6 +1272,7 @@ function applyActionInner(state, action, rng = Math.random) {
       const crossedStart = from > 0 && from + face >= BOARD_SIZE;
 
       piece.position = to;
+      tickLoanCircuits(next, state, active, from, face);
       next.lastRoll = { seat: active, face, from, to, id: cell?.id || "", test: true };
 
       next.landing = {
@@ -1276,6 +1490,24 @@ function applyActionInner(state, action, rng = Math.random) {
         next.landing.kind = "none";
       }
 
+      /* THE TEST MOVE CARRIES THE PROMISE OF THE SQUARE IT REACHES.
+
+         A test move is a chosen number rather than a die, so it never decides
+         Ancient Roman's six - that belongs to the first real throw, and this
+         leaves it exactly as it was. But the three civilizations whose gift is
+         about the SQUARE the coin reaches are promised here too: the first
+         time the coin reaches that square, the gift is written and the throw
+         is spent with it, so the powers can be seen in a test game exactly as
+         they are played - and never twice, because a granted gift is a spent
+         first throw and a second move finds nothing left to grant. */
+      const testGift = state.firstRoll?.[active]
+        ? null
+        : giftOf(civOf(state, active), next.landing);
+      if (testGift) {
+        next.firstRoll = { ...(state.firstRoll || {}), [active]: true };
+      }
+      next.civGift = { ...(state.civGift || {}), [active]: testGift };
+
       next.phase = PHASE.MOVING;
       return { state: next, events };
     }
@@ -1295,12 +1527,25 @@ function applyActionInner(state, action, rng = Math.random) {
          one suit can never discount twice and rent, upgrades, fees and every
          other charge are untouched. */
       const suit = (state.suits || {})[active] || null;
-      const discount = suit && !suit.used ? suit.discount || 0 : 0;
+      /* ANCIENT ROMAN'S NEIGHBOUR TAKES JUPITER WITHOUT TRIBUTE.
+
+         The gift is the whole price off - the same `discount` the suit uses,
+         so the money, the ledger and the card's figure all follow the one
+         path they already follow - and unlike a suit it consumes nothing:
+         the tribute was never owed, so the carried suit is left standing for
+         whatever it was meant for. It is the promise the first throw made,
+         and spending it here is what retires it. */
+      const gift = state.civGift?.[active] || null;
+      const giftedFree = gift === "free-jupiter" && id === (JUPITER?.id || "");
+      const discount = giftedFree ? 100 : suit && !suit.used ? suit.discount || 0 : 0;
       const verdict = ledgerBuy(next.ledger, id, active, { discount });
       if (!verdict.ok) return refused(state, action, verdict.why);
 
-      if (discount > 0) {
+      if (!giftedFree && discount > 0) {
         next.suits = { ...(state.suits || {}), [active]: { ...suit, used: true } };
+      }
+      if (gift) {
+        next.civGift = { ...(state.civGift || {}), [active]: null };
       }
 
       next.visit.bought = true;
@@ -1311,16 +1556,35 @@ function applyActionInner(state, action, rng = Math.random) {
         kind: "buy",
         text:
           `Bought ${landingCell(next)?.name || id}` +
-          (discount > 0 ? ` · ${suit.name} −${discount}%` : ""),
+          (giftedFree ? " · Olympus" : discount > 0 && suit ? ` · ${suit.name} −${discount}%` : ""),
         amount: -verdict.spent,
       });
+
+      /* INDUS VALLEY'S BLESSING, IN THE SAME ACTION THAT BOUGHT THE SQUARE.
+
+         The universe favours the first territory: ₹50 comes back the moment
+         the purchase is made - once, from the one promise the first throw
+         left behind, and recorded in the ledger so both screens read the
+         same balance. */
+      let paid = verdict.money;
+      if (gift === "first-acquisition") {
+        const blessed = adjustMoney(next.ledger, active, FIRST_ACQUISITION_BLESSING, {
+          turn: state.turn,
+          kind: "blessing",
+          text: "First acquisition · the gods return ₹50",
+        });
+        if (blessed.ok) paid = blessed.money;
+      }
+
       ok("bought", {
         seat: active,
         id,
         name: landingCell(next)?.name || id,
         price: verdict.spent,
-        money: verdict.money,
-        ...(discount > 0 ? { suit: suit.id, suitDiscount: discount, listPrice: verdict.full } : {}),
+        money: paid,
+        ...(giftedFree ? { gift: "free-jupiter" } : {}),
+        ...(gift === "first-acquisition" ? { blessing: FIRST_ACQUISITION_BLESSING } : {}),
+        ...(discount > 0 && suit ? { suit: suit.id, suitDiscount: discount, listPrice: verdict.full } : {}),
       });
       return { state: next, events };
     }
@@ -1504,6 +1768,27 @@ function applyActionInner(state, action, rng = Math.random) {
       if (!piece) return refused(state, action, "That seat has no piece.");
 
       piece.weapons.push(weapon);
+
+      /* MESOPOTAMIAN'S FIRST JOURNEY WAS TO RAGNAROK: THE HEAVENS ANSWER
+         WITH TWO.
+
+         The second card is drawn by the server from the same deck, prefers
+         a weapon the seat does not yet hold, and joins the arsenal in this
+         same press - so one tap brings both, both devices see them arrive
+         together, and the promise is retired here so a second press (a
+         reconnect, a repeated tap) finds nothing left to grant. */
+      const gift = state.civGift?.[active] || null;
+      let second = null;
+      if (gift === "two-weapons") {
+        const held = new Set(piece.weapons);
+        const fresh = WEAPONS.filter((w) => !held.has(w.id));
+        const pool = fresh.length ? fresh : WEAPONS;
+        const pick = Math.min(pool.length - 1, Math.floor((Number(rng()) || 0) * pool.length));
+        second = pool[pick]?.id || null;
+        if (second) piece.weapons.push(second);
+        next.civGift = { ...(state.civGift || {}), [active]: null };
+      }
+
       next.visit.collected = true;
       next.phase = PHASE.RESOLVING;
       /* The chest is answered: the weapon is the player's. The face turned over
@@ -1514,13 +1799,16 @@ function applyActionInner(state, action, rng = Math.random) {
         turn: state.turn,
         seat: active,
         kind: "weapon",
-        text: `Drew ${weaponById(weapon)?.name || weapon}`,
+        text:
+          `Drew ${weaponById(weapon)?.name || weapon}` +
+          (second ? ` and ${weaponById(second)?.name || second}` : ""),
         amount: 0,
       });
       ok("weaponCollected", {
         seat: active,
         weapon,
         weapons: [...piece.weapons],
+        ...(second ? { second } : {}),
       });
       return { state: next, events };
     }
@@ -1691,7 +1979,6 @@ function applyActionInner(state, action, rng = Math.random) {
           owner: active,
           weapon: shield.counters,
           colony: colonyId,
-          turnsLeft: SHIELD_TURNS,
         },
       ];
       next.chest.phase = "deployed";
@@ -1711,7 +1998,6 @@ function applyActionInner(state, action, rng = Math.random) {
         shield: shield.id,
         colony: colonyId,
         weapon: shield.counters,
-        turnsLeft: SHIELD_TURNS,
       });
       return { state: next, events };
     }
@@ -2029,6 +2315,106 @@ function applyActionInner(state, action, rng = Math.random) {
       return { state: next, events };
     }
 
+    /* --------------------------------------------------------------- Nexus loans
+
+       A seat may borrow against the purchase value of the properties it owns.
+       Three fixed amounts - ₹500, ₹1,000, ₹2,000 - and the total repayment is
+       one and a half times the amount. The security is the mortgaged
+       properties: they stay owned and keep working under the ordinary rules,
+       and come free when the loan is repaid within five full circuits of the
+       board from the square it was taken on. Miss the deadline and Nexus
+       takes them, back to the bank and unbuilt, and the loan closes as
+       defaulted - handled at the end of the turn in `continue`. */
+
+    case "nexusLoan": {
+      // The loan interface is always accessible regardless of game phase
+      // Players can view and select loan amounts even at the beginning of a game
+      // Only eligibility checks prevent actual loan granting
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      if (!piece) return refused(state, action, "That seat has no piece.");
+
+      const amount = Number(action.amount);
+      if (!LOAN_AMOUNTS.includes(amount)) {
+        return refused(state, action, "That is not a sum the gods lend.");
+      }
+      if (state.loans?.[active] && state.loans[active].status === "active") {
+        return refused(state, action, "You already owe the gods.");
+      }
+
+      const owned = PRICED_IDS.filter((id) => ownerOf(next.ledger, id) === active);
+      const value = owned.reduce((sum, id) => sum + (priceOf(id) || 0), 0);
+      if (value < amount) {
+        return refused(state, action, "Your properties do not cover that sum.");
+      }
+      const mortgaged = mortgageSelection(owned, amount);
+      if (!mortgaged || mortgaged.length === 0) {
+        return refused(state, action, "Your properties do not cover that sum.");
+      }
+
+      const repayment = loanRepaymentOf(amount);
+      adjustMoney(next.ledger, active, amount, {
+        turn: state.turn,
+        seat: active,
+        kind: "loan",
+        text: `Loan from the gods · ₹${amount}`,
+      });
+      for (const id of mortgaged) {
+        const sheet = sheetFor(next.ledger, id);
+        if (sheet) sheet.mortgaged = true;
+      }
+      next.loans = {
+        ...(state.loans || { 0: null, 1: null }),
+        [active]: {
+          seat: active,
+          amount,
+          repayment,
+          mortgaged,
+          startedAt: now(),
+          position: piece.position,
+          circuits: 0,
+          status: "active",
+        },
+      };
+      const names = mortgaged.map((id) => CELLS.find((c) => c.id === id)?.name || id).join(", ");
+      recordEntry(next.ledger, {
+        turn: state.turn,
+        seat: active,
+        kind: "loan",
+        text: `Loan from the gods · ₹${amount} · secured on ${names}`,
+        amount,
+      });
+      ok("nexusLoan", { seat: active, amount, repayment, mortgaged, position: piece.position });
+      return { state: next, events };
+    }
+
+    case "nexusRepay": {
+      if (state.phase !== PHASE.AWAITING_ROLL) {
+        return refused(state, action, "The Nexus answers when the turn is waiting.");
+      }
+      if (actor !== active) return refused(state, action, "It is not your turn.");
+      const loan = state.loans?.[active] || null;
+      if (!loan || loan.status !== "active") {
+        return refused(state, action, "There is no loan to repay.");
+      }
+      if (moneyOf(next.ledger, active) < loan.repayment) {
+        return refused(state, action, "Your purse cannot cover the repayment.");
+      }
+
+      adjustMoney(next.ledger, active, -loan.repayment, {
+        turn: state.turn,
+        seat: active,
+        kind: "loan",
+        text: `Repaid loan · ₹${loan.repayment}`,
+      });
+      for (const id of loan.mortgaged || []) {
+        const sheet = sheetFor(next.ledger, id);
+        if (sheet) sheet.mortgaged = null;
+      }
+      next.loans = { ...(state.loans || {}), [active]: { ...loan, status: "repaid" } };
+      ok("nexusRepaid", { seat: active, amount: loan.repayment });
+      return { state: next, events };
+    }
+
     /* --------------------------------------------------------------- the fight
 
        The corner is a SHARED screen, and every part of it is answered by an
@@ -2236,7 +2622,22 @@ function applyActionInner(state, action, rng = Math.random) {
           Nothing here recomputes rent, because nothing here has to. */
       const sheet = sheetFor(next.ledger, targetId);
       sheet.owner = active;
+      sheet.upgradeLevel = 0;
+      /* A colony taken by force transfers bare: the previous owner's
+         upgrades do not travel with it, and the new owner buys into it as
+         though it had never been built. */
       piece.weapons = piece.weapons.filter((id) => id !== weapon.id);
+
+      /* A CAPTURED COLONY KEEPS NOTHING OF ITS OLD KEEPER'S DEFENCE.
+
+          A shield stands ON THIS GROUND, and the ground has just changed
+          hands. Whatever was deployed there by the losing player leaves
+          with the capture - a captured property never keeps the previous
+          owner's shield - so the colony arrives bare and the next strike
+          meets an ordinary, unshielded colony. */
+      next.shields = (next.shields || state.shields || []).filter(
+        (entry) => entry.colony !== targetId,
+      );
 
       /* One sentence for each side, and no money moves. */
       recordEntry(next.ledger, {
@@ -2769,6 +3170,11 @@ function applyActionInner(state, action, rng = Math.random) {
         next.chest = null;
         next.fight = null;
         next.epoch = null;
+        /* A civilization's promise belongs to the throw that made it and the
+           visit that earned it. The visit is over: anything unspent is
+           forfeit here, exactly as the spec has it - the power expires with
+           the first roll whether or not it was used. */
+        next.civGift = { 0: null, 1: null };
         ok("bonusRollDue", { seat: state.active, remaining: state.bonusRolls[state.active] });
         return { state: next, events };
       }
@@ -2786,47 +3192,50 @@ function applyActionInner(state, action, rng = Math.random) {
         ok("redemption", { seat: from, amount: due });
       }
 
-      /* KRONOS SHIELDS AGE WITH THE TURNS OF THEIR OWNER.
+      /* KRONOS SHIELDS ARE PERMANENT.
 
-         This is the owner's turn ending, so only the shields whose owner is
-         `from` tick; the opponent's are left exactly as they are, which is
-         what makes the duration TWO OWNED turns rather than two whole turns.
-         A shield that reaches zero is gone from the same list in the same
-         action that said so, so it can neither block nor be seen again after
-         its moment. The bonus-roll branch above does not reach here: no turn
-         changed, so nothing ages. */
-      const aged = [];
-      for (const shield of next.shields || []) {
-        if (shield.owner !== from) {
-          aged.push(shield);
-          continue;
+         Once deployed a shield stands until a weapon breaks it, and nothing
+         here touches it - no ticking, no expiry, no turn limit. A shield
+         leaves this list only when it blocks a strike, in fightAttack. */
+      next.shields = next.shields || [];
+
+      /* A NEXUS LOAN FALLS DUE AFTER FIVE FULL CIRCUITS.
+
+         One circuit is the coin passing the square the loan was taken on,
+         counted as it walks. Five circuits is the deadline: Nexus takes the
+         security, the mortgaged colonies return to the bank unbuilt, and the
+         loan is closed as defaulted. A seat with no active loan is skipped,
+         so an untouched seat never pays for another's debt. */
+      for (const seat of Object.keys(next.loans || {})) {
+        const loan = next.loans[seat] || null;
+        if (!loan || loan.status !== "active") continue;
+        if ((loan.circuits || 0) < 5) continue;
+        const taken = [];
+        for (const id of loan.mortgaged || []) {
+          const sheet = sheetFor(next.ledger, id);
+          if (!sheet || sheet.mortgaged !== true) continue;
+          sheet.owner = null;
+          sheet.upgradeLevel = 0;
+          sheet.mortgaged = null;
+          taken.push(id);
+          recordEntry(next.ledger, {
+            turn: state.turn,
+            seat: Number(seat),
+            kind: "loan",
+            text:
+              (taken.length === 1
+                ? `Nexus took ${CELLS.find((c) => c.id === id)?.name || id} · loan defaulted`
+                : `Nexus took ${CELLS.find((c) => c.id === id)?.name || id} · loan defaulted`),
+            amount: 0,
+          });
         }
-        const left = (shield.turnsLeft || 0) - 1;
-        if (left > 0) {
-          aged.push({ ...shield, turnsLeft: left });
-          continue;
-        }
-        /* ITS TWO OWNED RUNS ARE UP: it leaves the state and the ledger
-           says so, so no screen can show it as standing after this. */
-        const expiredName = shieldById(shield.id)?.name || shield.id;
-        const expiredColony = CELLS.find((c) => c.id === shield.colony)?.name || "";
-        recordEntry(next.ledger, {
-          turn: state.turn,
-          seat: shield.owner,
-          kind: "shield",
-          text: expiredColony
-            ? `${expiredName} expired at ${expiredColony}`
-            : `${expiredName} expired`,
-          amount: 0,
-        });
-        ok("shieldExpired", {
-          seat: shield.owner,
-          shield: shield.id,
-          weapon: shield.weapon,
-          colony: shield.colony || null,
+        next.loans = { ...next.loans, [seat]: { ...loan, status: "defaulted" } };
+        ok("loanDefaulted", {
+          seat: Number(seat),
+          amount: loan.repayment,
+          properties: taken,
         });
       }
-      next.shields = aged;
 
       next.active = to;
       next.phase = turnPhaseFor(to);
@@ -2839,6 +3248,10 @@ function applyActionInner(state, action, rng = Math.random) {
       next.chest = null;
       next.fight = null;
       next.epoch = null;
+      /* A civilization's promise belongs to the throw that made it. Whatever
+         the first roll earned and the visit did not spend is forfeit when the
+         turn resolves - the power expires with that roll, as it must. */
+      next.civGift = { 0: null, 1: null };
       /* A Frozen Moment is one-shot and never pending for more than a single
          turn: whatever it had not already consumed is released here, so a
          frozen seat cannot be suppressed for ever. */

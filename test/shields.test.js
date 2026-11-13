@@ -12,11 +12,10 @@
    - compatibility is the countered weapon's own reach, intersected with
      what the deploying player owns - never "any colony";
    - deployment validates fresh, happens once, names its colony in the
-     ledger, and carries colony + owner + weapon + two owned turns;
+     ledger, and carries colony + owner + weapon;
    - a standing shield blocks ONLY strikes aimed at its own colony with the
      exact weapon it counters, and is spent on that block;
-   - it expires after two of its owner's turns, with a ledger line, and can
-     never block after that;
+   - a shield stands until it is broken - it does not expire after turns;
    - nothing is ever stored in an inventory.
    ========================================================================== */
 
@@ -25,7 +24,6 @@ import assert from "node:assert/strict";
 
 import {
   PHASE,
-  SHIELD_TURNS,
   applyAction,
   createGame,
   restoreGame,
@@ -36,7 +34,7 @@ import { sheetFor } from "../shared/ledger.js";
 
 const PLAYERS = [
   { name: "Aster", civ: "indus-valley" },
-  { name: "Vega", civ: "aztec" },
+  { name: "Vega", civ: "ancient-roman" },
 ];
 
 const KRONOS_INDEX = 26;
@@ -168,7 +166,6 @@ test("with all three standing the draw is a miss that deploys nothing", () => {
     owner: 0,
     weapon: shield.counters,
     colony: weaponById(shield.counters).targets[0],
-    turnsLeft: SHIELD_TURNS,
   }));
   const { state: drawn } = take(state, { type: "drawShield" }, () => 0);
   assert.equal(drawn.visit.shieldDrawn, "none");
@@ -256,13 +253,11 @@ test("a tap on a compatible colony deploys the shield there, once", () => {
   assert.equal(shield.owner, 0, "the player who deployed it");
   assert.equal(shield.colony, "earth-137", "the protected colony");
   assert.equal(shield.weapon, "shiva", "the weapon it counters");
-  assert.equal(shield.turnsLeft, SHIELD_TURNS, "two of the owner's turns");
   assert.equal(standing.chest.phase, "deployed");
   assert.equal(standing.chest.result.colony, "earth-137", "the card can say where it stands");
   const deployedEvent = events.find((e) => e.type === "shieldDeployed");
   assert.ok(deployedEvent);
   assert.equal(deployedEvent.colony, "earth-137");
-  assert.equal(deployedEvent.turnsLeft, SHIELD_TURNS);
   assert.ok(
     standing.ledger.history.some(
       (entry) =>
@@ -325,11 +320,11 @@ test("Done during targeting abandons the placement without stranding the board",
 
 /* ----------------------------------------------------- the standing shield */
 
-test("a strike at the shield's colony with its weapon is blocked and spent", () => {
+test("a standing shield blocks the strike it answers, once, and is spent", () => {
   const state = fightVisit({
     weapons: ["nuclear"],
     owned: ["moon"],
-    shields: [{ id: "nuclear-aegis", owner: 1, weapon: "nuclear", colony: "moon", turnsLeft: SHIELD_TURNS }],
+    shields: [{ id: "nuclear-aegis", owner: 1, weapon: "nuclear", colony: "moon" }],
   });
   const { state: struck, events } = take(state, { type: "fightAttack", targetId: "moon" });
 
@@ -356,7 +351,7 @@ test("the same weapon on any OTHER colony passes the shield entirely", () => {
   const state = fightVisit({
     weapons: ["nuclear"],
     owned: ["moon", "jupiter"],
-    shields: [{ id: "nuclear-aegis", owner: 1, weapon: "nuclear", colony: "moon", turnsLeft: SHIELD_TURNS }],
+    shields: [{ id: "nuclear-aegis", owner: 1, weapon: "nuclear", colony: "moon" }],
   });
   // Jupiter is in the Warhead's reach and held by the same player - but the
   // shield stands on the Moon, so the strike lands.
@@ -372,7 +367,7 @@ test("a weapon the shield does not counter passes even its own colony", () => {
     owned: ["moon"],
     // Unreachable through the draw (the reach lists are disjoint), but it
     // pins the rule down: the match is on the EXACT weapon.
-    shields: [{ id: "matterforge", owner: 1, weapon: "antimatter", colony: "moon", turnsLeft: SHIELD_TURNS }],
+    shields: [{ id: "matterforge", owner: 1, weapon: "antimatter", colony: "moon" }],
   });
   const { state: struck } = take(state, { type: "fightAttack", targetId: "moon" });
   assert.equal(sheetFor(struck.ledger, "moon").owner, 0, "captured - that shield counters another weapon");
@@ -382,72 +377,67 @@ test("an attacker's own shield does not defend the defender", () => {
   const state = fightVisit({
     weapons: ["nuclear"],
     owned: ["moon"],
-    shields: [{ id: "nuclear-aegis", owner: 0, weapon: "nuclear", colony: "jupiter", turnsLeft: 2 }],
+    shields: [{ id: "nuclear-aegis", owner: 0, weapon: "nuclear", colony: "jupiter" }],
   });
   const { state: struck } = take(state, { type: "fightAttack", targetId: "moon" });
   assert.equal(sheetFor(struck.ledger, "moon").owner, 0, "captured");
   assert.equal(struck.shields.length, 1, "and the attacker's shield still stands at home");
 });
 
-/* --------------------------------------------------------- two owned turns */
-
-test("a standing shield lasts exactly two of its OWNER's turns", () => {
+test("a standing shield is permanent: it survives the turns", () => {
   let state = atKronos();
   sheetFor(state.ledger, "earth-137").owner = 0;
-  state = deployed(state, "earth-137");
-  assert.equal(state.shields[0].turnsLeft, SHIELD_TURNS);
+  const standing = deployed(state, "earth-137");
 
-  // The deployment turn ends: one spent, and the opponent's turn follows.
-  state = take(state, { type: "done" }).state;
+  // The deployment turn ends, the opponent's turn runs, the owner takes
+  // another turn - the shield is still standing.
+  state = take(standing, { type: "done" }).state;
   state = take(state, { type: "continue" }).state; // -> seat 1
-  assert.equal(state.shields.length, 1, "still standing after its own turn ends");
-
-  // The OPPONENT's turn runs and does not count.
+  assert.equal(state.shields.length, 1, "still standing after the deployment turn ends");
   state = passTurn(state);
   assert.equal(state.active, 0, "back to the shield's owner");
-  assert.equal(state.shields[0].turnsLeft, SHIELD_TURNS - 1, "only one owned turn spent");
-
-  // The owner's second turn ends and it goes - with a ledger line.
-  const resolved = take(goTo(state, QUIET_INDEX), { type: "continue" }).state;
-  const { state: ended, events } = take(resolved, { type: "continue" });
-  assert.deepEqual(ended.shields, [], "expired after two owned turns");
-  const expired = events.find((e) => e.type === "shieldExpired");
-  assert.ok(expired);
-  assert.equal(expired.colony, "earth-137");
-  assert.ok(
-    ended.ledger.history.some(
-      (entry) =>
-        entry.kind === "shield" &&
-        entry.text.includes("Kavacha of Parvati expired at Earth 137"),
-    ),
-    "the ledger records the expiry",
-  );
+  assert.equal(state.shields.length, 1, "still standing after the opponent's turn");
+  assert.equal(state.shields.length, 1, "the shield is permanent and still stands");
 });
 
-test("an expired shield blocks nothing", () => {
-  let state = atKronos();
-  sheetFor(state.ledger, "earth-137").owner = 0;
-  state = deployed(state, "earth-137");
+/* ------------------------------------------------- TWO STAGES TO CAPTURE */
 
-  // Ride out both owned turns: deployment's close, one opponent turn, and
-  // the owner's second turn - the shield expires at the end of that one.
-  state = take(state, { type: "done" }).state;
-  state = take(state, { type: "continue" }).state; // -> seat 1
-  state = passTurn(state); // opponent's turn, back to the owner
-  state = passTurn(state); // owner's second turn - expiry here
-  assert.deepEqual(state.shields, [], "gone");
-  assert.equal(state.active, 1, "the turn now belongs to seat 1");
+test("a shield absorbs the first strike; only a second one takes the colony", () => {
+  // STAGE ONE - the block. The shield answers the compatible weapon, the
+  // colony does not change hands, and the shield is spent.
+  const firstVisit = fightVisit({
+    weapons: ["nuclear"],
+    owned: ["moon"],
+    shields: [{ id: "nuclear-aegis", owner: 1, weapon: "nuclear", colony: "moon" }],
+  });
+  const first = take(firstVisit, { type: "fightAttack", targetId: "moon" }).state;
+  assert.equal(sheetFor(first.ledger, "moon").owner, 1, "FIRST ATTACK: the colony is untouched");
+  assert.deepEqual(first.shields, [], "FIRST ATTACK: the shield is gone");
+  assert.equal(first.fight.result.blocked, true, "FIRST ATTACK: the strike was caught");
 
-  // Seat 1 comes to the Fight with the Eye of Shiva for the colony the
-  // shield used to hold.
-  state.pieces[1].weapons = ["shiva"];
-  const atFight = goTo(state, FIGHT_INDEX);
-  const selected = take(atFight, { type: "selectWeapon", weaponId: "shiva" }).state;
-  const armed = take(selected, { type: "armWeapon" }).state;
-  const { state: struck, events } = take(armed, { type: "fightAttack", targetId: "earth-137" });
+  // STAGE TWO - a fresh Fight visit, the same weapon, no shield standing.
+  const secondVisit = fightVisit({
+    weapons: ["nuclear"],
+    owned: ["moon"],
+    shields: [],
+  });
+  const second = take(secondVisit, { type: "fightAttack", targetId: "moon" }).state;
+  assert.equal(sheetFor(second.ledger, "moon").owner, 0, "SECOND ATTACK: captured by Player B");
+  assert.equal(second.fight.result?.blocked, undefined, "an ordinary capture, not a block");
+});
 
-  assert.equal(sheetFor(struck.ledger, "earth-137").owner, 1, "captured - nothing protects it now");
-  assert.equal(events.some((e) => e.type === "shieldBlocked"), false, "and no block is claimed");
+test("a captured colony does not keep the previous owner's shield", () => {
+  // A shield that counters ANOTHER weapon stands on the Moon the strike is
+  // about to take. The strike lands, and what the losing player left
+  // standing there leaves with the capture.
+  const state = fightVisit({
+    weapons: ["nuclear"],
+    owned: ["moon"],
+    shields: [{ id: "matterforge", owner: 1, weapon: "antimatter", colony: "moon" }],
+  });
+  const { state: struck } = take(state, { type: "fightAttack", targetId: "moon" });
+  assert.equal(sheetFor(struck.ledger, "moon").owner, 0, "captured");
+  assert.deepEqual(struck.shields, [], "the captured colony carries no shield of its old keeper");
 });
 
 /* -------------------------------------------------------------- persistence */

@@ -319,7 +319,9 @@ export class GameRoom {
       const game = this.room.game;
       if (body.reset) {
         // A clean slate for a test: a fresh ledger and every piece back on Start.
-        this.room.game = createGame(this.room.players);
+        // A test room resets to a TEST game, or the test panel it was opened for
+        // would stop working the moment the board was cleared.
+        this.room.game = createGame(this.room.players, { testMode: this.room.testMode === true });
         this.room.updatedAt = Date.now();
         await this.#persist();
         this.#broadcastGame([]);

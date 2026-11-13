@@ -191,15 +191,15 @@ function weaponsSection(piece) {
  * The active KRONOS shields, read from the same state both devices share.
  *
  * Nothing here is remembered or inferred: `game.shields` is what stands at
- * this moment, so the record can never list a shield that has blocked or
- * expired, and an empty profile says the neutral truth - "No active
- * shields" - instead of a row of dashes standing in for missing data.
+ * this moment, so the record can never list a shield that has been spent
+ * or carried off with its colony, and an empty profile says the neutral
+ * truth - "No active shields" - instead of a row of dashes standing in for
+ * missing data.
  */
 function shieldRow(shield) {
   const data = shieldById(shield.id);
   const stops = weaponById(data?.counters)?.name || "";
   const colony = CELLS.find((c) => c.id === shield.colony)?.name || "";
-  const turns = Math.max(0, Number(shield.turnsLeft) || 0);
   return el("article", {
     class: "profile-shield",
     "data-shield": shield.id,
@@ -214,7 +214,7 @@ function shieldRow(shield) {
         : null,
       el("p", {
         class: "profile-shield__line profile-shield__line--turns",
-        text: `${turns} turn${turns === 1 ? "" : "s"} of protection left`,
+        text: "Permanent - until breached",
       }),
     ].filter(Boolean)),
   ]);

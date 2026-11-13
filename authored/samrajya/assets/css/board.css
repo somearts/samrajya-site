@@ -114,6 +114,20 @@
   --fight-warm: #c96a35;
   --fight-gold: #c9a53d;
 
+  /* THE FOUNTAIN'S GOLD, AND THE SOUL'S LIGHT.
+     The coin a square throws when rent is paid or a suit is bought - a
+     struck disc, bright at the crown and deep at the rim - and the default
+     glow a property's soul carries until the buyer's own coin colour has
+     been read off the chip. Named here, like every other colour, so they
+     cannot drift away from what the design says. */
+  --gold-hi: #ffeab0;
+  --gold-face: #f2c14e;
+  --gold-deep: #dd9f30;
+  --gold-rim: #b97a1d;
+  --gold-edge: #926010;
+  --gold-ink: #7a4f0e;
+  --soul-glow: #a9d6ff;
+
   /* How long a blink asks the eye back while a strike is armed. One number,
      named, because it is the rhythm the armed strike waits on. */
   --fight-blink: 900ms;
@@ -1188,6 +1202,98 @@
   display: none;
 }
 
+/* ------------------------------------------------------- the introduction
+
+   The card a new game opens with, drawn into the property pop-up's own box:
+   the same rectangle in the middle of the board, the same ground, the same
+   border and shadow, the same type - so an introduction is a card the player
+   already knows how to read, rather than a second kind of screen.
+
+   THE BOX'S THREE ROWS are for a card, its builds and its pills, and the
+   introduction has none of those: it is the only child, so it takes all three
+   rows and fills the rectangle a property card would have filled. Inside it,
+   the card's own three rows do the work they always do - the heading, the
+   body, and the one press at the bottom. */
+
+.board__card[data-card-kind="property"] > .intro-card {
+  grid-row: 1 / -1;
+}
+
+.intro__heading {
+  text-align: center;
+  letter-spacing: 0.14em;
+}
+
+/* The two empires, and the contest said between them. */
+.intro__body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: calc(var(--cell) * 0.16);
+}
+
+.intro__empire {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--cell) * 0.07);
+  text-align: center;
+}
+
+/* The board's own coin, in its civilization's colour. */
+.intro__coin {
+  position: relative;
+  left: auto;
+  top: auto;
+  width: calc(var(--cell) * 0.56);
+  height: calc(var(--cell) * 0.56);
+  transition: none;
+  will-change: auto;
+}
+
+.intro__civ {
+  font-size: max(11px, calc(var(--cell) * 0.17));
+  letter-spacing: 0.05em;
+  color: var(--ink);
+}
+
+.intro__title {
+  display: block;
+  font-size: max(8px, calc(var(--cell) * 0.108));
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.intro__vs {
+  align-self: center;
+  font-size: max(8px, calc(var(--cell) * 0.12));
+  letter-spacing: 0.3em;
+  text-indent: 0.3em;
+  color: color-mix(in srgb, var(--ink) 42%, transparent);
+}
+
+.intro__copy {
+  text-align: center;
+  font-size: max(10px, calc(var(--cell) * 0.145));
+}
+
+.intro__begin {
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: max(10.5px, calc(var(--cell) * 0.15));
+}
+
+/* THE INTRODUCTION HAS NO X.
+
+   A property card can be tapped away and this one cannot: nothing dismisses
+   it except its own button. The close control is simply not drawn, so there
+   is no empty slot and no reserved space where it would have been - the
+   heading starts at the top of the card the way it would if the button had
+   never existed. */
+
 /* THE THREE BUILDS
 
    Drawn in the chest's own vocabulary: the same inset ground, the same 6px
@@ -1687,6 +1793,10 @@
 .chest-card--kronos[data-phase="targeting"] .chest-card__tagline,
 .chest-card--kronos[data-phase="targeting"] .chest-card__body,
 .chest-card--kronos[data-phase="targeting"] .property-card__head,
+.chest-card--kronos .chest-card__body {
+  padding: calc(var(--cell) * 0.14) calc(var(--cell) * 0.2);
+}
+
 .chest-card--kronos[data-phase="deployed"] .chest-card__tagline,
 .chest-card--kronos[data-phase="deployed"] .chest-card__body,
 .chest-card--kronos[data-phase="deployed"] .property-card__head {
@@ -1703,6 +1813,76 @@
   font-size: max(10.2px, calc(var(--cell) * 0.132));
   letter-spacing: 0.15em;
   white-space: nowrap;
+}
+
+/* THE KRONOS LANDING SCREEN: the welcome, given room.
+
+   The shield chest's landing copy is the longer of the two chests - a
+   heading, a tagline, a paragraph that explains the shield, three faces
+   and the pill - and it was arriving in the rhythm sized for Ragnarok's
+   shorter welcome: lines a little too close, blocks a little too near,
+   and the ivory panel stopping well above the bottom of the middle it was
+   given, which left a dead band under the card that read as though more
+   was still coming.
+
+   TWO STEPS, both scoped to the LANDING states only (open, the shuffle,
+   and the moment of the draw while the welcome is still on screen):
+
+   1. EVERY SCREEN: the panel takes the WHOLE MIDDLE it was given - the
+      same rectangle the decision cards fill - so the content area reaches
+      down to the die line instead of stopping where its last child ends
+      and leaving the lower section of the centre empty. The chest's holder
+      is its own height (no `data-mode` is ever written on it), so the
+      rectangle goes on the card itself; the holder then wraps it. On a
+      phone - where the copy already fills the card - this adds nothing but
+      the last few pixels; on a larger board it closes the dead band.
+
+   2. ONLY WHERE THE BOARD IS WIDE ENOUGH (the board is its own
+      container): from 360px the rhythm opens - more air between the five
+      blocks, the paragraph and the tagline get the line spacing a
+      paragraph read at arm's length needs, the heading's own pill-to-title
+      gap widens, and the body steps up a fraction. The query is on the
+      BOARD, not the window, and the board's width follows its cell, so
+      this lands exactly where the vertical room exists and stands off
+      where it does not: a small phone keeps today's rhythm, which is the
+      rhythm that fits it.
+
+   Colours, type family and the card's identity are untouched, and the
+   reveal's information area (targeting, deployed) keeps exactly the
+   layout it had. The ceiling on .chest-card still stands - the rectangle
+   below IS that ceiling - so content taller than the middle scrolls
+   inside the card rather than clipping. */
+.chest-card--kronos[data-phase="open"],
+.chest-card--kronos[data-phase="drawing"],
+.chest-card--kronos[data-phase="revealed"]:not([data-face-shown="true"]) {
+  height: calc(var(--cell) * 8 + var(--hair) * 8 - var(--card-gap) * 2);
+}
+
+@container (min-width: 360px) {
+  .chest-card--kronos[data-phase="open"],
+  .chest-card--kronos[data-phase="drawing"],
+  .chest-card--kronos[data-phase="revealed"]:not([data-face-shown="true"]) {
+    gap: calc(var(--cell) * 0.2);
+  }
+
+  .chest-card--kronos[data-phase="open"] .chest-card__tagline,
+  .chest-card--kronos[data-phase="drawing"] .chest-card__tagline,
+  .chest-card--kronos[data-phase="revealed"]:not([data-face-shown="true"]) .chest-card__tagline {
+    line-height: 1.5;
+  }
+
+  .chest-card--kronos[data-phase="open"] .chest-card__body,
+  .chest-card--kronos[data-phase="drawing"] .chest-card__body,
+  .chest-card--kronos[data-phase="revealed"]:not([data-face-shown="true"]) .chest-card__body {
+    font-size: max(10.6px, calc(var(--cell) * 0.147));
+    line-height: 1.66;
+  }
+
+  .chest-card--kronos[data-phase="open"] .property-card__title,
+  .chest-card--kronos[data-phase="drawing"] .property-card__title,
+  .chest-card--kronos[data-phase="revealed"]:not([data-face-shown="true"]) .property-card__title {
+    gap: 0.58em;
+  }
 }
 
 /* THE AREA UNDER THE REVEALED CARD: the four sections that turn a card into
@@ -2123,7 +2303,11 @@
   flex: 0 0 auto;
   position: relative;
   width: 100%;
-  height: calc(var(--cell) * 1.55);
+  /* The keeper's picture was grown to three cells, and the result cards that
+     follow it - the draw's face, the offering's receipt - were clipped by the
+     DONE pill on a phone. It is pulled back to a height that leaves the whole
+     card, and the pill, in view. */
+  height: calc(var(--cell) * 2.4);
   padding-bottom: calc(var(--cell) * 0.06);
   overflow: hidden;
 }
@@ -2136,6 +2320,36 @@
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+}
+
+/* The loan peek uses the same keeper picture, but a smaller crop: the loan
+   is a decision, not an arrival, and the screen above the three amounts
+   should stay compact. */
+.nexus-card--loan .nexus-card__figure-wrap--loan {
+  height: calc(var(--cell) * 3.2);
+  margin-bottom: calc(var(--cell) * 0.04);
+}
+.nexus-card--loan .nexus-card__god--loan {
+  max-height: 100%;
+  width: auto;
+}
+
+/* The keeper's name and his line each get their own air below the picture:
+   the loan screen is read top to bottom, and the sections should not touch. */
+.nexus-card--loan .nexus-card__title {
+  margin-top: calc(var(--cell) * 0.03);
+}
+
+/* The mythology on the loan screen is a single line, given room to breathe. */
+.nexus-card--loan .nexus-card__mythology--loan {
+  flex: 0 0 auto;
+  max-width: none;
+  overflow: visible;
+  font-size: max(10px, calc(var(--cell) * 0.13));
+  line-height: 1.3;
+  margin: calc(var(--cell) * 0.04) 0 0;
+  font-weight: 300;
+  color: var(--ink-soft);
 }
 
 /* Silhouette fallback: used only when the god's picture fails to load. The
@@ -2158,11 +2372,11 @@
 
 .nexus-card__title {
   flex: 0 0 auto;
-  margin: calc(var(--cell) * 0.02) 0 0;
-  font-size: max(13px, calc(var(--cell) * 0.185));
+  margin: calc(var(--cell) * 0.01) 0 0;
+  font-size: max(11px, calc(var(--cell) * 0.16));
   font-weight: 400;
-  letter-spacing: 0.04em;
-  line-height: 1.2;
+  letter-spacing: 0.015em;
+  line-height: 1.3;
   color: var(--ink);
 }
 
@@ -2223,9 +2437,13 @@
   display: none;
 }
 
-/* While the deck is in the card, the mythology stands down. */
+/* While the deck is in the card, the mythology stands down - and it stands
+   down for the offering too. Praying has no deck, but it does have a result
+   to show, and the keeper's long words must not push that result out of the
+   card or read as the card's answer in its place. */
 .nexus-card[data-phase="shuffling"] .nexus-card__mythology,
-.nexus-card[data-phase="revealed"] .nexus-card__mythology {
+.nexus-card[data-phase="revealed"] .nexus-card__mythology,
+.nexus-card[data-phase="praying"] .nexus-card__mythology {
   display: none;
 }
 
@@ -2291,14 +2509,34 @@
   color: var(--ink-soft);
 }
 
+/* THE OFFERING'S ANSWER IS A CARD, NOT A PARAGRAPH.
+
+   The draw's result is a card face - a ground, a hairline, a soft shadow -
+   and the offering's result used to be bare type on the card's own paper,
+   which read as explanatory text under the mythology rather than as the
+   payment it is. It wears the same face now: the same chrome as
+   `.nexus-card__deck-top-face`, so a gain and an offering are told the same
+   way. */
 .nexus-card__result {
   flex: 0 0 auto;
   display: grid;
+  align-content: center;
+  justify-items: center;
   gap: calc(var(--cell) * 0.05);
   width: 100%;
   max-width: 30ch;
   margin-top: auto;
-  padding-top: calc(var(--cell) * 0.12);
+  padding: calc(var(--cell) * 0.12);
+  border-radius: 8px;
+  background: var(--cell-ground);
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  box-shadow: 0 2px 10px rgb(18 17 16 / 0.13);
+}
+
+/* The class's `display: grid` must not defeat the hidden attribute: an empty
+   receipt box left under a draw's face is a second card saying nothing. */
+.nexus-card__result[hidden] {
+  display: none;
 }
 
 .nexus-card__result-name {
@@ -2344,6 +2582,417 @@
   color: var(--ink);
   box-shadow: 0 1px 3px rgb(18 17 16 / 0.2);
   pointer-events: none;
+}
+
+/* ============================================================== the Nexus loan screen
+
+   The peek at Nexus that is not a landing: the keeper's picture, the single
+   line of mythology, and the loan itself. The loan is deliberately small -
+   three amounts in one row, a quiet line saying what to do next, and (only
+   once a loan exists) the outstanding sum and a way to repay it. */
+
+/* The loan card is shorter than the landing card: it has no deck to hold and
+   no offer to make, so it takes only the height its contents need. */
+.nexus-card--loan {
+  height: auto;
+  gap: calc(var(--cell) * 0.1);
+  padding: calc(var(--cell) * 0.13) calc(var(--cell) * 0.2);
+}
+
+/* THE FIRST STEP. One pill, the same family as every other on the board: a
+   hairline border, a fully rounded end, a transparent ground and the board's
+   own ink. It is not a call to action laid over the card; it is the card's
+   only control until the player asks for a loan. */
+.nexus-loan__cta {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  min-height: max(32px, calc(var(--cell) * 0.5));
+  padding: 0 calc(var(--cell) * 0.3);
+  margin-top: calc(var(--cell) * 0.08);
+  border: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: max(11px, calc(var(--cell) * 0.135));
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--ease),
+    border-color 160ms var(--ease);
+}
+
+.nexus-loan__cta:hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+/* Closed on the opponent's turn: the server would refuse the request there,
+   and a live-looking pill that answers with nothing is worse than a quiet one. */
+.nexus-loan__cta:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.nexus-loan__cta:disabled:hover {
+  background: transparent;
+}
+
+.nexus-loan__cta:active {
+  transform: scale(0.97);
+}
+
+/* THE SECOND STEP, introduced by one line and followed at once by the three
+   amounts. The line says what the pills are; it does not repeat the card's
+   mythology or explain the loan rules. */
+.nexus-loan__intro {
+  flex: 0 0 auto;
+  margin: calc(var(--cell) * 0.14) 0 0;
+  font-size: max(10.5px, calc(var(--cell) * 0.13));
+  line-height: 1.35;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.nexus-loan__intro + .nexus-loan__options {
+  margin-top: calc(var(--cell) * 0.11);
+}
+
+/* The three amounts, side by side. Equal shares of one row, never stacked. */
+.nexus-loan__options {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: max(5px, calc(var(--cell) * 0.07));
+  width: 100%;
+  margin-top: calc(var(--cell) * 0.08);
+}
+
+.nexus-loan__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: max(32px, calc(var(--cell) * 0.5));
+  padding: 0 calc(var(--cell) * 0.08);
+  border: 1px solid color-mix(in srgb, var(--ink) 24%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: max(11px, calc(var(--cell) * 0.135));
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--ease),
+    border-color 160ms var(--ease),
+    color 160ms var(--ease),
+    opacity 160ms var(--ease);
+}
+
+.nexus-loan__option:not(:disabled):hover {
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+
+.nexus-loan__option:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* The chosen amount is the one filled mark on the card, exactly as the
+   selected pill is filled elsewhere on the board. */
+.nexus-loan__option.is-selected,
+.nexus-loan__option[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--dealt-paper);
+}
+
+.nexus-loan__option--unavailable {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--ink) 16%, transparent);
+  opacity: 0.38;
+  cursor: default;
+}
+
+.nexus-loan__amount {
+  display: block;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* A single quiet instruction, shown only after an amount is chosen. */
+.nexus-loan__note {
+  flex: 0 0 auto;
+  margin: calc(var(--cell) * 0.02) 0 0;
+  font-size: max(10px, calc(var(--cell) * 0.12));
+  line-height: 1.3;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+/* THE PLEDGE. Longer than a note, and allowed its own breath: the words are
+   the temple's, the amount is the player's, and the marked colonies on the
+   board are what the last sentence is asking for. */
+.nexus-loan__pledge {
+  align-self: center;
+  max-width: 34ch;
+  margin-top: calc(var(--cell) * 0.1);
+  font-size: max(10px, calc(var(--cell) * 0.122));
+  line-height: 1.4;
+  letter-spacing: 0.005em;
+  color: color-mix(in srgb, var(--ink) 82%, transparent);
+}
+
+/* HOW MUCH OF THE PLEDGE IS COMPLETE. One short line, rewritten by the board
+   on each pick: "1 of 2 pledged". It is the acknowledgment that a tap landed,
+   and it is the only new thing the selection adds to the card. */
+.nexus-loan__progress {
+  flex: 0 0 auto;
+  margin: calc(var(--cell) * 0.02) 0 0;
+  font-size: max(9.5px, calc(var(--cell) * 0.112));
+  letter-spacing: 0.05em;
+  line-height: 1.3;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* The live loan: what is owed, what it is secured on, and how long is left.
+   It is a line of type, not a panel inside a panel. */
+.nexus-loan__info {
+  flex: 0 0 auto;
+  display: grid;
+  gap: calc(var(--cell) * 0.04);
+  width: 100%;
+  margin-top: calc(var(--cell) * 0.06);
+  text-align: center;
+}
+
+.nexus-loan__outstanding {
+  margin: 0;
+  font-size: max(15px, calc(var(--cell) * 0.22));
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.nexus-loan__line {
+  margin: 0;
+  font-size: max(10.5px, calc(var(--cell) * 0.13));
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+.nexus-loan__repay {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: auto;
+  min-width: 0;
+  min-height: max(32px, calc(var(--cell) * 0.5));
+  padding: 0 calc(var(--cell) * 0.18);
+  margin-top: calc(var(--cell) * 0.08);
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: max(11px, calc(var(--cell) * 0.135));
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 160ms var(--ease), color 160ms var(--ease);
+}
+
+.nexus-loan__repay:hover {
+  background: var(--ink);
+  color: var(--dealt-paper);
+}
+
+/* THE GRANT.
+
+   The pledge has been accepted and the money has moved. The keeper's picture
+   stays at the top - the god the souls went to - but smaller, so the card
+   belongs to the transaction: one headline, one line of the temple's language,
+   and four plain rows. Nothing mystical is allowed to stand between the
+   player and what they owe. */
+.nexus-card--granted {
+  gap: calc(var(--cell) * 0.09);
+  animation: nexus-grant-in 420ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@keyframes nexus-grant-in {
+  from { opacity: 0; transform: translateY(7px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+.nexus-card--granted .nexus-card__figure-wrap--loan {
+  height: calc(var(--cell) * 1.8);
+  margin-bottom: 0;
+}
+
+/* No title, no mythology, no close: the receipt says everything, and DONE is
+   the only press on the card. */
+.nexus-card--granted .nexus-card__title,
+.nexus-card--granted .nexus-card__mythology--loan,
+.nexus-card--granted .property-card__close,
+.nexus-card--settled .nexus-card__title,
+.nexus-card--settled .nexus-card__mythology--loan,
+.nexus-card--settled .property-card__close {
+  display: none;
+}
+
+.nexus-card--settled .nexus-card__figure-wrap--loan {
+  height: calc(var(--cell) * 1.8);
+  margin-bottom: 0;
+}
+
+.nexus-loan__grant {
+  flex: 0 0 auto;
+  margin: calc(var(--cell) * 0.05) 0 0;
+  font-size: max(12px, calc(var(--cell) * 0.16));
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.nexus-loan__grant-line {
+  flex: 0 0 auto;
+  margin: 0;
+  /* THE LINE IS ONE LINE ON A PHONE.
+
+     The card is four cells wide; at 10.5px the sentence was a few pixels wider
+     than the card's content box, and the old 32ch cap made certain of the
+     break - the last word ("pledge") fell to a second line. The cap is gone
+     and the type is a shade smaller, which is all the sentence needed: it is
+     still the card's readable italic, and it now sits on one line. */
+  max-width: none;
+  font-size: max(9px, calc(var(--cell) * 0.11));
+  letter-spacing: -0.005em;
+  font-style: italic;
+  line-height: 1.35;
+  color: var(--ink-soft);
+}
+
+/* The settlement's acknowledgement is a longer sentence, so it is allowed to
+   wrap - unlike the grant's single line - and is set a shade smaller. */
+.nexus-loan__grant-line.nexus-loan__settled-line {
+  max-width: 36ch;
+  font-size: max(9.5px, calc(var(--cell) * 0.118));
+  line-height: 1.4;
+}
+
+/* The transaction. Term on the left, figure on the right, on one grid so the
+   figures line up and the eye can compare them. */
+.nexus-loan__summary {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: calc(var(--cell) * 0.045) calc(var(--cell) * 0.14);
+  width: 100%;
+  margin: calc(var(--cell) * 0.06) 0 0;
+  padding-top: calc(var(--cell) * 0.07);
+  border-top: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  text-align: left;
+}
+
+.nexus-loan__summary-term {
+  margin: 0;
+  font-size: max(9.5px, calc(var(--cell) * 0.112));
+  line-height: 1.35;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink) 52%, transparent);
+  align-self: center;
+}
+
+.nexus-loan__summary-value {
+  margin: 0;
+  min-width: 0;
+  font-size: max(10.5px, calc(var(--cell) * 0.128));
+  line-height: 1.35;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink);
+}
+
+/* DONE: the one press that closes the grant. It is pinned to the bottom of
+   the card so it is never scrolled away from a thumb. */
+.nexus-loan__done {
+  flex: 0 0 auto;
+  display: block;
+  width: 100%;
+  margin: auto 0 0;
+  padding: 0.6em 1em;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: 999px;
+  background: var(--cell-ground);
+  font: inherit;
+  font-size: max(12px, calc(var(--cell) * 0.155));
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background 160ms ease-out, border-color 160ms ease-out;
+}
+
+.nexus-loan__done:hover {
+  background: color-mix(in srgb, var(--ink) 5%, var(--cell-ground));
+  border-color: color-mix(in srgb, var(--ink) 28%, transparent);
+}
+
+.nexus-loan__done:active {
+  transform: scale(0.98);
+}
+
+/* THE PLEDGE, MARKED ON THE BOARD.
+
+   A colony that would be mortgaged for the chosen amount wears the same red
+   blink the armed strike and the shield's deployment use: the mark itself is
+   drawn below, in "the marks", where this class shares the fight blink's
+   ::before rather than inventing a second animation. Nothing is drawn here
+   but the cursor. */
+.board__cell.is-loan-target {
+  cursor: pointer;
+}
+
+/* A FULLY-PLEDGED COLONY STOPS ASKING AND HOLDS ITS MARK.
+
+   The required colonies blink; a colony the player has already pledged keeps
+   the same red ring but stops blinking and draws solid, so the tap has a
+   visible answer even when a second property is still needed. It stays above
+   the tile, takes no taps, and dies with the class when the amount changes. */
+.board__cell.is-loan-picked {
+  cursor: default;
+}
+
+.board__cell.is-loan-target.is-loan-picked::before {
+  animation: none;
+  opacity: 1;
+  transform: none;
+  border-width: 3px;
+  border-color: var(--sell);
+  box-shadow:
+    0 0 calc(var(--cell) * 0.2) color-mix(in srgb, var(--sell) 42%, transparent),
+    inset 0 0 calc(var(--cell) * 0.12) color-mix(in srgb, var(--sell) 18%, transparent);
 }
 
 /* ======================================================== the shared chest
@@ -3516,6 +4165,45 @@ button.board__cell--corner:focus-visible {
   color: color-mix(in srgb, var(--ink) 55%, var(--accent, var(--ink)));
 }
 
+/* THE PLEDGE, IN FLIGHT.
+
+   One pledged colony's own square, lifted off its tile and drawn into the
+   keeper. The card is a clone, so it carries the name, the pill and the price
+   the player just chose; the soft edge and the faint halo are the only things
+   added, and they are what make it read as essence rather than as a copy.
+   The ghost takes no taps and dies at the end of its own flight. */
+.board__pledge {
+  position: absolute;
+  /* ABOVE THE CARD, because the card is where the keeper is. The soul is
+     travelling INTO that picture, so it has to be seen crossing it rather
+     than disappearing behind its edge. Nothing on the card is pressable
+     while the pledge is in flight, so there is nothing to cover. */
+  z-index: 60;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+  filter:
+    drop-shadow(0 0 5px color-mix(in srgb, var(--sell) 26%, transparent))
+    drop-shadow(0 0 12px color-mix(in srgb, var(--ink) 14%, transparent));
+}
+
+.board__pledge-face {
+  margin: 0;
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--cell-ground) 55%, transparent),
+    0 3px 12px rgb(18 17 16 / 0.22);
+  overflow: hidden;
+}
+
+/* The blink that marked the colony as a target belongs to the tile, not to the
+   soul leaving it. */
+.board__pledge-face::before {
+  content: none;
+}
+
 .board__rupee {
   position: absolute;
   z-index: 30;
@@ -3556,6 +4244,98 @@ button.board__cell--corner:focus-visible {
   border-radius: 50%;
   border: 1px solid color-mix(in srgb, var(--ink) 34%, transparent);
   pointer-events: none;
+}
+
+/* THE PROPERTY'S SOUL, IN FLIGHT.
+
+   A clone of the square itself, so the name, the pill and the price crossing
+   the board are recognisably the property that changed hands. What makes it
+   read as essence rather than as a copy is the light: the buyer's own coin
+   colour glowing out of its edge, a soft halo behind it, and a body that is
+   never quite solid - it peaks below full opacity and dissolves as it enters
+   the chip. Above the card, because it crosses the middle to reach the roster.
+   It takes no taps and dies at the end of its own flight. */
+.board__soul {
+  position: absolute;
+  z-index: 60;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  will-change: transform, opacity;
+  filter:
+    drop-shadow(0 0 6px color-mix(in srgb, var(--soul, var(--soul-glow)) 45%, transparent))
+    drop-shadow(0 0 16px color-mix(in srgb, var(--soul, var(--soul-glow)) 26%, transparent));
+}
+
+.board__soul-face {
+  margin: 0;
+  border-radius: 3px;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--soul, var(--soul-glow)) 55%, transparent),
+    0 4px 14px rgb(18 17 16 / 0.25);
+  overflow: hidden;
+}
+
+/* The wash that marked the square as a target belongs to the tile, not to the
+   soul leaving it. */
+.board__soul-face::before {
+  content: none;
+}
+
+/* GOLD OUT OF THE TILE.
+
+   The fountain's own coin: a struck gold disc with the rupee on it, so what
+   bursts from the square is the game's money and not a generic particle. The
+   glow is what lets a dozen of them read as one magical event over cream
+   cells, and `pointer-events` keeps every one of them out of the way of the
+   taps the board is still waiting for. */
+.board__coin-gold {
+  position: absolute;
+  z-index: 56;
+  display: grid;
+  place-items: center;
+  width: max(11px, calc(var(--cell) * 0.22));
+  height: max(11px, calc(var(--cell) * 0.22));
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 32% 28%,
+    var(--gold-hi),
+    var(--gold-face) 46%,
+    var(--gold-deep) 76%,
+    var(--gold-rim)
+  );
+  border: 1px solid var(--gold-edge);
+  box-shadow:
+    0 1px 3px rgb(60 40 5 / 0.35),
+    0 0 6px color-mix(in srgb, var(--gold-face) 45%, transparent),
+    inset 0 0 3px rgb(255 255 255 / 0.5);
+  font-size: max(6px, calc(var(--cell) * 0.11));
+  font-weight: 700;
+  line-height: 1;
+  color: var(--gold-ink);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.board__coin-gold--small {
+  width: max(8px, calc(var(--cell) * 0.16));
+  height: max(8px, calc(var(--cell) * 0.16));
+  font-size: max(5px, calc(var(--cell) * 0.085));
+}
+
+.board__coin-gold--big {
+  width: max(14px, calc(var(--cell) * 0.27));
+  height: max(14px, calc(var(--cell) * 0.27));
+  font-size: max(7px, calc(var(--cell) * 0.13));
+}
+
+/* The still reader's whole fountain: one warm glow where the money came
+   from, with no coins thrown at all. */
+.board__coin-gold--flash {
+  width: max(26px, calc(var(--cell) * 0.52));
+  height: max(26px, calc(var(--cell) * 0.52));
+  font-size: 0;
 }
 
 .board__passed {
@@ -4321,6 +5101,10 @@ button.board__cell--corner:focus-visible {
     animation: none;
   }
 
+  .nexus-card--granted {
+    animation: none;
+  }
+
   .board__announce--wait .announce__label::before {
     animation: none;
     opacity: 0.7;
@@ -4329,6 +5113,8 @@ button.board__cell--corner:focus-visible {
   .board__lift,
   .board__rupee,
   .board__coin-land,
+  .board__soul,
+  .board__coin-gold,
   .board__passed {
     animation: none;
   }
@@ -4338,13 +5124,15 @@ button.board__cell--corner:focus-visible {
      same thing without moving - and the war's own pieces are asked for no
      motion at all: the flash that the board-fx plays by hand is not the
      stylesheet's to quiet, and these are. */
-  .board__cell.is-fight-blink::before {
+  .board__cell.is-fight-blink::before,
+  .board__cell.is-loan-target::before {
     animation: none;
     opacity: 1;
     transform: none;
   }
 
-  .board.is-quake {
+  .board.is-quake,
+  .board.is-shield-jolt {
     animation: none;
   }
 
@@ -5206,8 +5994,9 @@ button.board__cell--corner:focus-visible {
 /* ----------------------------------------------------- the protected tile
 
    A STANDING SHIELD'S OWN MARK: a small glyph in the shield's colour, in
-   the tile's free top-right corner (where the build pips used to sit), with
-   the owner's remaining turns inside the shield's body. It changes no
+   the tile's free top-right corner (where the build pips used to sit). The
+   shield is PERMANENT, so the body of the glyph carries no number - it
+   says "protected", not "for N more turns". It changes no
    dimension of the cell - it is absolutely placed over a cell that already
    has room - and it sits above the ownership ring so a protected colony
    reads as protected whoever holds it. Both screens paint it from the same
@@ -5335,7 +6124,8 @@ button.board__cell--corner:focus-visible {
   pointer-events: none;
 }
 
-.board__cell.is-fight-blink::before {
+.board__cell.is-fight-blink::before,
+.board__cell.is-loan-target::before {
   content: "";
   position: absolute;
   inset: 3%;
@@ -5510,6 +6300,73 @@ button.board__cell--corner:focus-visible {
   0%   { transform: translate(-50%, -50%) scaleY(0.08); opacity: 0.4; }
   55%  { transform: translate(-50%, -50%) scaleY(1); opacity: 0.9; }
   100% { transform: translate(-50%, -50%) scaleY(1); opacity: 0.85; }
+}
+
+/* -------------------------------------------------------------- the breach
+
+   A STRIKE THAT MEETS A SHIELD, played by board-fx.js from the
+   shieldBlocked event - and deliberately not the war. No blackout, no
+   quake, no staining of the colony: the weapon's streak (the war's own
+   element, in the weapon's colour) crosses, and then the SHIELD answers in
+   its own colour - a shield-shaped flare inside the tile, a ring opening
+   over the colony, six shards scattering, and the ground giving once.
+   Transform and opacity only; every piece is `pointer-events: none` and
+   removes itself after its own flight. The colour arrives as `--shield`
+   from the shield's own record, never typed into a rule. */
+
+.board__shield-break {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  width: 80%;
+  aspect-ratio: 1;
+  border-radius: 30% 30% 46% 46% / 24% 24% 62% 62%;
+  border: 2px solid color-mix(in srgb, var(--shield, var(--ink)) 85%, transparent);
+  background: color-mix(in srgb, var(--shield, var(--ink)) 30%, transparent);
+  box-shadow:
+    0 0 calc(var(--cell) * 0.2) color-mix(in srgb, var(--shield, var(--ink)) 70%, transparent),
+    inset 0 0 calc(var(--cell) * 0.12) color-mix(in srgb, var(--shield, var(--ink)) 55%, transparent);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.board__shield-ring {
+  position: absolute;
+  z-index: 44;
+  width: max(26px, calc(var(--cell) * 0.5));
+  height: max(26px, calc(var(--cell) * 0.5));
+  border-radius: 50%;
+  border: 2px solid var(--shield, var(--ink));
+  box-shadow: 0 0 calc(var(--cell) * 0.16) color-mix(in srgb, var(--shield, var(--ink)) 55%, transparent);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.board__shield-shard {
+  position: absolute;
+  z-index: 44;
+  width: max(5px, calc(var(--cell) * 0.1));
+  height: max(7px, calc(var(--cell) * 0.14));
+  background: color-mix(in srgb, var(--shield, var(--ink)) 64%, var(--cell-ground));
+  clip-path: polygon(50% 0%, 100% 62%, 38% 100%, 0% 44%);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--shield, var(--ink)) 50%, transparent);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+/* The ground giving once under the breach: a quarter of the war's quake,
+   over before the fight card says what stopped the strike. */
+.board.is-shield-jolt {
+  animation: shield-jolt 460ms cubic-bezier(.36, .07, .19, .97) 1;
+}
+
+@keyframes shield-jolt {
+  0%   { transform: translate(0, 0); }
+  24%  { transform: translate(-2.5px, 1.5px); }
+  52%  { transform: translate(2px, -1.5px); }
+  78%  { transform: translate(-1px, 0.5px); }
+  100% { transform: translate(0, 0); }
 }
 
 /* --------------------------------------------------------------- the test panel
@@ -5883,19 +6740,37 @@ button.board__cell--corner:focus-visible {
 /* ==========================================================================
    OUTER SPACE - THE INTERSTELLAR COUNTER
 
-   BUILT FROM SCRATCH: a warm off-white panel in the board's own material
-   carrying the headline and ONE ROW of three tall portrait cards -
-   [ Quantum One ] [ Photon Weave ] [ Singularity Mantle ] - artwork at the
-   top of each, name beneath, price and discount beneath that, ACQUIRE SUIT
-   pinned at the bottom inside the card. The horizontal row is the point:
-   headline plus three side-by-side cards inside the viewport, no scrolling
-   anywhere on this screen. A visible X closes the counter (the visit's own
-   `continue` - no purchase, no state of its own).
+   THE SAMRAJYA PANEL, CARRYING THE COUNTER. The card wears the family
+   shell - `property-card` - so it has the ivory ground, the hairline, the
+   soft lift and the 2.5px accent bar down its left edge, here in the
+   corner's own blue (`--corner-outer-space`, the stamp the tile itself is
+   drawn with). The headline sits in the family's title slot under the
+   pill, and the close is the family's round control in its own corner:
+   this panel now opens the way the Hole, the chests and every property
+   open.
 
-   The row is a three-column grid with equal tracks, so all three cards
-   share one height and one width class; everything inside sizes against
-   the card's own width (container queries) and the tile, so the
-   arrangement survives every device without overflow.
+   INSIDE IT: the headline, the atmosphere, ONE ROW of three tall portrait
+   cards - [ Quantum One ] [ Photon Weave ] [ Singularity Mantle ] - and
+   the Mission Protocols a step below them. The suits are the space's own
+   design and are untouched; the row is a three-column grid with equal
+   tracks, everything sized against the card's own width (container
+   queries) and the tile, so the arrangement survives every device.
+
+   THE VERTICAL COMPOSITION - the original layout, given air:
+
+     [ head + atmosphere ]        a little more room apart
+     [ the three suits ]          a clear step down from the copy
+     ...any spare height falls here...
+     [ Mission protocols ]        a fixed step below the suits, plus
+                                  whatever spare height the panel has -
+                                  margin-top:auto - so lower space is
+                                  used rather than left empty
+
+   The holder keeps its ORIGINAL dimensions: its own height, at the top of
+   the middle - no fixed rectangle, no cap. The composition below only
+   asks for a little more air where the copy met the content, and lets the
+   protocols take whatever room the panel's own height leaves beneath the
+   suits.
    ======================================================================== */
 
 .board__card[data-card-kind="space"] {
@@ -5904,6 +6779,7 @@ button.board__cell--corner:focus-visible {
 }
 
 .space-card {
+  position: relative;
   pointer-events: auto;
   display: flex;
   flex-direction: column;
@@ -5915,65 +6791,66 @@ button.board__cell--corner:focus-visible {
     0 1px 0 rgb(255 255 255 / 0.7) inset,
     0 2px 10px rgb(18 17 16 / 0.13);
   container-type: inline-size;
-  /* No scroll of any kind: the row fits, and every part of it is budgeted
-     against the panel so nothing can spill or clip. */
+  /* The card is its own height - exactly as it was before the family shell
+     arrived - and `height: auto` is what keeps it that way against
+     `.property-card`'s own 100%. */
+  height: auto;
   overflow: visible;
 }
 
 /* ------------------------------------------------------------------- head
 
-   The headline left-set on the panel's margin - the established Samrajya
-   title position - with the close X alone in the top-right corner. One
-   line of intent; the artwork below it carries the rest. */
+   The headline in the family's title slot: pill over a caps title, left-set
+   on the panel's margin, with the close alone in the top-right corner on
+   its own circle. One line of intent (two where the measure says so); the
+   artwork below carries the rest. */
 
-.space-card__bar {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: clamp(6px, 2cqi, 12px);
-  padding: 1% 0 0;
+.space-card .property-card__head {
+  grid-template-columns: 1fr;
+  gap: 0;
 }
 
+.space-card .property-card__title {
+  gap: 0.5em;
+}
+
+/* The title keeps its distance from the close button at the right edge -
+   the Hole's own rule, for the same reason. */
+.space-card .property-card__name {
+  padding-right: max(24px, calc(var(--cell) * 0.42));
+}
+
+/* THE HEADLINE, ONE PIXEL UP - nothing more. The family supplies the
+   uppercase, the tracking and the slot; the counter keeps its own weight
+   and its own size, raised only a pixel above the original so the line has
+   a touch more presence without wrapping wider or dominating the panel.
+   Any larger and it starts taking lines the panel does not want to give
+   it, so this is deliberately the smallest change that reads at all. */
 .space-card__headline {
-  margin: 0;
-  min-width: 0;
-  font-size: max(12px, calc(var(--cell) * 0.165));
+  font-size: max(13px, calc(var(--cell) * 0.175));
   font-weight: 500;
-  letter-spacing: 0.05em;
   line-height: 1.2;
-  text-transform: uppercase;
-  color: var(--ink);
+  letter-spacing: 0.05em;
   text-wrap: balance;
 }
 
-.space-card__close {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: clamp(24px, 7.5cqi, 30px);
-  height: clamp(24px, 7.5cqi, 30px);
-  padding: 0;
-  border: 1px solid rgb(18 17 16 / 0.3);
-  border-radius: 50%;
-  background: transparent;
-  color: var(--ink);
-  font-size: clamp(13px, 4cqi, 16px);
-  line-height: 1;
-  cursor: pointer;
-}
-
-.space-card__close:disabled {
+/* The family's close, in the family's corner. It answers `continue`, and
+   on the other player's screen it stands down the way every other panel's
+   close does. */
+.space-card .property-card__close:disabled {
   opacity: 0.35;
   cursor: default;
 }
 
-/* The atmosphere, directly under the headline: one quiet paragraph on the
-   card's measure, deliberately secondary to the cards below it. */
+/* The atmosphere, a deliberate step under the headline: one quiet
+   paragraph on the card's measure, deliberately secondary to the cards
+   below it. The margin is the breathing room the heading asked for - on
+   top of the panel's own section gap, so it scales with the board. */
 .space-card__myth {
-  margin: 0;
+  margin: calc(var(--cell) * 0.12) 0 0;
   max-width: 64ch;
   font-size: clamp(8.5px, calc(var(--cell) * 0.115), 9.8px);
-  line-height: 1.42;
+  line-height: 1.5;
   color: var(--ink-soft);
   text-wrap: pretty;
 }
@@ -5991,6 +6868,15 @@ button.board__cell--corner:focus-visible {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: clamp(6px, 2cqi, 12px);
   align-items: stretch;
+  /* A CLEAR STEP DOWN from the introductory copy - the suits are the
+     middle group of the composition, and the space above them is what
+     separates "what this place is" from "what it offers". The margin below
+     is the FLOOR of the gap the protocols will stand on: the protocols
+     take the rest of the spare height on top of it, so on a roomy board
+     the row of suits ends and the protocols arrive a deliberate distance
+     later, and on the smallest board the floor is still this. */
+  margin-top: calc(var(--cell) * 0.16);
+  margin-bottom: calc(var(--cell) * 0.18);
 }
 
 .space-suit {
@@ -6060,15 +6946,22 @@ button.board__cell--corner:focus-visible {
 
 /* -------------------------------------------------------------- protocols
 
-   Clearly separated by one hairline, but the same voice as the rest of the
-   panel: a caps heading with its own rule running off to the right, then
-   six scannable rows - leading label in ink, explanation in the quiet
-   secondary tone. Not a card, not a second panel: the mechanics, named. */
+   Clearly separated by a hairline, and standing a deliberate step below
+   the suits: the suits carry a fixed margin beneath them - the gap that
+   reads on every screen - and `margin-top: auto` adds whatever spare
+   height the panel has left on top of that, so where the card's own
+   content gives the lower section room, the protocols move down into it
+   instead of leaving it empty. Inside, the same voice as the rest of the
+   panel - a caps heading with its own rule running off to the right, then
+   six scannable rows with the room to be read: more air under the
+   heading, a wider gap between entries, and the line height a two-clause
+   rule needs. Not a card, not a second panel: the mechanics, named. */
 
 .space-card__protocols {
   display: grid;
-  gap: clamp(4px, 1.2cqi, 7px);
-  padding-top: clamp(6px, 2cqi, 12px);
+  gap: clamp(6px, 1.8cqi, 11px);
+  margin-top: auto;
+  padding-top: clamp(8px, 2.6cqi, 16px);
   border-top: 1px solid rgb(18 17 16 / 0.12);
 }
 
@@ -6104,12 +6997,12 @@ button.board__cell--corner:focus-visible {
   padding: 0;
   list-style: none;
   display: grid;
-  gap: clamp(2px, 0.6cqi, 4px);
+  gap: clamp(4px, 1.2cqi, 8px);
 }
 
 .space-card__protocols-list li {
   font-size: clamp(8.5px, calc(var(--cell) * 0.112), 9.6px);
-  line-height: 1.35;
+  line-height: 1.5;
   color: var(--ink-soft);
   text-wrap: pretty;
 }
@@ -6446,29 +7339,22 @@ button.board__cell--corner:focus-visible {
     overflow: visible;
   }
 
-  .space-card__bar {
-    align-items: center;
-    gap: clamp(6px, 2cqi, 10px);
-    padding: 0;
-  }
-
+  /* The headline keeps its original size on the glass - the smallest
+     possible nudge - and never crowds the suits. */
   .space-card__headline {
-    margin: 0;
-    font-size: clamp(11px, calc(var(--cell) * 0.15), 14px);
+    font-size: clamp(11.5px, calc(var(--cell) * 0.16), 15px);
     letter-spacing: 0.04em;
-    line-height: 1.15;
+    line-height: 1.2;
   }
 
-  .space-card__close {
-    width: clamp(28px, 8cqi, 34px);
-    height: clamp(28px, 8cqi, 34px);
-    font-size: clamp(12px, 3.6cqi, 16px);
-  }
-
+  /* The same composition, proportionally: a step of air under the heading,
+     a clear step before the suits, and the protocols still taking the
+     floor. Each margin is a share of the cell, so they shrink exactly as
+     the board does. */
   .space-card__myth {
-    margin: 0;
+    margin: calc(var(--cell) * 0.07) 0 0;
     font-size: clamp(8px, calc(var(--cell) * 0.105), 10px);
-    line-height: 1.35;
+    line-height: 1.5;
     color: var(--ink-soft);
     text-wrap: pretty;
   }
@@ -6483,6 +7369,8 @@ button.board__cell--corner:focus-visible {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: clamp(4px, 1.4cqi, 8px);
     align-items: stretch;
+    margin-top: calc(var(--cell) * 0.11);
+    margin-bottom: calc(var(--cell) * 0.13);
   }
 
   .space-suit {
@@ -6537,7 +7425,7 @@ button.board__cell--corner:focus-visible {
 
   .space-card__protocols {
     display: block;
-    padding-top: clamp(4px, 1.4cqi, 6px);
+    padding-top: clamp(6px, 2cqi, 10px);
     border-top: 1px solid rgb(18 17 16 / 0.12);
   }
 
@@ -6559,16 +7447,16 @@ button.board__cell--corner:focus-visible {
   }
 
   .space-card__protocols[open] .space-card__protocols-name {
-    margin-bottom: clamp(2px, 0.6cqi, 4px);
+    margin-bottom: clamp(4px, 1.3cqi, 7px);
   }
 
   .space-card__protocols-list {
-    gap: clamp(2px, 0.6cqi, 4px);
+    gap: clamp(3px, 1cqi, 6px);
   }
 
   .space-card__protocols-list li {
     font-size: clamp(8px, calc(var(--cell) * 0.105), 9.5px);
-    line-height: 1.3;
+    line-height: 1.45;
   }
 
   /* ------------------------------------------------------- the two popups */
@@ -6645,3 +7533,4 @@ button.board__cell--corner:focus-visible {
     cursor: pointer;
   }
 }
+

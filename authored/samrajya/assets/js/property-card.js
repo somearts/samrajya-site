@@ -40,6 +40,7 @@ import { cardArt } from "./cards.js";
 import { propertyArt } from "./property-art.js";
 import { propertyFor } from "./shared/properties.js";
 import { upgradesOf, rupees } from "./shared/economy.js";
+import { civById, coinColor } from "./shared/civilizations.js";
 import { discountPrice, suitById } from "./shared/suits.js";
 import {
   MAX_UPGRADE,
@@ -148,7 +149,7 @@ export function propertyCard(property, ctx) {
         }),
       ]),
       el("p", { class: "property-card__price" }, [
-        el("span", { "aria-hidden": "true", text: "₹" }),
+        el("span", { class: "property-card__price-rupee", "aria-hidden": "true", text: "₹" }),
         el("span", { class: "property-card__price-figure", text: rupees(property.price).slice(1) }),
         /* The list price, shown struck through beside the discounted figure
            while an unspent suit stands behind the decision. Hidden by
@@ -204,6 +205,143 @@ export function propertyCard(property, ctx) {
 
     isSet ? null : el("span", { class: "property-card__noset", hidden: true }),
   ]);
+}
+
+/* -------------------------------------------------------- the introduction */
+
+/**
+ * One empire, as the introduction shows it: its coin, its name, its title.
+ *
+ * The coin is the board's own coin - the same disc, the same colour, the same
+ * inner ring - because what a player picks here is what they will be looking
+ * for on every square after it.
+ */
+function empire(player) {
+  const civ = civById(player?.civ);
+  const colour = coinColor(player?.civ) || "var(--ink)";
+
+  return el("div", { class: "intro__empire" }, [
+    el("span", {
+      class: "coin intro__coin",
+      "aria-hidden": "true",
+      style: { "--coin": colour },
+    }),
+    el("div", { class: "intro__who" }, [
+      el("span", { class: "intro__civ", text: civ?.name || "" }),
+      civ?.title ? el("span", { class: "intro__title", text: civ.title }) : null,
+    ]),
+  ]);
+}
+
+/**
+ * THE INTRODUCTION, IN THE PROPERTY POP-UP'S OWN CARD.
+ *
+ * A new game opens with one card before the turn is anybody's: the two
+ * civilizations facing each other, and what the contest is. It is drawn into
+ * the same holder, the same rectangle and the same card the board opens for a
+ * tapped square - the same ground, the same border, the same shadow, the same
+ * type, the same turn-in on the way up - because that is the pop-up this game
+ * already has, and an introduction has no business inventing a second one.
+ *
+ * THE ONE DIFFERENCE IS THE X. A property card can be tapped away; this one
+ * cannot, and nothing else dismisses it either: no tap outside, no Escape.
+ * The only way past is the button, and the button belongs to the player who
+ * takes the first throw - everybody else is shown the same card to read and
+ * nothing on it to press. Because it is a card in the middle, the turn line
+ * and the die stand down while it is up, exactly as they do for every other
+ * card.
+ */
+export function introCard({ players = [], canBegin = false, onBegin = null } = {}) {
+  const [first, second] = players;
+
+  return el(
+    "article",
+    {
+      class: "property-card intro-card",
+      "data-property": "intro",
+      style: { "--accent": "var(--ink)" },
+      "aria-live": "polite",
+    },
+    [
+      el("h3", { class: "property-card__name intro__heading", text: "LET THE CONQUEST BEGIN" }),
+
+      /* The two empires, one above the other with the contest between them:
+         the same VS the table says before a game, so the opposition reads as
+         a fixture rather than a list. */
+      el("div", { class: "intro__body" }, [
+        first ? empire(first) : null,
+        el("span", { class: "intro__vs", text: "VS" }),
+        second ? empire(second) : null,
+        el("div", { class: "property-card__description intro__copy" }, [
+          el("span", {
+            text: "Two civilizations. One cosmic battlefield. Your empire begins now.",
+          }),
+          el("span", {
+            text:
+              "Acquire properties, build your empire, and gather weapons to challenge your " +
+              "opponent. Enter the Fight arena, unleash your arsenal, and let your " +
+              "civilization's power shape the battle.",
+          }),
+          el("span", { text: "Only one empire will claim Samrajya." }),
+        ]),
+      ]),
+
+      /* THE BUTTON IS THE FIRST THROW'S ALONE. The opponent is shown this
+         very same card with nothing on it to press: they can read the
+         contest, and only the player who starts the game can begin it. */
+      canBegin
+        ? el("button", {
+            type: "button",
+            class: "property-card__buy intro__begin",
+            "data-action": "begin",
+            text: "LET'S BEGIN",
+            onclick: () => {
+              if (typeof onBegin === "function") onBegin();
+            },
+          })
+        : null,
+    ],
+  );
+}
+
+/**
+ * Put the introduction in the middle, the way `showCard` puts a property
+ * there: the holder is put right first, the card is drawn at once, and the
+ * same turn-in plays over it. It is drawn from the game's own ledger, so both
+ * devices show the same two civilizations without either of them being told.
+ *
+ * `canBegin` says whether this screen holds the one button; it comes from the
+ * state (`intro.seat`), never from anything this screen decides for itself.
+ */
+export function showIntroCard(board, players, { canBegin = false, onBegin = null } = {}) {
+  const holder = board.querySelector(".board__card");
+  if (!holder) return Promise.resolve(null);
+
+  resetHolder(holder);
+  board.dataset.property = "";
+  holder.dataset.cardKind = "property";
+  holder.dataset.intro = "true";
+  holder.replaceChildren(introCard({ players, canBegin, onBegin }));
+  holder.hidden = false;
+  holder.scrollTop = 0;
+
+  if (still()) return Promise.resolve(holder.firstElementChild);
+
+  /* The card arrives on the hinge every other card in the middle arrives on:
+     drawn first, turned over the top of it, so it is readable from the frame
+     it appears on rather than half a second later. */
+  return settled(
+    holder
+      .animate(
+        [
+          { transform: "rotateY(-88deg)", opacity: 0 },
+          { transform: "rotateY(0deg)", opacity: 1 },
+        ],
+        { duration: TURN_MS, easing: "cubic-bezier(.22,.7,.3,1)", fill: "both" },
+      )
+      .finished,
+    TURN_MS + 150,
+  ).then(() => holder.firstElementChild);
 }
 
 /* ------------------------------------------------------------- the three builds */
@@ -303,6 +441,23 @@ export function syncCard(board, ctx) {
   const level = levelOf(ledger, id);
   const rent = rentAt(ledger, id);
 
+  /* THE DECISION THIS CARD IS ANSWERING, if it is answering one. Read here
+     rather than further down because two of the figures below depend on it. */
+  const decision = game?.landing?.id === id ? game.landing : null;
+
+  /* ANCIENT GREEK TAKES JUPITER WITHOUT TRIBUTE.
+
+     While the first throw's promise is standing, the price this square would
+     have cost is struck out and FREE takes its place - the same figure the
+     ledger will not take when the buy goes through. It is read from the state
+     rather than remembered here, so both screens say the same thing and the
+     card can never offer a price the server is about to charge. */
+  const giftFree =
+    Boolean(decision) &&
+    owner === null &&
+    id === "jupiter" &&
+    game?.civGift?.[decision.seat] === "free-jupiter";
+
   /* THE ACTIVE SEAT'S UNSPENT SUIT - the discount this card must show
      BEFORE the purchase is confirmed, so the figure on the card and the
      figure the ledger takes are the same number. The purchase price only:
@@ -310,23 +465,28 @@ export function syncCard(board, ctx) {
   const suit = ctx?.suit && !ctx.suit.used ? ctx.suit : null;
   const suitName = suit ? suitById(suit.id)?.name || "" : "";
   const listPrice = propertyFor(id).price;
-  const price = suit ? discountPrice(listPrice, suit.discount || 0) : listPrice;
+  const price = giftFree ? 0 : suit ? discountPrice(listPrice, suit.discount || 0) : listPrice;
 
   const status = card.querySelector(".property-card__status");
   status.textContent =
     owner === null
-      ? `Cost ${rupees(price)}${suit ? ` · ${suit.discount}% off` : ""}`
+      ? giftFree
+        ? "Free"
+        : `Cost ${rupees(price)}${suit ? ` · ${suit.discount}% off` : ""}`
       : owner === seat
         ? "You own this"
         : `Owned by ${nameOfSeat(ledger, owner)}`;
 
   // The header figure follows the same arithmetic, with the list price
-  // struck through beside it while a suit stands behind the decision.
+  // struck through beside it while a suit stands behind the decision - or
+  // while the throne asks no tribute, when FREE is the figure.
   const headFigure = card.querySelector(".property-card__price-figure");
   const headWas = card.querySelector(".property-card__price-was");
-  if (headFigure) headFigure.textContent = rupees(price).slice(1);
+  const headRupee = card.querySelector(".property-card__price-rupee");
+  if (headFigure) headFigure.textContent = giftFree ? "FREE" : rupees(price).slice(1);
+  if (headRupee) headRupee.hidden = giftFree;
   if (headWas) {
-    const showWas = Boolean(suit) && owner === null && price !== listPrice;
+    const showWas = giftFree ? owner === null : Boolean(suit) && owner === null && price !== listPrice;
     headWas.hidden = !showWas;
     headWas.textContent = showWas ? rupees(listPrice) : "";
   }
@@ -349,7 +509,6 @@ export function syncCard(board, ctx) {
     }
   }
 
-  const decision = game?.landing?.id === id ? game.landing : null;
   const kind = decision?.kind || "";
   const deciding = mode === "decision" && Boolean(decision);
   // Once the decision has been answered the card stays up just long enough to
@@ -382,7 +541,7 @@ export function syncCard(board, ctx) {
     slot.style.display = "none";
   } else {
     const verdict = canBuy(ledger, id, seat, {
-      discount: suit ? suit.discount || 0 : 0,
+      discount: giftFree ? 100 : suit ? suit.discount || 0 : 0,
     });
     const money = moneyOf(ledger, seat);
     const affordable = money >= price;
@@ -405,7 +564,7 @@ export function syncCard(board, ctx) {
     // pill two hundred pixels wide, where it wrapped into four ragged lines. It
     // stays, as the button's title, so the reason is still there to be found.
     slot.querySelector(".property-card__buy-cost").textContent = affordable
-      ? rupees(price)
+      ? giftFree ? "FREE" : rupees(price)
       : `${rupees(price - money)} short`;
     button.title = affordable
       ? `Buy for ${rupees(price)}${suit ? ` with ${suitName} −${suit.discount}%` : ""}`

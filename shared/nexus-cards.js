@@ -219,14 +219,7 @@ export const NEXUS_KEEPER = Object.freeze({
   title: "He Who Must Not Be Named",
   tagline: "The keeper of the thread every turn is hung upon.",
   mythology: Object.freeze([
-    "He is not named in any scripture, yet every scripture owes him its silence.",
-    "They call him the Unnamed Keeper, the one who holds the thread from which every colony, every empire, and every roll of the dice is suspended.",
-    "Before the first board was carved, he was already watching.",
-    "He does not play, but without his stillness the game would scatter like dust.",
-    "Kings have offered him temples; priests have swept his floors for a thousand years.",
-    "He asks nothing, yet everything given to his upkeep returns to the balance of the board.",
-    "Some say he is the silence between turns, the breath before the die is thrown.",
-    "Approach him with reverence, or do not approach him at all.",
+    "Welcome to the temple of the One Who Shall Not Be Named — the one you must either pay or take your chances with.",
   ]),
   /** What the two buttons say, and what they say underneath. */
   actions: Object.freeze({

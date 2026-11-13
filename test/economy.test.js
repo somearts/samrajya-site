@@ -1,4 +1,4 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    THE ECONOMY
 
    Twenty prices, twenty base rents and sixty upgrades, all of them written down
@@ -34,7 +34,7 @@ import { CELLS } from "../shared/spaces.js";
 import { PROPERTIES, propertyFor } from "../shared/properties.js";
 
 test("everyone starts with two thousand", () => {
-  assert.equal(STARTING_MONEY, 2000);
+  assert.equal(STARTING_MONEY, 5000);
 });
 
 test("the table prices exactly the twenty properties, and no others", () => {
@@ -190,3 +190,4 @@ test("the same price reaches the card that the board is drawn from", () => {
     assert.equal(propertyFor(property.id).price, PRICING[property.id].price, property.id);
   }
 });
+

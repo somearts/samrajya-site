@@ -1,4 +1,4 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    THE GAME
 
    One turn, one state machine, tested without a browser. This is the file that
@@ -54,8 +54,12 @@ import { BAD_LUCK, RAGNAROK } from "../shared/weapons.js";
 import { advance as coinAdvance } from "../authored/samrajya/assets/js/coins.js";
 
 const PLAYERS = [
-  { name: "Sam", civ: "indus-valley" },
-  { name: "Smith", civ: "aztec" },
+  /* The two here are chosen so that no civilization's first-throw power can
+     reach what these tests are about: Greek's gift only fires on Jupiter, and
+     Indus's on that seat's own first purchase - neither happens in this file.
+     The powers themselves are tested in civ-powers.test.js. */
+  { name: "Sam", civ: "ancient-greek" },
+  { name: "Smith", civ: "indus-valley" },
 ];
 
 /** An rng that always lands the die on `n`. */
@@ -118,8 +122,8 @@ test("a new game starts before the first throw, with every piece on Start", () =
     state.pieces.map((p) => p.weapons),
     [[], []],
   );
-  assert.equal(moneyOf(state.ledger, 0), 2000);
-  assert.equal(moneyOf(state.ledger, 1), 2000);
+  assert.equal(moneyOf(state.ledger, 0), 5000);
+  assert.equal(moneyOf(state.ledger, 1), 5000);
   assert.equal(ownerOf(state.ledger, "moon"), null);
 });
 
@@ -290,7 +294,7 @@ test("Buy takes the square and the price, and ends the visit", () => {
 
   assert.equal(bought.phase, PHASE.RESOLVING, "buying ends the visit");
   assert.equal(ownerOf(bought.ledger, "moon"), 0);
-  assert.equal(moneyOf(bought.ledger, 0), 2000 - 200);
+  assert.equal(moneyOf(bought.ledger, 0), 5000 - 200);
   assert.equal(events[0].type, "bought");
   assert.equal(events[0].price, 200);
   assert.equal(events[0].name, "Moon");
@@ -303,7 +307,7 @@ test("Pass leaves the square unowned and ends the visit", () => {
   const { state: passed, events } = take(state, { type: "pass" });
   assert.equal(passed.phase, PHASE.RESOLVING);
   assert.equal(ownerOf(passed.ledger, "moon"), null);
-  assert.equal(moneyOf(passed.ledger, 0), 2000);
+  assert.equal(moneyOf(passed.ledger, 0), 5000);
   assert.equal(events[0].type, "passed");
 });
 
@@ -348,7 +352,7 @@ test("landing on your own square offers one upgrade this visit", () => {
   const built = take(state, { type: "upgrade" });
   state = built.state;
   assert.equal(levelOf(state.ledger, "moon"), 1);
-  assert.equal(moneyOf(state.ledger, 0), 2000 - 200 - 250 - 100);
+  assert.equal(moneyOf(state.ledger, 0), 5000 - 200 - 250 - 100);
   assert.equal(built.events[0].type, "upgraded");
   assert.equal(built.events[0].level, 1);
   assert.equal(built.events[0].cost, 100);
@@ -426,8 +430,8 @@ test("landing on somebody else's square pays the right rent to the right seat", 
   assert.equal(events.at(-1).amount, baseRentOf("moon"));
   assert.equal(events.at(-1).from, 1);
   assert.equal(events.at(-1).to, 0);
-  assert.equal(moneyOf(state.ledger, 0), 2000 - priceOf("moon") + baseRentOf("moon"));
-  assert.equal(moneyOf(state.ledger, 1), 2000 - baseRentOf("moon"));
+  assert.equal(moneyOf(state.ledger, 0), 5000 - priceOf("moon") + baseRentOf("moon"));
+  assert.equal(moneyOf(state.ledger, 1), 5000 - baseRentOf("moon"));
 
   const opened = take(state, { type: "continue" }).state;
   assert.equal(opened.phase, PHASE.RESOLVING, "a rent resolves on its own, no card");
@@ -445,7 +449,7 @@ test("rent follows the upgrade level", () => {
   const { state } = take(before, { type: "roll" }, face(1));
   assert.equal(
     moneyOf(state.ledger, 0),
-    2000 - priceOf("moon") - priceOf("lagrange-l2") - upgradeAt("moon", 0).cost + upgradeAt("moon", 0).rentAfter,
+    5000 - priceOf("moon") - priceOf("lagrange-l2") - upgradeAt("moon", 0).cost + upgradeAt("moon", 0).rentAfter,
   );
 });
 
@@ -459,7 +463,7 @@ test("a rent the payer cannot cover pushes them into debt - the full rent is cha
 
   const rent = baseRentOf("moon");
   assert.equal(moneyOf(state.ledger, 1), 5 - rent, "the full rent is charged - the purse may go negative");
-  assert.equal(moneyOf(state.ledger, 0), 2000 - priceOf("moon") + rent, "the owner takes the whole rent");
+  assert.equal(moneyOf(state.ledger, 0), 5000 - priceOf("moon") + rent, "the owner takes the whole rent");
   assert.equal(state.ledger.players[1].short, 0, "no short accrues any more");
 
   assert.equal(events.find((e) => e.type === "rentShort"), undefined, "no shortfall event exists now");
@@ -554,7 +558,7 @@ test("selling returns the square to the bank, clears its builds, and pays", () =
   assert.equal(state.phase, PHASE.AWAITING_ROLL, "selling does not end a turn");
   assert.equal(ownerOf(state.ledger, "moon"), null);
   assert.equal(levelOf(state.ledger, "moon"), 0);
-  assert.equal(moneyOf(state.ledger, 0), 2000 - 200 - 250 - 100 + payout);
+  assert.equal(moneyOf(state.ledger, 0), 5000 - 200 - 250 - 100 + payout);
   assert.equal(events[0].type, "sold");
   assert.equal(events[0].payout, payout);
 });
@@ -705,7 +709,7 @@ test("crossing Start earns a redemption, paid only when the turn ends", () => {
     false,
     "nothing is paid during the walk",
   );
-  assert.equal(moneyOf(rolled.state.ledger, 0), 2000, "the purse has not moved yet");
+  assert.equal(moneyOf(rolled.state.ledger, 0), 5000, "the purse has not moved yet");
   assert.equal(visitOf(rolled.state).redemption, 200, "the lap is earned by crossing");
 
   let state = take(rolled.state, { type: "continue" }).state;
@@ -722,14 +726,14 @@ test("crossing Start earns a redemption, paid only when the turn ends", () => {
   assert.ok(paidAt < handedOn, "and before the turn changes hands");
   assert.equal(ended.events[paidAt].amount, 200);
   assert.equal(ended.events[paidAt].seat, 0);
-  assert.equal(moneyOf(ended.state.ledger, 0), 2200);
+  assert.equal(moneyOf(ended.state.ledger, 0), 5200);
 
   const first = ended.state.ledger.history[0];
   assert.equal(first.seat, 0);
   assert.equal(first.kind, "redemption");
   assert.equal(first.text, "Redemption · lap complete");
   assert.equal(first.amount, 200);
-  assert.equal(first.balance, 2200);
+  assert.equal(first.balance, 5200);
   assert.equal(first.turn, before.turn);
 });
 
@@ -737,7 +741,7 @@ test("the first move out of Start does not earn a redemption", () => {
   const { state, events } = take(game(), { type: "roll" }, face(1));
   assert.equal(events.some((e) => e.type === "redemption"), false);
   assert.equal(visitOf(state).redemption, 0);
-  assert.equal(moneyOf(state.ledger, 0), 2000);
+  assert.equal(moneyOf(state.ledger, 0), 5000);
   assert.equal(state.ledger.history.length, 0);
 });
 
@@ -880,3 +884,8 @@ test("testRoll wraps past Start and earns orbit credit", () => {
   assert.equal(result.pieces.find((p) => p.seat === 0).position, 2);
   assert.ok(result.visit.redemption > 0, "orbit credit earned");
 });
+
+
+
+
+

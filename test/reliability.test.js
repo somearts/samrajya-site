@@ -1,4 +1,4 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    FINAL RELIABILITY AUDIT - targeted regression tests
 
    Every money path, every ending boundary, every duplicate/out-of-turn
@@ -191,7 +191,7 @@ test("the suit discount is charged exactly once: the first buy, never the second
   state.landing = { seat: 0, index: 1, id: "moon", kind: "buy" };
   state.visit = { seat: 0, bought: false, upgrades: 0, drawn: null, collected: false, rent: 0, paid: false, short: 0, redemption: 0 };
   state.suits = { 0: { id: "photon-weave", discount: photon.discount, price: photon.price, used: false, since: 0 } };
-  state.ledger.players[0].money = 2000;
+  state.ledger.players[0].money = 5000;
 
   const before = moneyOf(state.ledger, 0);
   const discounted = discountPrice(priceOf("moon"), photon.discount);
@@ -206,9 +206,9 @@ test("the suit discount is charged exactly once: the first buy, never the second
   later.landing = { seat: 0, index: 1, id: "moon", kind: "buy" };
   later.visit = { seat: 0, bought: false, upgrades: 0, drawn: null, collected: false, rent: 0, paid: false, short: 0, redemption: 0 };
   later.suits = { 0: { id: "photon-weave", discount: photon.discount, price: photon.price, used: true, since: 0 } };
-  later.ledger.players[0].money = 2000;
+  later.ledger.players[0].money = 5000;
   const full = take(later, { type: "buy" }).state;
-  assert.equal(2000 - moneyOf(full.ledger, 0), priceOf("moon"), "a used suit charges nothing extra off");
+  assert.equal(5000 - moneyOf(full.ledger, 0), priceOf("moon"), "a used suit charges nothing extra off");
 });
 
 test("the temple offering is charged once: a second prayer is refused", () => {
@@ -230,13 +230,13 @@ test("a duplicate buy is refused and the purchase is charged once", () => {
   state.phase = PHASE.DECISION;
   state.landing = { seat: 0, index: 1, id: "moon", kind: "buy" };
   state.visit = { seat: 0, bought: false, upgrades: 0, drawn: null, collected: false, rent: 0, paid: false, short: 0, redemption: 0 };
-  state.ledger.players[0].money = 2000;
+  state.ledger.players[0].money = 5000;
 
   const first = take(state, { type: "buy" });
-  assert.equal(2000 - moneyOf(first.state.ledger, 0), priceOf("moon"), "charged once");
+  assert.equal(5000 - moneyOf(first.state.ledger, 0), priceOf("moon"), "charged once");
   // The phase has moved: the repeat cannot charge again.
   refuse(first.state, { type: "buy" }, "There is nothing to buy here.");
-  assert.equal(moneyOf(first.state.ledger, 0), 2000 - priceOf("moon"), "still one charge");
+  assert.equal(moneyOf(first.state.ledger, 0), 5000 - priceOf("moon"), "still one charge");
 });
 
 /* ------------------------------------------------------- out of turn, stale seq */
@@ -264,7 +264,7 @@ test("landing exactly on Start pays the lap reward once, at the turn's end", () 
 
   assert.equal(rolled.state.pieces[0].position, 0, "landed exactly on Start");
   assert.equal(rolled.state.visit.redemption, 200, "the lap is earned once");
-  assert.equal(moneyOf(rolled.state.ledger, 0), 2000, "paid only when the turn resolves");
+  assert.equal(moneyOf(rolled.state.ledger, 0), 5000, "paid only when the turn resolves");
 
   const resolving = take(rolled.state, { type: "continue" }).state; // kind "none" -> RESOLVING
   const atTurnEnd = take(resolving, { type: "continue" }).state; // -> TURN_END
@@ -273,7 +273,7 @@ test("landing exactly on Start pays the lap reward once, at the turn's end", () 
   const paid = events.filter((e) => e.type === "redemption");
   assert.equal(paid.length, 1, "exactly one reward for one crossing");
   assert.equal(paid[0].amount, 200, "and it is the full ₹200");
-  assert.equal(moneyOf(ended.ledger, 0), 2200, "the purse carries it");
+  assert.equal(moneyOf(ended.ledger, 0), 5200, "the purse carries it");
   assert.equal(ended.visit, null, "the visit is cleared with the turn - a later lap must earn again");
 });
 
@@ -298,7 +298,7 @@ test("Epoch forward movement across START earns the lap reward like a throw", ()
   assert.equal(moved.pieces[0].position, 1, "the leap crossed START");
   assert.equal(moved.visit.redemption, REDEMPTION, "the lap credit rides on the visit");
   assert.equal(events.some((e) => e.type === "redemption"), false, "the reward is paid when the turn resolves, not now");
-  assert.equal(moneyOf(moved.ledger, 0), 2000, "the purse did not move yet");
+  assert.equal(moneyOf(moved.ledger, 0), 5000, "the purse did not move yet");
 });
 
 test("the Alternate Timeline's forward step across START earns the same reward", () => {
@@ -315,7 +315,7 @@ test("the Alternate Timeline's forward step across START earns the same reward",
   assert.equal(moved.pieces[0].position, 1, "27 + 2 wrapped to 1");
   assert.equal(moved.visit.redemption, REDEMPTION, "the lap credit rides on the visit");
   assert.equal(events.some((e) => e.type === "redemption"), false, "no reward before the turn resolves");
-  assert.equal(moneyOf(moved.ledger, 0), 2000, "the purse did not move");
+  assert.equal(moneyOf(moved.ledger, 0), 5000, "the purse did not move");
 });
 
 test("a Time Rewind never earns a reward going backward", () => {
@@ -333,7 +333,7 @@ test("a Time Rewind never earns a reward going backward", () => {
   assert.equal(moved.pieces[0].position, 25, "wrapped backward around START");
   assert.equal(moved.visit.redemption, 0, "backward movement never earns");
   assert.equal(events.some((e) => e.type === "redemption"), false, "no reward");
-  assert.equal(moneyOf(moved.ledger, 0), 2000, "the purse did not move");
+  assert.equal(moneyOf(moved.ledger, 0), 5000, "the purse did not move");
 });
 
 /* ------------------------------------------------- circuit expiry of a suit */
@@ -468,3 +468,16 @@ test("the reported sequence resolves for every suit state: land, buy, circuit, l
     assert.equal(state.active, 1, `${label}handed to the opponent`);
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+

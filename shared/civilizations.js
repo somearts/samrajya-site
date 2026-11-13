@@ -36,10 +36,38 @@
  */
 export const CIVILIZATIONS = Object.freeze(
   [
-    { id: "indus-valley", name: "Indus Valley", coin: "#0A84FF" },
-    { id: "mesopotamian", name: "Mesopotamian", coin: "#D42D1F" },
-    { id: "ancient-egyptian", name: "Ancient Egyptian", coin: "#15A34A" },
-    { id: "aztec", name: "Aztec", coin: "#FF9500" },
+    {
+      id: "indus-valley",
+      name: "Indus Valley",
+      coin: "#0A84FF",
+      title: "THE KEEPERS OF ABUNDANCE",
+      ability:
+        "The universe favours those who claim their first territory. The gods return ₹50 to your treasury as a blessing upon your first acquisition.",
+    },
+    {
+      id: "mesopotamian",
+      name: "Mesopotamian",
+      coin: "#D42D1F",
+      title: "THE CHILDREN OF WAR",
+      ability:
+        "When you first land on Ragnarok, the heavens grant you two weapons instead of one. Let your enemies learn that your arrival was no coincidence.",
+    },
+    {
+      id: "ancient-greek",
+      name: "Ancient Greek",
+      coin: "#15A34A",
+      title: "THE HEIRS OF OLYMPUS",
+      ability:
+        "Should your first journey bring you to Jupiter, the celestial throne shall be yours without tribute. The king of gods recognises his own.",
+    },
+    {
+      id: "ancient-roman",
+      name: "Ancient Roman",
+      coin: "#FF9500",
+      title: "THE CONQUERORS OF ETERNITY",
+      ability:
+        "The cosmos has chosen your first destination: your first throw is six, carrying you directly to Pluto. Claim it at its usual price.",
+    },
   ].map((civilization) => Object.freeze(civilization)),
 );
 

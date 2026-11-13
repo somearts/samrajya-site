@@ -57,7 +57,7 @@
    ========================================================================== */
 
 /** What every player is given to start with. */
-export const STARTING_MONEY = 2000;
+export const STARTING_MONEY = 5000;
 
 /**
  * What a player is paid for coming back round to Start.

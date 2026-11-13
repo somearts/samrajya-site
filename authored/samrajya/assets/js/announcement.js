@@ -132,6 +132,16 @@ export function announcementLayer(centre, { onChange = null } = {}) {
   let pumping = false;
   /* The announcement on screen right now, and the handle that can stop it. */
   let current = null;
+  /* WHICH TURN THE QUEUE BELONGS TO.
+
+     Every sentence is raised inside a turn, and a sentence from a turn that
+     has ended is no longer true news. A notice that was queued while a card
+     held the middle - and then sat there through the turn change - must not
+     be said again over the next turn's business, which is what let a previous
+     turn's "ACQUIRED" reappear when an unrelated card (a repayment, say)
+     finally freed the middle. `setTurn` is the board telling the layer whose
+     turn it is now; anything queued for another turn is dropped. */
+  let turnNo = null;
   /* What the middle says when nothing is being announced (turn mode). */
   let restingTurn = null;
   let restingTurnKey = null;
@@ -164,6 +174,47 @@ export function announcementLayer(centre, { onChange = null } = {}) {
     node.getAnimations({ subtree: true }).forEach((a) => a.cancel());
     mode = "turn";
     paintTurn();
+  }
+
+  /**
+   * WHICH TURN A SENTENCE BELONGS TO.
+   *
+   * A spec may name its turn, and the board does; anything else is taken to
+   * belong to the turn the layer was last told about. A null means "no turn
+   * known" - the sentence is never stale, because there is no turn for it to
+   * be stale against.
+   */
+  const turnFor = (spec) =>
+    spec.turn === undefined || spec.turn === null ? turnNo : Number(spec.turn);
+
+  /**
+   * Tell the layer whose turn the board is on.
+   *
+   * A change of turn is the end of every queued sentence that belonged to the
+   * old one: dropping the queue is what stops a notice from a finished turn
+   * being said again when some later card frees the middle. A sentence that
+   * is playing at the instant the turn changes is allowed to finish its exit
+   * animation naturally - it will call handBack() which restores the correct
+   * turn status. Only the queue is cleared immediately.
+   *
+   * Repeating the same turn is a no-op, so the board may call this on every
+   * repaint.
+   */
+  function setTurn(n) {
+    const next = n === null || n === undefined ? null : Number(n);
+    if (next === turnNo) return;
+    turnNo = next;
+    if (queue.length) {
+      /* Every waiter is let go: the game does not stand still for a notice
+         that will never be said. */
+      for (const item of queue) item.resolve?.();
+      queue.length = 0;
+    }
+    /* DO NOT stop the current event here. Let it finish its exit animation
+       and call handBack(), which will paint the new turn status. Stopping it
+       mid-animation leaves the pill in event mode with stale content and no
+       turn indicator. The pump() loop will drop any newly-queued items from
+       the old turn. */
   }
 
   /** The repair for a page that was frozen in the background.
@@ -364,6 +415,14 @@ export function announcementLayer(centre, { onChange = null } = {}) {
         // Something else has the middle. The queue waits for it, in order.
         if (taken()) break;
         const item = queue.shift();
+        /* A SENTENCE FROM A TURN THAT HAS ENDED IS NOT SAID. The turn may have
+           changed while the queue waited for the middle; the notice is no
+           longer news, and saying it would put yesterday's business over
+           today's. It is discarded, and its waiter let go. */
+        if (item.turn !== null && item.turn !== turnNo) {
+          item.resolve?.();
+          continue;
+        }
         const token = { stopped: false, skip: null };
         current = { item, token };
         await playNow(item.spec, token);
@@ -381,6 +440,13 @@ export function announcementLayer(centre, { onChange = null } = {}) {
 
   return {
     node,
+    /**
+     * Tell the layer whose turn the board is on.
+     *
+     * See `setTurn` above: a change of turn drops every queued sentence that
+     * belonged to the old one. Repeating the same turn is a no-op.
+     */
+    setTurn,
     /**
      * Display an event message or set the turn status.
      *
@@ -406,11 +472,11 @@ export function announcementLayer(centre, { onChange = null } = {}) {
       }
       // Event mode: show the event message.
       if (taken()) {
-        queue.push({ spec, resolve: null });
+        queue.push({ spec, resolve: null, turn: turnFor(spec) });
         return Promise.resolve();
       }
       const promise = new Promise((resolve) => {
-        queue.push({ spec, resolve });
+        queue.push({ spec, resolve, turn: turnFor(spec) });
         pump();
       });
       return promise;
@@ -508,6 +574,7 @@ export function announcementLayer(centre, { onChange = null } = {}) {
       queue.length = 0;
       restingTurn = null;
       restingTurnKey = null;
+      turnNo = null;
       mode = "turn";
       blockers.clear();
       clear();

@@ -29,8 +29,11 @@ import { rupees } from "./shared/economy.js";
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 
-/** Where a node sits inside the board, in the board's own coordinates. */
-function localTo(board, node) {
+/** Where a node sits inside the board, in the board's own coordinates.
+
+    Exported because a caller that must measure BEFORE a repaint replaces the
+    card the node lives in hands the answer to `coinFountain` as a point. */
+export function localTo(board, node) {
   if (!board || !node) return null;
   const box = board.getBoundingClientRect();
   const rect = node.getBoundingClientRect();
@@ -201,15 +204,514 @@ export async function flyCoins(board, { from, to, amount = 0 } = {}) {
 }
 
 /**
- * Rupee tokens flying from the payer's chip to the holder's, with the two
- * deltas beside them. Both balances count afterwards; that is the board's job,
- * because the figures belong to the ledger.
+ * MEASURE AN ORIGIN.
+ *
+ * An element is measured where it is right now; a POINT - `{ left, top }` in
+ * the board's own coordinates, read before a repaint swapped the card face
+ * the element lived in - is taken as it is. Both answers are the same shape,
+ * so everything downstream only ever sees a position.
  */
-export async function flyRent(root, board, { from, to, amount }) {
-  const payer = chipFor(root, board, from);
-  const holder = chipFor(root, board, to);
-  if (!payer || !holder) return;
-  await flyCoins(board, { from: payer, to: holder, amount });
+function measureIn(board, origin) {
+  if (!board || !origin) return null;
+  if (typeof origin.getBoundingClientRect === "function") {
+    const at = localTo(board, origin);
+    const box = origin.getBoundingClientRect();
+    if (!at || box.width === 0 || box.height === 0) return null;
+    return at;
+  }
+  if (Number.isFinite(origin.left) && Number.isFinite(origin.top)) {
+    return { left: origin.left, top: origin.top, box: board.getBoundingClientRect() };
+  }
+  return null;
+}
+
+/**
+ * THE SOUL OF THE PROPERTY, TAKEN TO ITS NEW KEEPER.
+ *
+ * On a purchase the square itself lifts off the tile. What travels is a
+ * CLONE of the square the board just drew - its name, its pill, its price,
+ * the wash of its set, the ring of its new owner - so what crosses the board
+ * is recognisably the property that changed hands and not a particle. It
+ * rises, crosses in one slow deliberate arc of two seconds, and dissolves
+ * into the buyer's name chip, which answers with a single ring of light in
+ * the buyer's own coin colour: the essence of the square joining the player.
+ *
+ * Both ends are measured from the live DOM - the tile that was bought and
+ * whichever seat's chip bought it - so it is the same journey for Player 1
+ * and Player 2 and at every screen size. Nothing here is a coordinate anybody
+ * typed.
+ *
+ * REDUCED MOTION: the soul fades where it stands, over the tile it belongs
+ * to, and there is no travel. The information - this property, this buyer -
+ * is unchanged.
+ */
+export async function soulTransfer(board, { from, to } = {}) {
+  if (!board || !from) return;
+  const start = localTo(board, from);
+  if (!start) return;
+  const box = from.getBoundingClientRect();
+  if (box.width === 0 || box.height === 0) return;
+
+  const face = from.cloneNode(true);
+  /* The ghost is a picture, never a control: the marks that made the square
+     a live thing are stripped, and nothing inside it can be pressed. */
+  face.classList.remove(
+    "is-loan-target",
+    "is-loan-picked",
+    "is-fight-blink",
+    "is-just-bought",
+    "is-just-built",
+    "is-just-landed",
+  );
+  face.classList.add("board__soul-face");
+  const kept = ["--wash", "--wash-strength", "--owner", "--pips", "--accent"];
+  const keptValues = kept.map((prop) => [prop, from.style.getPropertyValue(prop)]);
+  face.removeAttribute("style");
+  for (const [prop, value] of keptValues) {
+    if (value) face.style.setProperty(prop, value);
+  }
+  face.removeAttribute("data-id");
+  face.removeAttribute("data-base-label");
+  face.removeAttribute("data-landed");
+  for (const inner of face.querySelectorAll("[id]")) inner.removeAttribute("id");
+  for (const button of face.querySelectorAll("button")) {
+    button.disabled = true;
+    button.tabIndex = -1;
+  }
+  face.style.width = `${box.width}px`;
+  face.style.height = `${box.height}px`;
+
+  /* The glow is the BUYER's own coin colour, read off the chip itself, so the
+     soul is seen joining the right player without a name being written on it. */
+  const soul = to && typeof to.style?.getPropertyValue === "function"
+    ? to.style.getPropertyValue("--coin").trim()
+    : "";
+
+  const ghost = el("div", {
+    class: "board__soul",
+    "aria-hidden": "true",
+    style: {
+      left: `${start.left}px`,
+      top: `${start.top}px`,
+      ...(soul ? { "--soul": soul } : {}),
+    },
+  }, [face]);
+  board.append(ghost);
+
+  const end = to ? localTo(board, to) : null;
+  const quiet = prefersStill();
+
+  if (!end || quiet) {
+    /* No chip to travel to, or a reader who asked for still: the soul says
+       the same thing - this square is that player's now - where it stands. */
+    const fade = ghost.animate(
+      [
+        { transform: "translate(-50%, -50%)", opacity: 0 },
+        { transform: "translate(-50%, -50%)", opacity: 0.9, offset: 0.4 },
+        { transform: "translate(-50%, -50%)", opacity: 0 },
+      ],
+      { duration: 760, easing: "ease-in-out", fill: "forwards" },
+    );
+    await settled(fade.finished, 940);
+    ghost.remove();
+    return;
+  }
+
+  const dx = end.left - start.left;
+  const dy = end.top - start.top;
+  const dist = Math.hypot(dx, dy);
+  const arc = Math.max(16, Math.min(56, dist * 0.14));
+  const tilt = dist > 48 ? 5 : 0;
+  const duration = 2000;
+
+  const flight = ghost
+    .animate(
+      [
+        { transform: "translate(-50%, -50%) scale(.94) rotate(0deg)", opacity: 0, offset: 0 },
+        {
+          transform: "translate(-50%, calc(-50% - 10px)) scale(1.05) rotate(0deg)",
+          opacity: 0.95,
+          offset: 0.08,
+        },
+        {
+          transform:
+            `translate(calc(-50% + ${dx * 0.5}px), calc(-50% + ${dy * 0.5 - arc}px)) ` +
+            `scale(.8) rotate(${tilt}deg)`,
+          opacity: 0.9,
+          offset: 0.52,
+        },
+        {
+          transform:
+            `translate(calc(-50% + ${dx * 0.9}px), calc(-50% + ${dy * 0.9 - 4}px)) ` +
+            `scale(.34) rotate(0deg)`,
+          opacity: 0.6,
+          offset: 0.9,
+        },
+        {
+          transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.14) rotate(0deg)`,
+          opacity: 0,
+          offset: 1,
+        },
+      ],
+      { duration, easing: "cubic-bezier(.42, .2, .32, 1)", fill: "forwards" },
+    )
+    .finished.catch(() => {});
+
+  /* The chip answering: one soft ring in the buyer's own colour, opening
+     once where the soul went in. It says "yours" and adds no figure. */
+  const ring = el("span", { class: "board__coin-land", "aria-hidden": "true" });
+  ring.style.left = `${end.left}px`;
+  ring.style.top = `${end.top}px`;
+  if (soul) ring.style.borderColor = soul;
+  board.append(ring);
+  const pulse = ring
+    .animate(
+      [
+        { transform: "translate(-50%, -50%) scale(.4)", opacity: 0 },
+        { transform: "translate(-50%, -50%) scale(1.3)", opacity: 0.75, offset: 0.35 },
+        { transform: "translate(-50%, -50%) scale(1.7)", opacity: 0 },
+      ],
+      {
+        duration: 520,
+        delay: duration - 440,
+        easing: "cubic-bezier(.2, .7, .3, 1)",
+        /* "both", or the ring waits out its 1.5s delay as a plain circle
+           parked on the player's chip. */
+        fill: "both",
+      },
+    )
+    .finished.catch(() => {});
+
+  await settled(Promise.all([flight, pulse]), duration + 560);
+  ghost.remove();
+  ring.remove();
+}
+
+/**
+ * A FOUNTAIN OF GOLD, OUT OF THE SQUARE ITSELF.
+ *
+ * Rent paid, or a suit bought: the place the money came from throws a burst
+ * golden coins straight up out of its own centre. Every coin leaves on its
+ * own parabola - its own angle, its own reach, its own spin - scatters wide,
+ * takes one small bounce where it lands, and fades as it falls away. Two
+ * seconds from first coin to last, and then every coin has taken itself
+ * down.
+ *
+ * The ORIGIN is measured from the live element wherever it sits: a board
+ * tile for rent, the suit's own card at the counter for a purchase. A point
+ * already measured in the board's coordinates is accepted too, for the card
+ * whose face a repaint is about to replace. Nothing is a fixed screen
+ * position, and it plays only for a transaction that actually happened.
+ *
+ * `celebrate` widens the cone and adds coins for the suit purchase, so that
+ * burst reads as more than the rent's.
+ *
+ * REDUCED MOTION: one soft gold glow where the money came from, and gone.
+ */
+export async function coinFountain(board, origin, { celebrate = false } = {}) {
+  const at = measureIn(board, origin);
+  if (!at) return;
+
+  const quiet = prefersStill();
+  if (quiet) {
+    const flash = el("span", {
+      class: "board__coin-gold board__coin-gold--flash",
+      "aria-hidden": "true",
+      style: { left: `${at.left}px`, top: `${at.top}px` },
+    });
+    board.append(flash);
+    await settled(
+      flash
+        .animate([{ opacity: 0 }, { opacity: 1, offset: 0.3 }, { opacity: 0 }], {
+          duration: 700,
+          easing: "ease-out",
+          fill: "forwards",
+        })
+        .finished,
+      780,
+    );
+    flash.remove();
+    return;
+  }
+
+  const count = celebrate ? 20 : 14;
+  const reach = Math.max(30, Math.min(at.box.width * 0.14, 96));
+  const duration = celebrate ? 1650 : 1500;
+  const flights = [];
+
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0.5 : i / (count - 1);
+    /* An upward cone, widest for the celebration. Every coin still leaves
+       heavenward; the spread is what makes it a fountain rather than a jet. */
+    const spread = celebrate ? 2.5 : 2.1;
+    const angle = -Math.PI / 2 + (t - 0.5) * spread + (Math.random() - 0.5) * 0.24;
+    const power = reach * (0.62 + Math.random() * 0.56);
+    const vx = Math.cos(angle) * power;
+    const peak = Math.sin(angle) * power; // negative: above the tile
+    const ground = reach * (0.22 + Math.random() * 0.3);
+    const hop = ground - reach * 0.18;
+    const spin = (Math.random() < 0.5 ? -1 : 1) * (140 + Math.random() * 240);
+    const sizeClass = ["board__coin-gold--small", "", "board__coin-gold--big"][i % 3];
+
+    const coin = el("span", {
+      class: `board__coin-gold ${sizeClass}`.trim(),
+      "aria-hidden": "true",
+      text: "\u20b9",
+      style: { left: `${at.left}px`, top: `${at.top}px` },
+    });
+    board.append(coin);
+
+    const at0 = (x, y, rot, scale, opacity) => ({
+      transform: `translate(-50%, -50%) translate(${x}px, ${y}px) rotate(${rot}deg) scale(${scale})`,
+      opacity,
+    });
+
+    const delay = t * (celebrate ? 260 : 200) + Math.random() * 70;
+    const live = duration + Math.random() * 240;
+    /* `fill: "both"` matters here: the coins are created at the origin with a
+       delay of up to a third of a second, and "forwards" alone would paint
+       every waiting coin stacked on the tile before the first one launches. */
+    const animation = coin.animate(
+      [
+        at0(0, 0, 0, 0.5, 0),
+        { ...at0(vx * 0.16, peak * 0.3, spin * 0.15, 1, 1), offset: 0.1, easing: "ease-out" },
+        { ...at0(vx * 0.55, peak, spin * 0.5, 1, 1), offset: 0.45, easing: "ease-in" },
+        { ...at0(vx * 0.92, ground, spin * 0.85, 0.96, 0.95), offset: 0.78, easing: "ease-out" },
+        { ...at0(vx, hop, spin, 0.94, 0.8), offset: 0.87, easing: "ease-in" },
+        at0(vx * 1.06, ground + reach * 0.5, spin * 1.2, 0.86, 0),
+      ],
+      { duration: live, delay, fill: "both" },
+    );
+
+    flights.push(
+      settled(animation.finished, delay + live + 160).then(() => coin.remove()),
+    );
+  }
+
+  await Promise.all(flights);
+}
+
+/**
+ * THE PLEDGE: the pledged colonies drawn into the keeper.
+ *
+ * Each selected colony's own square - its name, its pill, its price, exactly
+ * as the board drew it - lifts off the tile, holds for a beat, and travels in a
+ * shallow arc into the god's picture in the middle, shrinking as it is taken.
+ * One after another, so the eye can follow each one, and never anywhere but
+ * between the tile that was pledged and the keeper who accepted it.
+ *
+ * The ghost is a CLONE of the square, so what travels is recognisably the
+ * property the player pledged. The coin layer is not inside the cell, so the
+ * player's own piece stays where it is.
+ *
+ * REDUCED MOTION: the same cards fade where they stand, one after the other,
+ * and there is no travel. The information - these properties, this god - is
+ * unchanged.
+ */
+export async function pledgeSouls(board, cells, target) {
+  if (!board || !target || !cells || cells.length === 0) return;
+  const end = localTo(board, target);
+  if (!end) return;
+
+  const quiet = prefersStill();
+  const flights = [];
+
+  cells.forEach((cell, index) => {
+    if (!cell) return;
+    const start = localTo(board, cell);
+    if (!start) return;
+    const box = cell.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0) return;
+
+    const face = cell.cloneNode(true);
+    /* The ghost is a picture, never a control: the marks that made the square
+       a target are stripped, and nothing inside it can be pressed. */
+    face.classList.remove("is-loan-target", "is-fight-blink", "is-just-bought", "is-just-built");
+    face.classList.add("board__pledge-face");
+    const kept = ["--wash", "--wash-strength", "--owner", "--pips", "--accent"];
+    const keptValues = kept.map((prop) => [prop, cell.style.getPropertyValue(prop)]);
+    face.removeAttribute("style");
+    for (const [prop, value] of keptValues) {
+      if (value) face.style.setProperty(prop, value);
+    }
+    face.removeAttribute("data-id");
+    face.removeAttribute("data-base-label");
+    for (const inner of face.querySelectorAll("[id]")) inner.removeAttribute("id");
+    for (const button of face.querySelectorAll("button")) {
+      button.disabled = true;
+      button.tabIndex = -1;
+    }
+    face.style.width = `${box.width}px`;
+    face.style.height = `${box.height}px`;
+
+    const ghost = el("div", {
+      class: "board__pledge",
+      "aria-hidden": "true",
+      style: { left: `${start.left}px`, top: `${start.top}px` },
+    }, [face]);
+    board.append(ghost);
+
+    const dx = end.left - start.left;
+    const dy = end.top - start.top;
+    const lift = Math.max(8, Math.min(22, Math.hypot(dx, dy) * 0.08));
+    const tilt = index % 2 ? 1.2 : -1.2;
+    const delay = quiet ? index * 110 : index * 150;
+    const duration = quiet ? 460 : 620;
+
+    const frames = quiet
+      ? [
+          { transform: "translate(-50%, -50%)", opacity: 0 },
+          { transform: "translate(-50%, -50%)", opacity: 0.85, offset: 0.35 },
+          { transform: "translate(-50%, -50%)", opacity: 0 },
+        ]
+      : [
+          { transform: "translate(-50%, -50%) scale(1) rotate(0deg)", opacity: 0, offset: 0 },
+          {
+            transform: `translate(-50%, calc(-50% - ${lift}px)) scale(1.03) rotate(${tilt}deg)`,
+            opacity: 1,
+            offset: 0.16,
+          },
+          {
+            transform:
+              `translate(calc(-50% + ${dx * 0.55}px), calc(-50% + ${dy * 0.55}px - ${lift}px)) ` +
+              `scale(.82) rotate(${tilt * 2}deg)`,
+            opacity: 0.92,
+            offset: 0.66,
+          },
+          {
+            transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(.22) rotate(0deg)`,
+            opacity: 0,
+          },
+        ];
+
+    const animation = ghost.animate(frames, {
+      duration,
+      delay,
+      easing: "cubic-bezier(.34,.62,.36,1)",
+      fill: "forwards",
+    });
+    flights.push(
+      settled(animation.finished, duration + delay + 220).then(() => ghost.remove()),
+    );
+  });
+
+  await Promise.all(flights);
+}
+
+/**
+ * THE RELEASE: the pledged colonies given back to the board.
+ *
+ * The exact reverse of `pledgeSouls`. Each colony's square lifts out of the
+ * keeper's picture and travels the same shallow arc back to the tile it was
+ * pledged from, growing from a point into the square as it lands. One after
+ * another, so the eye follows each property home, and never anywhere but
+ * between the keeper who held it and the tile it belongs to.
+ *
+ * The ghost is a CLONE of the square, so what lands is recognisably the
+ * property the gods held. The tile underneath is already the player's again;
+ * the ghost is the saying of it, and it is removed the moment it settles.
+ *
+ * REDUCED MOTION: the same cards fade where they are, one after the other, and
+ * there is no travel. The information - these properties, released - is
+ * unchanged.
+ */
+export async function releaseSouls(board, cells, origin) {
+  if (!board || !origin || !cells || cells.length === 0) return;
+  const start = localTo(board, origin);
+  if (!start) return;
+
+  const quiet = prefersStill();
+  const flights = [];
+
+  cells.forEach((cell, index) => {
+    if (!cell) return;
+    const end = localTo(board, cell);
+    if (!end) return;
+    const box = cell.getBoundingClientRect();
+    if (box.width === 0 || box.height === 0) return;
+
+    const face = cell.cloneNode(true);
+    /* The ghost is a picture, never a control: the marks that made the square
+       a target are stripped, and nothing inside it can be pressed. */
+    face.classList.remove("is-loan-target", "is-loan-picked", "is-fight-blink", "is-just-bought", "is-just-built");
+    face.classList.add("board__pledge-face");
+    const kept = ["--wash", "--wash-strength", "--owner", "--pips", "--accent"];
+    const keptValues = kept.map((prop) => [prop, cell.style.getPropertyValue(prop)]);
+    face.removeAttribute("style");
+    for (const [prop, value] of keptValues) {
+      if (value) face.style.setProperty(prop, value);
+    }
+    face.removeAttribute("data-id");
+    face.removeAttribute("data-base-label");
+    for (const inner of face.querySelectorAll("[id]")) inner.removeAttribute("id");
+    for (const button of face.querySelectorAll("button")) {
+      button.disabled = true;
+      button.tabIndex = -1;
+    }
+    face.style.width = `${box.width}px`;
+    face.style.height = `${box.height}px`;
+
+    const ghost = el("div", {
+      class: "board__pledge",
+      "aria-hidden": "true",
+      style: { left: `${start.left}px`, top: `${start.top}px` },
+    }, [face]);
+    board.append(ghost);
+
+    const dx = end.left - start.left;
+    const dy = end.top - start.top;
+    const lift = Math.max(8, Math.min(22, Math.hypot(dx, dy) * 0.08));
+    const tilt = index % 2 ? 1.2 : -1.2;
+    const delay = quiet ? index * 110 : index * 150;
+    const duration = quiet ? 460 : 620;
+
+    const frames = quiet
+      ? [
+          { transform: "translate(-50%, -50%)", opacity: 0 },
+          { transform: "translate(-50%, -50%)", opacity: 0.85, offset: 0.35 },
+          { transform: "translate(-50%, -50%)", opacity: 0 },
+        ]
+      : [
+          {
+            /* The ghost starts as a point in the keeper's hands. */
+            transform: `translate(-50%, -50%) scale(.22) rotate(0deg)`,
+            opacity: 0,
+            offset: 0,
+          },
+          {
+            /* It grows a little as the god lets it go. */
+            transform:
+              `translate(calc(-50% + ${dx * 0.34}px), calc(-50% + ${dy * 0.34}px - ${lift}px)) ` +
+              `scale(.6) rotate(${tilt}deg)`,
+            opacity: 0.92,
+            offset: 0.4,
+          },
+          {
+            transform:
+              `translate(calc(-50% + ${dx * 0.78}px), calc(-50% + ${dy * 0.78}px - ${lift}px)) ` +
+              `scale(1.05) rotate(${tilt * 1.6}deg)`,
+            opacity: 1,
+            offset: 0.78,
+          },
+          {
+            /* It settles exactly on the tile it belongs to. */
+            transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(1) rotate(0deg)`,
+            opacity: 1,
+          },
+        ];
+
+    const animation = ghost.animate(frames, {
+      duration,
+      delay,
+      easing: "cubic-bezier(.34,.62,.36,1)",
+      fill: "forwards",
+    });
+    flights.push(
+      settled(animation.finished, duration + delay + 220).then(() => ghost.remove()),
+    );
+  });
+
+  await Promise.all(flights);
 }
 
 /** The owner's ring drawing itself around a square, clockwise. */
@@ -491,6 +993,233 @@ export async function fightWar(board, { weaponId = "", tint = null, fromNode = n
   vignetteIn.finished.catch(() => {});
   vignette.remove();
   taste.remove();
+}
+
+/* ========================================================== the breach
+
+   THE STRIKE THAT MEETS A SHIELD.
+
+   Deliberately NOT the war. `fightWar` is the blow landing: the blackout,
+   the quake, the tile stained by its weapon, the colony taken. A strike
+   that meets a shield is the blow NOT landing - so none of that is here.
+   What is here is the shield's own answer: the weapon's streak still
+   crosses the board (the war's own streak element, in the weapon's own
+   colour), and where it lands the SHIELD speaks - a flare shaped like the
+   shield flashes inside the tile, the standing mark cracks bright and
+   shatters, a ring of the shield's colour opens over the colony, six
+   shards scatter and fade, and the ground gives once, a quarter as hard
+   as a quake. The colony itself never moves, never rings and never
+   changes: it was protected, not taken.
+
+   Every piece is measured from the live tile, every one is
+   `pointer-events: none`, and every one takes itself down after its own
+   flight. The mark's shatter is the last thing painted before board.js
+   repaints, and the repaint - the shield having left the state - is what
+   carries the wreckage away.
+
+   REDUCED MOTION: one flash of the shield's colour where it stood, the
+   mark fades, and nothing crosses the board. */
+export async function shieldBreak(
+  board,
+  { fromNode = null, toNode = null, strike = null, shieldTint = null } = {},
+) {
+  if (!board || !toNode) return;
+  const end = localTo(board, toNode);
+  if (!end) return;
+
+  const mark = toNode.querySelector?.(".cell-shield") || null;
+  const tint = shieldTint || "";
+  const quiet = prefersStill();
+
+  /* THE STILL PATH: the shield's colour burns once where it stands, the
+     mark fades, and there is no travel, no shard and no jolt. */
+  if (quiet) {
+    const flash = el("span", {
+      class: "board__shield-break",
+      "aria-hidden": "true",
+      style: tint ? { "--shield": tint } : {},
+    });
+    toNode.append(flash);
+    const flare = flash
+      .animate(
+        [
+          { transform: "translate(-50%, -50%) scale(.7)", opacity: 0 },
+          { transform: "translate(-50%, -50%) scale(1.05)", opacity: 0.9, offset: 0.35 },
+          { transform: "translate(-50%, -50%) scale(1)", opacity: 0 },
+        ],
+        { duration: 720, easing: "ease-out", fill: "both" },
+      )
+      .finished.catch(() => {});
+    const fade = mark
+      ? mark
+          .animate([{ opacity: 1 }, { opacity: 0 }], { duration: 480, fill: "forwards" })
+          .finished.catch(() => {})
+      : Promise.resolve();
+    await settled(Promise.all([flare, fade]), 860);
+    flash.remove();
+    return;
+  }
+
+  const start = fromNode ? localTo(board, fromNode) : null;
+  const STREAK_MS = 460;
+  const cleanup = [];
+
+  /* THE WEAPON CROSSING: the war's own streak, so the flight there reads
+     as the same kind of strike - it is the LANDING that is different. */
+  if (start) {
+    const dx = end.left - start.left;
+    const dy = end.top - start.top;
+    const length = Math.hypot(dx, dy);
+    const angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+    const streak = el("span", {
+      class: "board__war-streak",
+      "aria-hidden": "true",
+      style: { "--war": strike || tint },
+    });
+    streak.style.left = `${start.left}px`;
+    streak.style.top = `${start.top}px`;
+    streak.style.width = `${length}px`;
+    streak.style.transform = `rotate(${angle}deg)`;
+    board.append(streak);
+    streak
+      .animate(
+        [
+          { transform: `rotate(${angle}deg) scaleX(0)`, opacity: 0.25 },
+          { transform: `rotate(${angle}deg) scaleX(1)`, opacity: 1, offset: 0.5 },
+          { transform: `rotate(${angle}deg) scaleX(1.03)`, opacity: 0 },
+        ],
+        { duration: STREAK_MS + 140, easing: "cubic-bezier(.2,.75,.4,1)", fill: "both" },
+      )
+      .finished.catch(() => {});
+    cleanup.push(settled(wait(STREAK_MS + 160), STREAK_MS + 300).then(() => streak.remove()));
+    await wait(STREAK_MS);
+  }
+
+  /* THE IMPACT - all of it at the moment the streak would land. */
+
+  // The flare, inside the tile: a shield-shaped burst in the shield's own
+  // colour, clipped by the cell so it never spills over a neighbour.
+  const flare = el("span", {
+    class: "board__shield-break",
+    "aria-hidden": "true",
+    style: tint ? { "--shield": tint } : {},
+  });
+  toNode.append(flare);
+  const flareDone = flare
+    .animate(
+      [
+        { transform: "translate(-50%, -50%) scale(.5)", opacity: 0, offset: 0 },
+        { transform: "translate(-50%, -50%) scale(1.12)", opacity: 1, offset: 0.22 },
+        { transform: "translate(-50%, -50%) scale(1)", opacity: 0.75, offset: 0.55 },
+        { transform: "translate(-50%, -50%) scale(1.06)", opacity: 0, offset: 1 },
+      ],
+      { duration: 820, easing: "ease-out", fill: "both" },
+    )
+    .finished.catch(() => {});
+
+  // THE MARK SHATTERS: bright, then broken - gone in pieces while the tile
+  // underneath stays exactly as it was. The repaint after this function
+  // removes the element for good.
+  const shatter = mark
+    ? mark
+        .animate(
+          [
+            { transform: "scale(1)", opacity: 1, filter: "brightness(1)", offset: 0 },
+            { transform: "scale(1.3)", opacity: 1, filter: "brightness(2.4)", offset: 0.22 },
+            {
+              transform: "scale(.72) rotate(12deg) translate(2px, 4px)",
+              opacity: 0,
+              filter: "brightness(3)",
+              offset: 0.55,
+            },
+            { transform: "scale(.6) rotate(18deg)", opacity: 0, filter: "brightness(3)", offset: 1 },
+          ],
+          { duration: 640, easing: "cubic-bezier(.4,.1,.7,1)", fill: "forwards" },
+        )
+        .finished.catch(() => {})
+    : Promise.resolve();
+
+  // The ring: one wave of the shield's colour opening over the colony.
+  const ring = el("span", {
+    class: "board__shield-ring",
+    "aria-hidden": "true",
+    style: tint ? { "--shield": tint } : {},
+  });
+  ring.style.left = `${end.left}px`;
+  ring.style.top = `${end.top}px`;
+  board.append(ring);
+  const ringDone = ring
+    .animate(
+      [
+        { transform: "translate(-50%, -50%) scale(.35)", opacity: 0.95, offset: 0 },
+        { transform: "translate(-50%, -50%) scale(1.1)", opacity: 0.7, offset: 0.35 },
+        { transform: "translate(-50%, -50%) scale(1.75)", opacity: 0, offset: 1 },
+      ],
+      { duration: 900, easing: "cubic-bezier(.2,.7,.3,1)", fill: "both" },
+    )
+    .finished.catch(() => {});
+  cleanup.push(settled(wait(1000), 1140).then(() => ring.remove()));
+
+  // The shards: six pieces of the broken shield thrown out of the tile,
+  // each on its own heading, spinning once, fading as they go.
+  const reach = Math.max(16, Math.min(end.box.width * 0.42, 44));
+  for (let i = 0; i < 6; i += 1) {
+    const angle = (i / 6) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+    const dist = reach * (0.7 + Math.random() * 0.5);
+    const dx = Math.cos(angle) * dist;
+    const dy = Math.sin(angle) * dist;
+    const spin = (Math.random() < 0.5 ? -1 : 1) * (90 + Math.random() * 140);
+    const shard = el("span", {
+      class: "board__shield-shard",
+      "aria-hidden": "true",
+      style: tint ? { "--shield": tint } : {},
+    });
+    shard.style.left = `${end.left}px`;
+    shard.style.top = `${end.top}px`;
+    board.append(shard);
+    const live = 560 + Math.random() * 260;
+    const delay = i * 26;
+    const animation = shard.animate(
+      [
+        {
+          transform: "translate(-50%, -50%) translate(0, 0) rotate(0deg) scale(.6)",
+          opacity: 0,
+          offset: 0,
+        },
+        {
+          transform:
+            `translate(-50%, -50%) translate(${dx * 0.3}px, ${dy * 0.3 - 6}px) ` +
+            `rotate(${spin * 0.3}deg) scale(1)`,
+          opacity: 1,
+          offset: 0.18,
+        },
+        {
+          transform:
+            `translate(-50%, -50%) translate(${dx}px, ${dy}px) rotate(${spin}deg) scale(.9)`,
+          opacity: 0,
+          offset: 1,
+        },
+      ],
+      { duration: live, delay, easing: "cubic-bezier(.3,.6,.5,1)", fill: "both" },
+    );
+    cleanup.push(
+      settled(animation.finished, live + delay + 150).then(() => shard.remove()),
+    );
+  }
+
+  /* THE GROUND GIVES ONCE - a quarter of the war's quake, and it is over
+     before the fight card can say what stopped the strike. */
+  board.classList.add("is-shield-jolt");
+  wait(470)
+    .then(() => board.classList.remove("is-shield-jolt"))
+    .catch(() => {});
+
+  /* Everything above runs from the impact, so one generous clock behind the
+     whole tail - flare, ring, shards, mark - is what ends it even in a tab
+     that is not painting. */
+  await settled(Promise.all([flareDone, shatter, ringDone, ...cleanup]), 2150);
+  flare.remove();
+  // Everything else has taken itself down through `cleanup`.
 }
 
 /** A node that takes itself away, after its own farewell has had its turn. */

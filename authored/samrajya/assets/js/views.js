@@ -183,12 +183,17 @@ function field({
 /**
  * One option in the civilization picker.
  *
- * The disc is the colour that civilization's coin is drawn in on the board, so
- * the choice a player makes here is the colour they will be looking for on
- * every square afterwards. It is a real element rather than a border or a
- * background tint: a dot of colour survives being selected (the row turns ink,
- * and a black border on black would not), and it is the same value the board
- * reads, so the two cannot drift.
+ * FOUR BLOCKS, LEFT-ALIGNED, EACH IN ITS OWN COLOUR. The colour that
+ * separates one civilization from another is the border around the whole
+ * block - the same value the civilization's coin is drawn in on the board, so
+ * the choice made here is the colour a player then looks for on every square.
+ * It is the border rather than a dot or a tint because the border survives
+ * being selected (the block turns ink, and a black edge on black would not),
+ * and because it says which civilization this is from across the screen.
+ *
+ * The name is the biggest thing on the block, its title sits immediately
+ * underneath, and the power follows - all of it left-aligned, so four blocks
+ * read as four entries in one list rather than four posters.
  */
 function civRow(civ, { chosen, taken, onPick }) {
   const node = el(
@@ -219,11 +224,12 @@ function civRow(civ, { chosen, taken, onPick }) {
       },
     },
     [
-      el("span", { class: "civ__swatch", "aria-hidden": "true" }),
       el("span", { class: "civ__name" }, [
         `${civ.name} `,
         el("span", { class: "civ__word", text: "Civilization" }),
       ]),
+      el("span", { class: "civ__title", text: civ.title }),
+      el("span", { class: "civ__ability", text: civ.ability }),
       chosen ? el("span", { class: "civ__tick", "aria-hidden": "true", text: "✓" }) : null,
     ],
   );
@@ -250,7 +256,7 @@ function civPicker({ label, value, taken = [], onPick, id, lede }) {
     group.append(civRow(civ, { chosen: value === civ.id, taken: taken.includes(civ.id), onPick }));
   }
 
-  return el("div", { class: "field", role: "group", "aria-label": label }, [
+  return el("div", { class: "field field--civs", role: "group", "aria-label": label }, [
     el("p", { class: "field__label", id: `${name}-label`, text: label }),
     lede ? el("p", { class: "field__hint", text: lede }) : null,
     group,
@@ -272,7 +278,11 @@ export function createView(state, actions) {
   return panel({
     title: "Create Game",
     step: "1 of 1",
-    lede: "Your name and your civilization. Then you get a four-digit code to share.",
+    /* No lede here. The screen's own work is the name and the choice, and
+       the one line the choice needs is said under its own heading - so the
+       four civilizations get the height instead of an introduction nobody
+       has to read. */
+    lede: null,
     backTo: "Back",
     onBack: actions.cancel,
     busy,
@@ -290,14 +300,14 @@ export function createView(state, actions) {
       }),
       civPicker({
         id: "p1",
-        label: "Choose your civilization",
-        lede: "Each civilization plays as a colour. This one is yours on the board.",
+        label: "Choose a civilization",
+        lede: "Choose your civilization and a 4-digit code will be generated to share with your friends.",
         value: draft.civ,
         onPick: actions.setCiv,
       }),
       errors.civ ? el("p", { class: "field__error", role: "alert", text: errors.civ }) : null,
       el("div", { class: "actions" }, [
-        button(busy ? "Opening…" : "Create Game", {
+        button(busy ? "Opening…" : "Lobby", {
           arrow: !busy,
           variant: "primary",
           disabled: busy,

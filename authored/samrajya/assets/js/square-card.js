@@ -36,7 +36,7 @@ const CHEST_COPY = {
   kronos: {
     kind: "A chest",
     lines: [
-      "The shield-circle. Draw once per visit: the shield deploys the moment it is drawn and stands for two of your own turns.",
+      "The shield-circle. Draw once per visit: the shield deploys the moment it is drawn and stands permanently, until a weapon breaches it.",
       "It answers one weapon and no other - tap the chest to see the three.",
     ],
   },

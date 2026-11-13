@@ -78,6 +78,16 @@ function render() {
   // welcome screen's padding and its share of the viewport.
   stage.classList.toggle("stage--board", state.screen === "board");
 
+  // THE PICKER FITS THE SCREEN, NOT THE OTHER WAY ROUND. The civilization
+  // selection is four cards that must all be visible at once on a phone, with
+  // no scroll anywhere: this screen is exactly the viewport tall and the cards
+  // take whatever the rest of the form leaves them, so a shorter phone gets
+  // shorter cards rather than a screen that scrolls.
+  stage.classList.toggle(
+    "stage--pick",
+    state.screen === "create" || state.screen === "join",
+  );
+
   // The nodes are moved, never serialised: a view's foot button carries a
   // click handler, and round-tripping it through innerHTML would silently drop
   // it - which is exactly how a Back button ends up dead.

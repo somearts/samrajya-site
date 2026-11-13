@@ -183,7 +183,11 @@ export function recordEntry(ledger, { turn = null, seat, kind, text, amount }) {
   if (!ledger) return;
   ledger.history = ledger.history || [];
   const balance = moneyOf(ledger, seat);
-  ledger.history.unshift({ turn, seat, kind, text, amount, balance });
+  // Generate a unique ID for this transaction
+  const timestamp = Date.now();
+  const randomSuffix = Math.random().toString(36).substring(2, 8);
+  const id = `tx_${timestamp}_${randomSuffix}`;
+  ledger.history.unshift({ turn, seat, kind, text, amount, balance, id });
 }
 
 /**
@@ -363,11 +367,6 @@ export function canUpgrade(ledger, id, seat) {
   if (!hasMonopoly(ledger, id, seat)) {
     const members = setMembers(ledger, id);
     return no(`Own all ${members.length} colonies in this set to unlock upgrades.`);
-  }
-  // Even building: no colony in a set may stand more than one level above the
-  // lowest colony in it.
-  if (evenUpgradeBlocked(ledger, id)) {
-    return no("Upgrade the other colonies in this set first.");
   }
   const upgrade = nextUpgrade(ledger, id);
   if (!upgrade) return no("This square is upgraded as far as it goes.");

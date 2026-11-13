@@ -337,6 +337,30 @@ input {
   min-height: 44px;
 }
 
+/* --------------------------------------------------- the panel's own CTA
+
+   A panel has ONE button, and one button in a flex column with `flex-grow`
+   is a block the width of the column - which is what these CTAs had become:
+   a wide rectangle sitting slightly left of centre, because the container's
+   width is the wordmark's and the container itself was never centred in the
+   column.
+
+   Both halves are fixed here, at the layout rather than by offsetting the
+   button: the container centres itself, and the button takes its width from
+   its own label with the padding a pill is given. Every screen that uses the
+   panel - Create, both Join steps, the Lobby - gets the same CTA, and the
+   welcome screen, which has no panel, is left exactly as it was. */
+
+.panel .actions {
+  align-self: center;
+}
+
+.panel .actions .btn {
+  flex: none;
+  padding: 0 1.6em;
+  border-radius: 999px;
+}
+
 /* ----------------------------------------------------------------- panels */
 
 .panel {
@@ -469,34 +493,150 @@ input {
   color: var(--ink-soft);
 }
 
-/* ------------------------------------------------------- civilizations */
+/* ------------------------------------------------------- civilizations
 
-/* One per row on a phone: four names of this length side by side would be
-   four scraps of text, and this is the one choice a player makes before they
-   play anything. On a wider screen they go two by two, where there is room for
-   them to be read as a set rather than as a form field. */
-.civs {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.45rem;
+   FOUR BLOCKS, STACKED, LEFT-ALIGNED, EACH IN ITS OWN COLOUR - and all four
+   on one screen, with no scrolling anywhere on any phone.
+
+   The screen is exactly the viewport tall (`stage--pick`), the panel takes
+   what is left after the heading, the name and the instruction, and the four
+   blocks share the remainder equally. There is no introduction to read and no
+   coin to draw here: what the blocks have instead is the height, so the name,
+   the title, the subtitle and the power can sit at a size that is comfortable
+   to read rather than a size that merely fits.
+
+   Each block is outlined in its own civilization's colour - the same value
+   its coin is drawn in on the board - which is how four entries in one list
+   tell each other apart without a picture between them. */
+
+/* THE TWO SIZES THIS SCREEN IS BUILT FROM. The label and the instruction
+   sizes are the screen's own, and the four blocks are made from those two
+   and no third - so what a player reads in the form and what they read in
+   the blocks are the same voice at the same two steps. */
+.stage--pick {
+  --pick-label: clamp(9px, 1.25svh, 11.5px);
+  --pick-hint: clamp(9.5px, 1.3svh, 12.5px);
+  height: 100svh;
+  min-height: 0;
+  overflow: hidden;
+  /* The welcome screen's padding is generous because there is nothing else
+     on it. Here the four blocks are the screen, so the frame gives them what
+     it can - the same inset the board itself uses. */
+  padding: max(0.5rem, env(safe-area-inset-top)) max(0.6rem, env(safe-area-inset-right))
+    max(0.5rem, env(safe-area-inset-bottom)) max(0.6rem, env(safe-area-inset-left));
 }
 
-@media (min-width: 34rem) {
-  .civs {
-    grid-template-columns: 1fr 1fr;
-  }
+.stage--pick .stage__body {
+  padding-block: 0.1875rem;
+  align-content: stretch;
+}
+
+/* A SCREEN WHOSE ONLY JOB IS ONE SHORT FORM sits in the middle of the page
+   rather than at the top of it. The four-block screens need the whole height
+   and fill it; the Join Game code step has no blocks and is a group of five
+   things that belongs where the eye lands. `:has` is what tells the two
+   apart, and where it is not understood the blocks keep the height they
+   have - which is the safe direction to fail in. */
+.stage--pick:not(:has(.field--civs)) .stage__body {
+  align-content: center;
+}
+
+.stage--pick:not(:has(.field--civs)) .composition,
+.stage--pick:not(:has(.field--civs)) .panel {
+  height: auto;
+}
+
+.stage--pick .composition {
+  height: 100%;
+}
+
+.stage--pick .panel {
+  height: 100%;
+  min-height: 0;
+  gap: clamp(0.25rem, 0.55svh, 1rem);
+}
+
+/* The form's own furniture, sized against the same height the blocks are, so
+   neither of them has to guess what the other one left behind. */
+.stage--pick .panel__head {
+  padding-bottom: clamp(0.3rem, 0.6svh, 0.85rem);
+}
+
+.stage--pick .panel__lede {
+  font-size: clamp(11px, 1.5svh, 14px);
+  line-height: 1.35;
+}
+
+.stage--pick .field__label {
+  font-size: var(--pick-label);
+}
+
+.stage--pick .field__hint {
+  font-size: var(--pick-hint);
+  line-height: 1.3;
+}
+
+.stage--pick .field__input {
+  min-height: clamp(32px, 5svh, 44px);
+  padding: clamp(0.3rem, 0.9svh, 0.7rem) 0.9rem;
+  font-size: clamp(14px, 2svh, 1.05rem);
+}
+
+/* The form's own gaps, on this screen: every pixel they keep is a pixel the
+   four blocks do not get. */
+.stage--pick .field {
+  gap: clamp(2px, 0.35svh, 5px);
+}
+
+.stage--pick .actions {
+  margin-top: clamp(2px, 0.4svh, 12px);
+}
+
+.stage--pick .stage__foot {
+  padding-top: clamp(4px, 0.6svh, 12px);
+}
+
+/* The field that holds the four cards takes every pixel the form does not
+   need; the cards share it between them. */
+.stage--pick .field--civs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stage--pick .field--civs .field__label,
+.stage--pick .field--civs .field__hint {
+  flex: none;
+}
+
+/* One per row, always: four of these side by side would be four scraps of
+   text, and this is the one choice a player makes before they play anything.
+   They are a column that fills the field, so all four are on the screen at
+   once and none of them can push the others off it. */
+.civs {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2px, 0.3svh, 5px);
 }
 
 .civ {
+  position: relative;
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.65rem 0.85rem;
-  min-height: 3.25rem;
-  border: 1px solid var(--line);
-  border-radius: 2px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(5px, 0.9svh, 14px);
+  padding: clamp(8px, 1.5svh, 20px) clamp(12px, 3.6vw, 22px);
+  border: 1.5px solid var(--coin);
+  border-radius: 3px;
   background: transparent;
   text-align: left;
+  overflow: hidden;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
@@ -504,58 +644,84 @@ input {
     color 140ms var(--ease);
 }
 
-/* The civilization's own colour, as a disc. It is the same value the coin on
-   the board is drawn in, so the choice here is the thing a player then looks
-   for on every square. A hairline inside the disc keeps a pale colour from
-   disappearing into the paper. */
-.civ__swatch {
-  flex: none;
-  width: 1.05rem;
-  height: 1.05rem;
-  border-radius: 50%;
-  border: 1px solid rgb(0 0 0 / 0.12);
-  background: var(--coin);
-}
-
+/* THE NAME IS THE BIGGEST THING ON THE BLOCK: this screen's larger of its
+   two sizes, in capitals and in the ink, so four of them line up as four
+   entries in one list. The trailing word is quieter, so the civilization's
+   own name is what is read. */
 .civ__name {
-  font-size: 1rem;
-  font-weight: 300;
-  letter-spacing: 0.03em;
+  font-size: var(--pick-hint);
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   line-height: 1.3;
   color: var(--ink);
 }
 
-/* The trailing word of every name. De-emphasised so that four options do not
-   all end in the same six letters at full weight. */
 .civ__word {
+  font-weight: 300;
+  color: var(--ink-soft);
+}
+
+/* Its title, immediately underneath: the screen's smaller size, in capitals
+   and tracked wide, so it reads as the name's own second line rather than as
+   body copy - the hierarchy comes from spacing, tracking and case, not from
+   a third size or a heavier weight. */
+.civ__title {
+  font-size: var(--pick-label);
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+/* What the power does: the same size as the title, in the sentence it was
+   written in, with the line height a paragraph needs to be read in. */
+.civ__ability {
+  font-size: var(--pick-label);
+  font-weight: 400;
+  line-height: 1.55;
   color: var(--ink-soft);
 }
 
 .civ__tick {
-  margin-left: auto;
-  font-size: 0.9rem;
+  position: absolute;
+  top: clamp(4px, 1svh, 12px);
+  right: clamp(8px, 2vw, 16px);
+  font-size: clamp(11px, 1.6svh, 15px);
+  line-height: 1;
+  color: var(--coin);
+}
+
+.civ:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--coin) 6%, transparent);
+}
+
+/* THE SELECTED STATE KEEPS THE COLOUR. The block takes the ink the form
+   already uses for a chosen option, and its outline is lifted towards white
+   so the civilization's own colour still reads against the dark - the two
+   things a player needs to see, which one this is and that it is chosen,
+   in the same border. */
+.civ[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--coin) 74%, white);
+  background: var(--ink);
+}
+
+.civ[aria-pressed="true"] .civ__name,
+.civ[aria-pressed="true"] .civ__title {
   color: var(--paper);
 }
 
 .civ[aria-pressed="true"] .civ__word {
-  color: var(--paper);
+  color: color-mix(in srgb, var(--paper) 72%, transparent);
 }
 
-.civ:hover:not(:disabled) {
-  border-color: #b9b2a6;
+.civ[aria-pressed="true"] .civ__ability {
+  color: color-mix(in srgb, var(--paper) 84%, transparent);
 }
 
-.civ[aria-pressed="true"] {
-  border-color: var(--ink);
-  background: var(--ink);
-}
-
-.civ[aria-pressed="true"] .civ__name {
-  color: var(--paper);
-}
-
-.civ[aria-pressed="true"] .civ__swatch {
-  border-color: var(--paper);
+.civ[aria-pressed="true"] .civ__tick {
+  color: color-mix(in srgb, var(--coin) 74%, white);
 }
 
 .civ:disabled {

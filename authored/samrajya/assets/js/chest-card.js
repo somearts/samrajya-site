@@ -311,11 +311,12 @@ export function clearWeapons(root, seatIndex) {
  *
  * A shield is never stored, so a chip dot would lie about it: what exists
  * is a COLONY being protected, and this is where that is shown - a small
- * shield glyph in the shield's own colour, in the tile's free corner, with
- * the owner's remaining turns inside it. It is drawn purely from
- * `game.shields` on every repaint, so both screens carry it, an expiry or a
- * block removes it on the same repaint everywhere, and nothing stale can
- * outlive its protection.
+ * shield glyph in the shield's own colour, in the tile's free corner. The
+ * shield is PERMANENT, so the body of the glyph carries no number: it says
+ * "protected", not "for N more turns". It is drawn purely from
+ * `game.shields` on every repaint, so both screens carry it, a block (or
+ * the colony's capture) removes it on the same repaint everywhere, and
+ * nothing stale can outlive its protection.
  *
  * The three weapons' target lists are disjoint, so a colony carries at most
  * one shield. The glyph PULSES once when it first appears - the moment of
@@ -325,12 +326,12 @@ export function clearWeapons(root, seatIndex) {
  */
 const pulsedTiles = new Set();
 
-/** The glyph: a heraldic outline with the remaining turns inside it. */
-function shieldGlyph(colour, turns) {
+/** The glyph: a heraldic outline, plain - permanent protection, no count. */
+function shieldGlyph(colour) {
   return (
     '<svg viewBox="0 0 14 16" class="cell-shield__svg" xmlns="http://www.w3.org/2000/svg" focusable="false" aria-hidden="true">' +
     `<path d="M7 1 L12.5 3 v4.5 c0 3.6 -2.6 5.9 -5.5 7 -2.9 -1.1 -5.5 -3.4 -5.5 -7 V3 Z" fill="var(--cell-ground)" stroke="${colour}" stroke-width="1.4" stroke-linejoin="round"/>` +
-    `<text x="7" y="9.8" text-anchor="middle" font-size="6.2" font-weight="600" fill="${colour}" font-family="Jost, sans-serif">${turns}</text>` +
+    `<path d="M7 4.4 L9.6 5.4 v2.6 c0 1.7 -1.3 2.8 -2.6 3.3 -1.3 -0.5 -2.6 -1.6 -2.6 -3.3 V5.4 Z" fill="${colour}" opacity="0.5"/>` +
     "</svg>"
   );
 }
@@ -344,7 +345,7 @@ export function renderShieldTiles(board, shields = []) {
     byColony.set(shield.colony, list);
   }
 
-  // A mark whose shield has blocked or expired goes with this repaint.
+  // A mark whose shield has been spent or carried off goes with this repaint.
   for (const stale of board.querySelectorAll(".cell-shield")) {
     const id = stale.closest(".board__cell")?.dataset?.id;
     if (!id || !byColony.has(id)) stale.remove();
@@ -363,8 +364,7 @@ export function renderShieldTiles(board, shields = []) {
       cell.append(mark);
     }
     mark.title = `${shieldById(shield.id)?.name || shield.id} protects this colony`;
-    const turns = Math.max(0, Number(shield.turnsLeft) || 0);
-    const glyph = shieldGlyph(shieldColor(shield.id), turns);
+    const glyph = shieldGlyph(shieldColor(shield.id));
     if (mark.dataset.glyph !== glyph) {
       mark.innerHTML = glyph;
       mark.dataset.glyph = glyph;

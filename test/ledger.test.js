@@ -1,4 +1,4 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    THE LEDGER
 
    Who holds what, and who may do what with it. Every rule is tested here rather
@@ -51,11 +51,11 @@ function solo(opening = 2000) {
 
 /* ----------------------------------------------------------------- starting */
 
-test("both players start with two thousand", () => {
+test("both players start with five thousand", () => {
   const game = twoPlayers();
-  assert.equal(STARTING_MONEY, 2000);
-  assert.equal(moneyOf(game, 0), 2000);
-  assert.equal(moneyOf(game, 1), 2000);
+  assert.equal(STARTING_MONEY, 5000);
+  assert.equal(moneyOf(game, 0), 5000);
+  assert.equal(moneyOf(game, 1), 5000);
   assert.equal(playerAt(game, 0).name, "Sam");
   assert.equal(playerAt(game, 1).name, "Sakshi");
 });
@@ -69,8 +69,8 @@ test("a roster with no seats gets the seats it is standing in", () => {
     { name: "Sakshi", civ: "ancient-egyptian" },
   ]);
   assert.deepEqual(game.players.map((p) => p.seat), [0, 1]);
-  assert.equal(moneyOf(game, 0), 2000);
-  assert.equal(moneyOf(game, 1), 2000, "the second player is not a phantom");
+  assert.equal(moneyOf(game, 0), 5000);
+  assert.equal(moneyOf(game, 1), 5000, "the second player is not a phantom");
   assert.equal(playerAt(game, 1).name, "Sakshi");
 });
 
@@ -121,7 +121,7 @@ test("a square can only be taken once", () => {
   assert.equal(again.ok, false);
   assert.match(again.why, /already holds/);
   assert.equal(ownerOf(game, "jupiter"), 0, "the first owner keeps it");
-  assert.equal(moneyOf(game, 1), 2000, "and the second player pays nothing");
+  assert.equal(moneyOf(game, 1), 5000, "and the second player pays nothing");
 });
 
 test("you cannot buy with money you do not have", () => {
@@ -241,7 +241,7 @@ test("you cannot upgrade on a square you do not hold", () => {
   const refused = upgrade(game, "moon", 1);
   assert.equal(refused.ok, false);
   assert.equal(levelOf(game, "moon"), 0);
-  assert.equal(moneyOf(game, 1), 2000);
+  assert.equal(moneyOf(game, 1), 5000);
 });
 
 test("you cannot upgrade on a square nobody holds", () => {
@@ -488,3 +488,5 @@ test("the rent charged is the rent the square carries right now", () => {
   // level carries its own.
   assert.deepEqual(seen, [150, 380, 1200, 2800]);
 });
+
+

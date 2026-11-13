@@ -43,7 +43,8 @@ import { prefersStill } from "./dice.js";
 import { NEXUS_KEEPER, NEXUS_PRAY_COST } from "./shared/nexus-cards.js";
 import { KRONOS_CHEST, RAGNAROK, SHIELDS, WEAPONS, shieldById, weaponById } from "./shared/weapons.js";
 import { CELLS } from "./shared/spaces.js";
-import { rupees } from "./shared/economy.js";
+import { PRICED_IDS, REDEMPTION, priceOf, rupees } from "./shared/economy.js";
+import { moneyOf, ownerOf } from "./shared/ledger.js";
 /* The chest card's face. The emblem and the colour a weapon is drawn in are
    exported there because the profile and the name chip draw them too, and
    they must all draw the same thing: one place knows what a weapon looks
@@ -165,6 +166,303 @@ function nexusCard({ drawable, phase, caption }) {
   return card;
 }
 
+/* ============================================================ Nexus loan screen
+
+   A tap on Nexus (not a landing) opens the loan experience: the keeper's
+   picture, the single line of mythology, and a black pill CTA. The loan
+   flow then offers three fixed amounts, greys out the ones the player's
+   properties cannot secure, and shows which properties would be mortgaged
+   before confirmation.
+
+   This is a PEEK - drawn from local state, never a shared stage. The actual
+   borrowing and repayment are server actions dispatched from board.js. */
+
+export const LOAN_AMOUNTS = Object.freeze([500, 1000, 2000]);
+
+export function loanRepaymentOf(amount) {
+  return Math.round((Number(amount) || 0) * 1.5);
+}
+
+export function mortgageSelection(ownedIds, amount) {
+  const items = ownedIds
+    .map((id) => ({ id, price: priceOf(id) || 0 }))
+    .sort((a, b) => a.price - b.price || (a.id < b.id ? -1 : 1));
+  const n = items.length;
+  let best = null;
+  for (let mask = 1; mask < 1 << n; mask += 1) {
+    let sum = 0;
+    const ids = [];
+    for (let i = 0; i < n; i += 1) {
+      if (mask & (1 << i)) {
+        sum += items[i].price;
+        ids.push(items[i].id);
+      }
+    }
+    if (sum >= amount && (best === null || sum < best.sum || (sum === best.sum && ids.length < best.ids.length))) {
+      best = { ids, sum };
+      if (sum === amount) return best.ids;
+    }
+  }
+  return best ? best.ids : null;
+}
+
+function turnsRemainingOf(loan) {
+  return Math.max(0, 5 - (loan.circuits || 0));
+}
+
+function nexusLoanCard({
+  mode = "options",
+  stage = "request",
+  loan = null,
+  mySeat = 0,
+  ledger,
+  canBorrow = true,
+  selectedAmount = 0,
+  selectedIds = [],
+  onRequestLoan,
+  onSelectAmount,
+  onRepayLoan,
+  onFinishLoan,
+  onClose,
+} = {}) {
+  const granted = stage === "granted";
+  const settled = stage === "settled";
+  const receipt = granted || settled;
+  const card = el("article", {
+    class: `property-card nexus-card nexus-card--loan${receipt ? ` nexus-card--${stage}` : ""}`,
+    "data-property": "nexus",
+    "data-chest": "nexus",
+    "data-loan-mode": mode,
+    "data-loan-stage": stage,
+    style: { "--accent": "var(--ink)" },
+    "aria-live": "polite",
+  });
+
+  const figureWrap = el("div", { class: "nexus-card__figure-wrap nexus-card__figure-wrap--loan" }, [
+    el("img", {
+      class: "nexus-card__god nexus-card__god--loan",
+      src: "assets/img/god.png",
+      alt: NEXUS_KEEPER.title,
+      draggable: "false",
+    }),
+  ]);
+
+  const title = el("h3", { class: "nexus-card__title", text: NEXUS_KEEPER.title });
+  const mythology = el("p", { class: "nexus-card__mythology nexus-card__mythology--loan" }, NEXUS_KEEPER.mythology[0]);
+
+  card.append(figureWrap, title, mythology);
+
+  /* THE RECEIPT HAS ONE EXIT. While the transaction is being read, the close
+     control is not offered at all: DONE is the only press that ends the
+     sequence, and a second way out would be a second way to end the turn. */
+  if (!receipt) {
+    card.prepend(el("button", {
+      type: "button",
+      class: "property-card__close",
+      "aria-label": "Close",
+      title: "Close",
+      "data-action": "close",
+      text: "\u00d7",
+      onclick: () => { if (typeof onClose === "function") onClose(); },
+    }));
+  }
+
+  /* THE RECEIPT.
+
+     The pledge has been accepted (or the debt paid off) and the money has
+     moved. The card keeps the keeper's picture small at the top - the god the
+     souls went to, or came back from - and gives the rest to the transaction
+     itself: the headline, one line of the temple's language, and the plain
+     figures the loan system has already calculated. Nothing mystical is
+     allowed to stand between the player and what they owe. */
+  if (receipt) {
+    const amount = Number(loan?.amount) || 0;
+    const repayment = Number(loan?.repayment) || loanRepaymentOf(amount);
+    const names = (loan?.mortgaged || [])
+      .map((id) => CELLS.find((c) => c.id === id)?.name || id);
+    const turnsLeft = loan ? turnsRemainingOf(loan) : 5;
+    const row = (key, label, value) => [
+      el("dt", { class: "nexus-loan__summary-term", text: label }),
+      el("dd", { class: "nexus-loan__summary-value", text: value, "data-role": `loan-${key}` }),
+    ];
+
+    if (granted) {
+      card.append(
+        el("p", {
+          class: "nexus-loan__grant",
+          text: "YOUR REQUEST HAS BEEN GRANTED",
+        }),
+        el("p", {
+          class: "nexus-loan__grant-line",
+          text: "The Gods of Nexus have accepted your pledge.",
+        }),
+        el("dl", { class: "nexus-loan__summary" }, [
+          ...row("received", "Gift received", rupees(amount)),
+          ...row("custody", "Divine Custody", names.join(", ") || "None"),
+          ...row("repayment", "Divine tribute", rupees(repayment)),
+          ...row("deadline", "Tribute due in", `${turnsLeft} ${turnsLeft === 1 ? "circuit" : "circuits"}`),
+        ]),
+      );
+    } else {
+      /* THE SETTLEMENT. The mirror of the grant: the same figures, read as a
+         receipt for a debt that is gone. The outstanding balance is written
+         from the state, not computed here, and the properties released are
+         the ones the loan named - so the receipt and the board can never
+         disagree about what was given back. */
+      card.append(
+        el("p", {
+          class: "nexus-loan__grant",
+          text: "LOAN SETTLED",
+        }),
+        el("p", {
+          class: "nexus-loan__grant-line nexus-loan__settled-line",
+          text: "The Gods of Nexus acknowledge your payment. Your debt is cleared, your pledge is released, and you stand free of all obligations.",
+        }),
+        el("dl", { class: "nexus-loan__summary" }, [
+          ...row("received", "Gift received", rupees(amount)),
+          ...row("tribute", "Divine tribute", rupees(repayment)),
+          ...row("paid", "Payment made", rupees(repayment)),
+          ...row("outstanding", "Outstanding", "₹0"),
+          ...row("released", "Released from Custody", names.join(", ") || "None"),
+          ...row("status", "Transaction status", "SETTLED"),
+        ]),
+      );
+    }
+
+    card.append(el("button", {
+      type: "button",
+      class: "nexus-loan__done",
+      "data-action": "finish-loan",
+      text: "Done",
+      onclick: () => { if (typeof onFinishLoan === "function") onFinishLoan(); },
+    }));
+    return card;
+  }
+
+  if (mode === "active") {
+    const repayment = loanRepaymentOf(loan.amount);
+    const turnsLeft = turnsRemainingOf(loan);
+    const mortgagedNames = (loan.mortgaged || []).map((id) => CELLS.find((c) => c.id === id)?.name || id).join(", ");
+
+    card.append(el("div", { class: "nexus-loan__info" }, [
+      el("p", { class: "nexus-loan__outstanding", text: `Outstanding ${rupees(repayment)}` }),
+      el("p", { class: "nexus-loan__line", text: `Mortgaged: ${mortgagedNames || "none"}` }),
+      el("p", { class: "nexus-loan__line", text: `${turnsLeft} ${turnsLeft === 1 ? "circuit" : "circuits"} left` }),
+    ]));
+
+    if (turnsLeft > 0) {
+      const canRepay = moneyOf(ledger, mySeat) >= repayment;
+      if (canRepay) {
+        card.append(el("button", {
+          type: "button",
+          class: "nexus-loan__repay",
+          "data-action": "repay-loan",
+          text: `Repay ${rupees(repayment)}`,
+          onclick: () => { if (typeof onRepayLoan === "function") onRepayLoan(); },
+        }));
+      } else {
+        card.append(el("p", {
+          class: "nexus-loan__note",
+          text: `Repay ${rupees(repayment)} when your purse allows.`,
+        }));
+      }
+    }
+    return card;
+  }
+
+  /* THE FIRST STEP: one pill, and nothing else. The amounts belong to the
+     second step, so a player who has only opened the temple is asked whether
+     they want to borrow at all before being shown what they could borrow. */
+  if (stage === "request") {
+    card.append(el("button", {
+      type: "button",
+      class: "nexus-loan__cta",
+      "data-action": "request-loan",
+      text: "Request the Gods",
+      disabled: !canBorrow,
+      "aria-disabled": String(!canBorrow),
+      onclick: () => {
+        if (!canBorrow) return;
+        if (typeof onRequestLoan === "function") onRequestLoan();
+      },
+    }));
+    if (!canBorrow) {
+      card.append(el("p", {
+        class: "nexus-loan__note",
+        text: "The gods grant loans on your own turn.",
+      }));
+    }
+    return card;
+  }
+
+  /* LOAN OPTIONS. Three compact pills in one row. An amount is available
+     when some set of the player's colonies can secure it; the board reads
+     that same set back from `mortgageSelection`, marks every colony in it, and
+     waits for each one to be pledged. The loan is taken on the tap that
+     completes the set, never on the first one. No repayment is shown here:
+     nothing is owed until a loan has actually been taken. */
+  card.append(el("p", {
+    class: "nexus-loan__intro",
+    text: "The Gods of Nexus have heard your call. Their favour awaits \u2014 choose the boon you seek below.",
+  }));
+
+  const owned = PRICED_IDS.filter((id) => ownerOf(ledger, id) === Number(mySeat));
+  const options = el("div", {
+    class: "nexus-loan__options",
+    role: "group",
+    "aria-label": "Loan amount",
+  });
+  for (const amount of LOAN_AMOUNTS) {
+    const mortgaged = mortgageSelection(owned, amount);
+    const enabled = canBorrow && Boolean(mortgaged && mortgaged.length > 0);
+    const selected = enabled && selectedAmount === amount;
+    options.append(el("button", {
+      type: "button",
+      class: [
+        "nexus-loan__option",
+        enabled ? "" : "nexus-loan__option--unavailable",
+        selected ? "is-selected" : "",
+      ].filter(Boolean).join(" "),
+      "data-action": "select-amount",
+      "data-amount": String(amount),
+      disabled: !enabled,
+      "aria-pressed": String(selected),
+      onclick: () => { if (typeof onSelectAmount === "function") onSelectAmount(amount); },
+    }, [
+      el("span", { class: "nexus-loan__amount", text: rupees(amount) }),
+    ]));
+  }
+  card.append(options);
+
+  if (!canBorrow) {
+    card.append(el("p", {
+      class: "nexus-loan__note",
+      text: "The gods grant loans on your own turn.",
+    }));
+  }
+
+  if (selectedAmount > 0 && selectedIds.length > 0) {
+    /* THE PLEDGE, IN THE GODS' OWN WORDS. The amount is the one the player
+       chose, and the "Divine Custody" is the same security the board marks -
+       only named as the temple names it. */
+    card.append(el("p", {
+      class: "nexus-loan__note nexus-loan__pledge",
+      text: `The Lords of Nexus are willing to bestow ${rupees(selectedAmount)} upon you. In return, the required properties shall be placed in their Divine Custody until the debt is repaid. Select the marked properties to complete your pledge, and the gods shall grant your boon.`,
+    }));
+    /* EVERY PROPERTY IS PLEDGED BY ITS OWN TAP. The line says how much of the
+       pledge is complete; the board rewrites it as the player picks a colony. */
+    card.dataset.loanPicked = "0";
+    card.dataset.loanRequired = String(selectedIds.length);
+    card.append(el("p", {
+      class: "nexus-loan__progress",
+      "data-role": "loan-progress",
+      text: `0 of ${selectedIds.length} pledged`,
+    }));
+  }
+
+  return card;
+}
+
 /** The chest of weapons: three faces, one per weapon, and a draw. */
 function ragnarokCard({ drawable, phase, caption }) {
   /* THE THREE FACES.
@@ -253,7 +551,7 @@ function ragnarokCard({ drawable, phase, caption }) {
    popup, in four short sections: where the shield comes from, how it works,
    the three approved facts (Counters / Duration / Spent), and the colonies
    that can receive it. The facts it leans on are the data's own: a shield
-   counters exactly one weapon, it stands for two of its owner's turns, and
+   counters exactly one weapon, it stands permanently until breached, and
    it is spent on the block it makes. */
 
 /**
@@ -329,7 +627,6 @@ function syncDrawButton(card, chest) {
  */
 function kronosCard({ drawable, phase, caption }) {
   const slot = (shield, index) => {
-    const stops = weaponById(shield.counters)?.name || "";
     return el("button", {
       type: "button",
       class: "chest-card__slot chest-card__slot--shield",
@@ -350,10 +647,7 @@ function kronosCard({ drawable, phase, caption }) {
       el("span", { class: "chest-card__pill", "aria-hidden": "true" }),
       el("span", { class: "chest-card__slot-name" }, [
         el("span", { text: shield.name }),
-        stops
-          ? el("span", { class: "chest-card__slot-stops", text: `Stops ${stops}` })
-          : null,
-      ].filter(Boolean)),
+      ]),
     ]);
   };
 
@@ -706,7 +1000,7 @@ export function drawChestStage(board, chest, { mine = false, handlers = {}, play
  * so the two can never drift apart, and it is drawn the same way: from a
  * record of what the screen is, not from an event that may never arrive.
  */
-export function drawChestPeek(board, kind, { onClose = null } = {}) {
+export function drawChestPeek(board, kind, { onClose = null, ctx = null } = {}) {
   const holder = board.querySelector(".board__card");
   if (!holder) return null;
 
@@ -714,6 +1008,55 @@ export function drawChestPeek(board, kind, { onClose = null } = {}) {
   holder.dataset.cardKind = "chest";
   holder.dataset.property = kind;
   board.dataset.property = holder.dataset.property;
+
+  /* NEXUS TAP: the loan experience, not the landing card. With no active
+     loan the card is only the three amounts; once an amount has been chosen
+     the board highlights the colonies that secure it and the card waits for
+     one of them to be tapped. Repayment exists only after a loan is live. */
+  if (kind === "nexus" && ctx) {
+    const {
+      game,
+      mySeat,
+      stage = "request",
+      loan: grantLoan = null,
+      canBorrow = true,
+      selectedAmount = 0,
+      selectedIds = [],
+      onRequestLoan,
+      onSelectAmount,
+      onRepayLoan,
+      onFinishLoan,
+    } = ctx;
+    const liveLoan = game.loans?.[mySeat] || null;
+    /* THE RECEIPT IS ITS OWN SCREEN. A loan that has just been accepted (or
+       just been settled) is not the active-options screen: the player is still
+       reading the transaction, so the grant and the settlement keep their own
+       stage until DONE. The grant's `loan` is the live debt; the settlement's
+       is the repaid record the state still carries. */
+    const granted = stage === "granted";
+    const settled = stage === "settled";
+    const receipt = granted || settled;
+    const activeLoan = !receipt && liveLoan && liveLoan.status === "active";
+
+    const card = nexusLoanCard({
+      mode: receipt ? "options" : activeLoan ? "active" : "options",
+      stage: receipt ? stage : activeLoan ? "options" : stage,
+      loan: receipt ? (grantLoan || liveLoan) : activeLoan ? liveLoan : null,
+      mySeat,
+      ledger: game.ledger,
+      canBorrow,
+      selectedAmount: receipt || activeLoan ? 0 : Number(selectedAmount) || 0,
+      selectedIds: receipt || activeLoan ? [] : selectedIds,
+      onRequestLoan,
+      onSelectAmount,
+      onRepayLoan,
+      onFinishLoan,
+      onClose,
+    });
+    holder.replaceChildren(card);
+    holder.hidden = false;
+    return card;
+  }
 
   const card = kind === "nexus"
     ? nexusCard({ drawable: false, phase: "peek", caption: null })
@@ -985,14 +1328,8 @@ export async function playKronosStage(board, chest) {
       if (face) face.innerHTML = emblem(shield, shieldColor(shield.id));
       const name = slot.querySelector(".chest-card__slot-name");
       if (name) {
-        const stops = weaponById(shield.counters)?.name || "";
         name.replaceChildren(
-          ...[
-            el("span", { text: shield.name }),
-            stops
-              ? el("span", { class: "chest-card__slot-stops", text: `Stops ${stops}` })
-              : null,
-          ].filter(Boolean),
+          el("span", { text: shield.name }),
         );
       }
       const pill = slot.querySelector(".chest-card__pill");
@@ -1034,7 +1371,7 @@ function shieldInfo(chest, shield) {
       el("p", { class: "chest-card__drew", text: "Shield deployed" }),
       el("p", {
         class: "chest-card__weapon-blurb",
-        text: `${shield?.name || "The shield"} now protects ${colony.replace(/\n/g, " ")} against the ${weapon?.name || "its weapon"} for two of your turns.`,
+        text: `${shield?.name || "The shield"} now protects ${colony.replace(/\n/g, " ")} against the ${weapon?.name || "its weapon"} - permanent, until breached.`,
       }),
     ];
   }
@@ -1106,7 +1443,7 @@ function shieldFacts(shield, weapon) {
     style: { "--shield": shieldColor(shield?.id) },
   }, [
     row("Counters:", weapon?.name || "its weapon"),
-    row("Duration:", "Two of your turns"),
+    row("Duration:", "Permanent - until breached"),
     row("Spent:", "When it successfully blocks the weapon"),
   ]);
 }

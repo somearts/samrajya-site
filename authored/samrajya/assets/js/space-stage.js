@@ -7,15 +7,18 @@
    acquisition popup is speaking, and which suit was retired by this
    arrival. Every device draws the middle from that fact.
 
-   THE SCREEN, BUILT FROM SCRATCH: a warm off-white panel in the board's own
-   material carrying a headline and ONE ROW of three tall portrait cards -
+   THE SCREEN, IN THE FAMILY'S SHELL: a `property-card` panel - the ivory
+   ground, the hairline, the 2.5px accent bar down the left edge, here in
+   the Outer Space corner's own blue - carrying a headline and ONE ROW of
+   three tall portrait cards -
    [ Quantum One ] [ Photon Weave ] [ Singularity Mantle ] - each with its
    artwork at the top, name beneath, price and discount beneath that, and
    ACQUIRE SUIT pinned at the bottom inside the card. The row is what makes
    everything fit: headline plus three side-by-side cards in the viewport,
    no scrolling anywhere. A visible X in the panel's top-right closes the
    counter (it is the visit's own `continue` - no purchase, no state
-   change beyond a clean leave).
+   change beyond a clean leave), in the same corner every other panel
+   puts its close.
 
    THE ARTWORK: three realistic, human-proportioned astronauts - same
    skeleton, same stance, same upper-left light across all three, roughly
@@ -303,25 +306,45 @@ function suitCard(suit, { mine, money }) {
   ]);
 }
 
-/** The counter: headline with the close X beside it, the mythology line,
-    the one row of three portrait cards, and the Mission Protocols beneath
-    them - the order the space asks for, nothing else. On every screen the
-    three suits sit side by side (scaled to the card through container-query
-    units) and the protocols stand open below them, all inside the central
-    panel with no scrolling. */
+/** The counter: headline, the mythology line, the one row of three
+    portrait cards, and the Mission Protocols beneath them - the order the
+    space asks for, nothing else. On every screen the three suits sit side
+    by side (scaled to the card through container-query units) and the
+    protocols stand open below them, all inside the central panel.
+
+    THE PANEL IS THE FAMILY'S PANEL NOW: it wears `property-card` - the
+    same shell the Hole, the chests and every tile open with - and the
+    accent down its left edge is THIS corner's stamp,
+    `--corner-outer-space`, so the interstellar blue runs where a set
+    colour runs on a property. The close is the family's own round control
+    in its own corner, and the headline sits in the family's title slot,
+    under the pill. Only the middle of the card - the three suits - is
+    Space's own design, and it is untouched. */
 function selectionContent(space, { mine, money }) {
   return [
-    el("div", { class: "space-card__bar" }, [
-      el("h3", { class: "space-card__headline", text: HEADLINE }),
-      el("button", {
-        type: "button",
-        class: "space-card__close",
-        "data-action": "continue",
-        disabled: !mine,
-        "aria-disabled": String(!mine),
-        "aria-label": "Close",
-        text: "\u00d7",
-      }),
+    /* THE CLOSE, IN THE FAMILY'S OWN CORNER: absolutely placed top-right
+       the way every other panel places it, rather than a control the
+       headline has to share its line with. Still the visit's own
+       `continue` - no purchase, no state of its own. */
+    el("button", {
+      type: "button",
+      class: "property-card__close",
+      "aria-label": "Close",
+      title: "Close",
+      "data-action": "continue",
+      disabled: !mine,
+      "aria-disabled": String(!mine),
+      text: "\u00d7",
+    }),
+    /* THE HEADLINE IN THE FAMILY'S TITLE SLOT: the pill, then the caps
+       title - the same head the property, the chests and the Hole open
+       with, so this panel begins where every other panel begins. The
+       wording is the approved headline, untouched. */
+    el("div", { class: "property-card__head" }, [
+      el("div", { class: "property-card__title" }, [
+        el("span", { class: "property-card__pill", "aria-hidden": "true" }),
+        el("h3", { class: "property-card__name space-card__headline", text: HEADLINE }),
+      ]),
     ]),
     el("p", { class: "space-card__myth", text: MYTH }),
     el("div", { class: "space-card__suits" }, SUITS.map((suit) => suitCard(suit, { mine, money }))),
@@ -408,7 +431,16 @@ export function drawSpaceStage(board, space, { mine = false, money = 0 } = {}) {
   board.dataset.property = "outer-space";
 
   const ctx = { mine, money };
-  const card = el("article", { class: "space-card" });
+  const card = el("article", {
+    /* THE FAMILY SHELL, WITH THIS CORNER'S STAMP. `property-card` brings the
+       panel every event wears - the ivory ground, the hairline, the soft
+       lift, and the 2.5px accent bar down the left edge - and `--accent`
+       names that bar's colour here: the Outer Space corner stamp, the blue
+       already used for the tile itself. Nothing else about the card's own
+       design changes. */
+    class: "property-card space-card",
+    style: { "--accent": "var(--corner-outer-space)" },
+  });
   /* REPLACED, NOT APPENDED - the one draw that can happen twice on the same
      visit (selecting -> acquired). `resetHolder` only clears animations and
      inline paint, never children, so appending stacked the popup beneath the

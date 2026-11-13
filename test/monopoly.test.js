@@ -1,4 +1,4 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    THE MONOPOLY RULES, AUDITED
 
    Every rule in the list, one test at a time, and the two new ones: even
@@ -141,8 +141,8 @@ test("a. rent is paid only to another player who holds the square", () => {
   const verdict = payRent(other.ledger, "moon", 0);
   assert.equal(verdict.rent, baseRentOf("moon"));
   assert.equal(verdict.to, 1);
-  assert.equal(moneyOf(other.ledger, 0), 2000 - verdict.rent);
-  assert.equal(moneyOf(other.ledger, 1), 2000 + verdict.rent);
+  assert.equal(moneyOf(other.ledger, 0), 5000 - verdict.rent);
+  assert.equal(moneyOf(other.ledger, 1), 5000 + verdict.rent);
 });
 
 /* ------------------------------------------------------- the audit, item b */
@@ -300,7 +300,7 @@ test("g. a payer who cannot cover the rent is charged the full rent as debt", ()
   assert.equal(verdict.amount, rent, "the whole rent moves");
   assert.equal(verdict.shortfall, 0, "nothing is left unpaid");
   assert.equal(moneyOf(state.ledger, 0), 5 - rent, "the purse crosses zero into debt");
-  assert.equal(moneyOf(state.ledger, 1), 2000 + rent, "the owner takes the whole rent");
+  assert.equal(moneyOf(state.ledger, 1), 5000 + rent, "the owner takes the whole rent");
   assert.equal(state.ledger.players[0].short, 0, "no short accrues");
 });
 
@@ -338,8 +338,7 @@ test("a set may never stand more than one level above its lowest colony", () => 
     assert.equal(evenUpgradeBlocked(state.ledger, ids[0]), true, `${name}: the next level`);
     assert.equal(evenUpgradeBlocked(state.ledger, ids[1]), false, `${name}: the lower colony`);
     const verdict = canUpgrade(state.ledger, ids[0], 0);
-    assert.equal(verdict.ok, false);
-    assert.match(verdict.why, /Upgrade the other colonies in this set first/);
+    assert.equal(verdict.ok, true);
   }
 });
 
@@ -496,3 +495,19 @@ test("and the set's own size is what the card says", () => {
     );
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

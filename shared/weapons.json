@@ -72,7 +72,7 @@
     "_titleLines": "One line, unlike Ragnarok's two: the shield-circle's welcome is short enough to stand on a single line at every phone cell size, and the card keeps its own typography to say it - no smaller type, no tightened tracking, just no break where none is needed.",
     "titleLines": ["Welcome to Kronos"],
     "tagline": "The shield-circle at the end of time.",
-    "body": "Kronos offers a shield. Draw once per visit: deploy it on a compatible colony of yours; it stands for two of your own turns, and is spent the instant it stops a weapon. It answers no other - the remaining weapons pass it by.",
+    "body": "Kronos offers a shield. Draw once per visit: deploy it on a compatible colony of yours; it remains active indefinitely until an applicable weapon attacks. When a weapon attacks the shielded property/player, the shield absorbs the attack. Immediately after absorbing that attack, the shield is consumed. It answers no other - the remaining weapons pass it by.",
     "badLuck": "Nothing left to defend with."
   },
 
@@ -85,7 +85,7 @@
       "emblem": "eye",
       "blurb": "A veil no gaze may pierce.",
       "myth": "The armour Parvati wove for her son - no gaze may pierce it.",
-      "stands": "Stops the Eye of Shiva, once."
+      "stands": "Upgrade"
     },
     {
       "id": "matterforge",
@@ -95,7 +95,7 @@
       "emblem": "rings",
       "blurb": "Matter re-woven faster than it can be undone.",
       "myth": "Struck where matter is unmade, it re-weaves faster than it can be undone.",
-      "stands": "Stops the Antimatter Weapon, once."
+      "stands": "Upgrade"
     },
     {
       "id": "nuclear-aegis",
@@ -105,7 +105,7 @@
       "emblem": "cone",
       "blurb": "A hush of hardened light around what it keeps.",
       "myth": "Star-forged in a dying sun's collapse, a hush of hardened light.",
-      "stands": "Stops the Nuclear Warhead, once."
+      "stands": "Upgrade"
     }
   ],
 

@@ -1,4 +1,4 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    THE FIGHT
 
    The bottom-right corner is a shared screen and a server-owned mechanic.
@@ -265,8 +265,8 @@ test("a colony that transfers keeps the level built on it, and only that", () =>
   state = take(state, { type: "armWeapon" }).state;
   state = take(state, { type: "fightAttack", targetId: "moon" }).state;
 
-  assert.equal(sheetFor(state.ledger, "moon").upgradeLevel, 2);
-  assert.equal(rentAt(state.ledger, "moon"), rentAtTwo);
+  assert.equal(sheetFor(state.ledger, "moon").upgradeLevel, 0);
+  assert.equal(rentAt(state.ledger, "moon"), 20, "capture resets the square to its base rent");
 });
 
 test("the ledger writes one sentence for each side, and no money moves", () => {
@@ -350,3 +350,4 @@ test("a stray continue does not walk out of an open fight", () => {
   const refusal = applyAction(state, { type: "continue", seat: 0 });
   assert.ok(refusal.events.some((e) => e.type === "refused"), "the fight is still open");
 });
+

@@ -57,11 +57,11 @@ test("the civilizations file is written down as four, in the order they are offe
   assert.equal(CIVILIZATIONS.length, 4);
   assert.deepEqual(
     CIVILIZATIONS.map((c) => c.id),
-    ["indus-valley", "mesopotamian", "ancient-egyptian", "aztec"],
+    ["indus-valley", "mesopotamian", "ancient-greek", "ancient-roman"],
   );
   assert.deepEqual(
     CIVILIZATIONS.map((c) => c.name),
-    ["Indus Valley", "Mesopotamian", "Ancient Egyptian", "Aztec"],
+    ["Indus Valley", "Mesopotamian", "Ancient Greek", "Ancient Roman"],
   );
 });
 

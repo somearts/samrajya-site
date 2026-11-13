@@ -46,11 +46,11 @@ import { DICE_DELAY_MS, DICE_HOLD_MS, DICE_ROLL_MS, pause } from "./timing.js";
 // The layer draws the coins; the rules they obey - including the name a seat
 // goes by - are in coins.js, which imports nothing and is tested on its own.
 import { coins } from "./coin-layer.js";
-import { renderShieldTiles, renderWeapons } from "./chest-card.js";
+import { renderShieldTiles, renderWeapons, shieldColor, weaponColor } from "./chest-card.js";
 import { cornerCard, squareCard } from "./square-card.js";
 import { KRONOS_CHEST, RAGNAROK, BAD_LUCK } from "./shared/weapons.js";
 import { NEXUS } from "./shared/nexus-cards.js";
-import { hideCard, showCard, syncCard } from "./property-card.js";
+import { hideCard, showCard, showIntroCard, syncCard } from "./property-card.js";
 import {
   markBoard,
   syncActive,
@@ -61,17 +61,24 @@ import { announcementLayer } from "./announcement.js";
 import { announcementFor, statusFor } from "./shared/announcements.js";
 import { isPurchasable } from "./shared/properties.js";
 import { ENABLE_SELL, PHASE, restoreGame, shieldsOf } from "./shared/game.js";
+import { moneyOf, ownerOf } from "./shared/ledger.js";
+import { PRICED_IDS } from "./shared/economy.js";
 import { coinColor } from "./shared/civilizations.js";
 import { CELLS, CORNER_IDS, SETS } from "./shared/spaces.js";
 import {
   cardAway,
+  coinFountain,
   flyCoins,
-  flyRent,
   fightWar,
+  localTo,
   pipPulse,
+  pledgeSouls,
+  releaseSouls,
   resetHolder,
   ringDraw,
   shake,
+  shieldBreak,
+  soulTransfer,
 } from "./board-fx.js";
 import {
   chestCollectButton,
@@ -79,6 +86,7 @@ import {
   chestWaiting,
   drawChestPeek,
   drawChestStage,
+  mortgageSelection,
   playKronosStage,
   playNexusStage,
   playRagnarokStage,
@@ -334,6 +342,29 @@ export function board({
   let cardMode = "read";
   let reading = false;
   let busy = false;
+  /* The amount the player has chosen to borrow while the Nexus loan screen is
+     open. Zero means no amount is selected and no colony is highlighted. */
+  let loanPendingAmount = 0;
+  /* THE COLLATERAL THE AMOUNT REQUIRES, AND THE COLONIES THE PLAYER HAS
+     PLEDGED SO FAR.
+
+     A loan can need more than one property. `mortgageSelection` decides the
+     whole required set when the amount is chosen; the player then taps those
+     colonies one at a time, and each tap is recorded here. The loan is asked
+     for only when every required colony has been picked - never on the first
+     tap of a two-property pledge. Both lists are cleared whenever the amount
+     changes, the card closes, or the pledge succeeds. */
+  let loanRequired = [];
+  let loanSelection = [];
+  /* THE PLEDGE, FROM THE PRESS ON THE COLLATERAL TO DONE.
+
+     `null` while no pledge is in progress. `{ stage: "pledging" }` while the
+     loan action is in flight and the souls are travelling to the keeper;
+     `{ stage: "granted", loan }` once the transaction has been accepted and
+     the confirmation is on screen. While it is set, it owns the middle: no
+     tile opens a card over it, no stage redraws it, and no stranded-turn
+     recovery may close it. It is cleared by DONE, and by nothing else. */
+  let loanPledge = null;
   /* The last action a person asked for, and when. A double-tap is one press;
      see `run` for why the in-flight lock is not enough on a fast network. */
   let lastPress = { type: null, at: 0 };
@@ -542,6 +573,74 @@ export function board({
     document.body.append(endingCard);
   }
 
+  /* --------------------------------------------------- the introduction
+
+     A new game opens with one card before the turn is anybody's: the two
+     civilizations, and what the contest is. It is drawn from the state -
+     `intro` is the fact, exactly like every other shared screen here - so
+     both devices show the same card and a refresh reads the same answer.
+
+     WHOSE BUTTON IT IS. `intro.seat` is the player who takes the first
+     throw, and only their screen is given the button: the opponent sees the
+     same card, the same two civilizations and the same words, and can do
+     nothing with it. When that press is made it is written into the state,
+     so both screens go down together and the introduction can never come
+     back - not on a refresh, not on a reconnect, not when the opponent's
+     turn begins.
+
+     It is a CARD in the middle, which is what makes it behave: while it is
+     up, `paintPhase` blocks the announcement layer (so "Your Turn" waits
+     behind it rather than painting over it) and hides the die (so nobody
+     throws before they have read it). Nothing else dismisses it - no tap
+     outside, no Escape - only that one button. */
+  let introStage = null;
+
+  /** Is this screen still owed the introduction, and is the middle free for it? */
+  function introDue() {
+    if (!game?.intro || game.intro.done) return false;
+    if (mySeat === null || mySeat === undefined) return false;
+    if (game.intro.seat === null || game.intro.seat === undefined) return false;
+    /* THE MIDDLE BELONGS TO THE GAME WHILE THE GAME IS PLAYING. A landing, a
+       chest, a fight, Epoch, the suits, the singularity - any of them has a
+       card of its own, and the introduction is not going to stand on top of
+       it. It waits for the board to be at rest, which is the state a game
+       begins in and the state every turn comes back to. */
+    return (
+      game.phase === PHASE.AWAITING_ROLL &&
+      !game.landing &&
+      !game.chest &&
+      !game.fight &&
+      !game.epoch &&
+      !game.space &&
+      !game.hole
+    );
+  }
+
+  /** Only the seat that takes the first throw holds the button. */
+  const introIsMine = () => Number(mySeat) === Number(game?.intro?.seat);
+
+  /** Is the introduction the card that is on the screen right now? */
+  const introUp = () => Boolean(holder() && !holder().hidden && holder().querySelector(".intro-card"));
+
+  /** Draw the introduction while it is owed; take it down once it is not. */
+  function syncIntro() {
+    if (introDue()) {
+      /* Drawn once and left alone - unless something else has taken the
+         middle, in which case the card this screen is owed comes back. */
+      if (introStage === "intro" && introUp()) return;
+      introStage = "intro";
+      showIntroCard(frame, game.ledger?.players || [], {
+        canBegin: introIsMine(),
+        onBegin: () => void run({ type: "introSeen" }),
+      });
+      paintPhase();
+      return;
+    }
+    if (!introStage) return;
+    introStage = null;
+    if (introUp()) void dismissCard();
+  }
+
   const paint = ({ animate = true } = {}) => {
     if (!game) return;
     syncEnding(); // the ending screen answers the state before anything else
@@ -559,6 +658,9 @@ export function board({
        This mark is the standing. */
     renderShieldTiles(frame, game.shields || []);
     syncCard(frame, context());
+    /* Before the phase is painted, so that a card already in the middle has
+       stepped the status and the die aside by the time they are read. */
+    syncIntro();
     paintPhase();
     renderProfile();
   };
@@ -584,6 +686,10 @@ export function board({
       frame.dataset.die = "hidden";
       return;
     }
+    /* WHOSE TURN THE SENTENCES BELONG TO. The layer drops anything queued for
+       a turn that has ended, so a previous turn's notice cannot reappear when
+       a later card - a repayment, say - finally frees the middle. */
+    announce.setTurn(game.turn);
     frame.dataset.phase = game.phase;
     frame.dataset.active = game.active === null ? "" : String(game.active);
     frame.dataset.reading = reading ? "true" : "false";
@@ -691,7 +797,7 @@ export function board({
     if (holder() && !holder().hidden) return;
     recovering = true;
     try {
-      await run({ type: "continue" });
+      await run({ type: "continue" }, { silent: true });
     } catch {
       /* The server refused, which means the turn is not where this board
          thinks it is. The next snapshot puts the board right. */
@@ -741,7 +847,7 @@ export function board({
    * split matters for the events inside a chest, which are actions too but must
    * not each take and release the lock.
    */
-  async function run(action, { rng } = {}) {
+  async function run(action, { rng, quiet = false, silent = false } = {}) {
     /* NOTHING LEAVES THE BOARD WHILE THE BLACKOUT HOLDS IT. The veil
        swallows every pointer event; this is the keyboard's door, and the
        server-side rules remain the final word whatever arrives. */
@@ -775,7 +881,7 @@ export function board({
         if (reading) closeRead();
         pieces.clearHighlight();
       }
-      const result = await step(action, { rng });
+      const result = await step(action, { rng, silent });
       // A refused action changed nothing, so there is nothing to settle. Settling
       // anyway would re-open the decision card and wipe the shake that is the
       // refusal's whole visible answer.
@@ -785,7 +891,10 @@ export function board({
       /* A refusal is not a decision: the player may well try the same thing
          again at once, so the double-tap guard stands down for it. */
       if (refusedHere) lastPress = { type: null, at: 0 };
-      if (!refusedHere) await settle();
+      /* A QUIET ACTION LEAVES THE MIDDLE ALONE. The pledge owns it from the
+         press on the collateral until DONE: the ordinary walk must not open a
+         decision card or move a stranded turn on underneath it. */
+      if (!refusedHere && !quiet) await settle();
       return result;
     } finally {
       busy = false;
@@ -799,14 +908,16 @@ export function board({
       } else {
         /* The action is over and the board is free. If it has come to rest
            waiting for a decision that has no card, the board asks the server
-           to move it on rather than sitting there with nothing to press. */
-        void recoverStranded();
+           to move it on rather than sitting there with nothing to press.
+           A quiet action has deliberately left the middle alone (see the
+           pledge in `takeNexusLoan`), so it does not ask. */
+        if (!quiet) void recoverStranded();
       }
     }
   }
 
   /** One action, its events, and the repaint after them. No settling. */
-  async function step(action, { rng } = {}) {
+  async function step(action, { rng, silent = false } = {}) {
     const before = game;
     let response;
     try {
@@ -854,7 +965,7 @@ export function board({
       // put "That cannot happen / It is not your turn" on screens doing
       // nothing wrong. The server still refuses; only the sentence is
       // dropped, and the turn indicator already says whose turn it is.
-      if (!/not your turn/i.test(no.why || "")) {
+      if (!silent && !/not your turn/i.test(no.why || "")) {
         shake(target);
         await announce.show({
           label: "NOT NOW",
@@ -1142,7 +1253,9 @@ export function board({
   async function say(event) {
     const spec = announcementFor(event, { viewer: mySeat, ledger: game?.ledger });
     if (!spec) return;
-    await announce.show({ ...spec, color: seatColour(spec.seat) });
+    /* The sentence belongs to the turn it happened in, so the layer can drop
+       it if the turn has moved on before the middle was free to say it. */
+    await announce.show({ ...spec, color: seatColour(spec.seat), turn: game?.turn ?? null });
   }
 
   /** Play the events in the order they happened. */
@@ -1215,16 +1328,16 @@ export function board({
           // changes hands on screen at the same moment the money leaves.
           markBoard(frame, game.ledger);
           ringDraw(cellAt(event.id));
-          // Count the purse while the coins are travelling: the balance and
-          // the money are two answers to the same question.
+          // Count the purse while the soul is travelling: the balance and
+          // the square are two answers to the same question.
           paint({ animate: true });
+          // THE SQUARE'S SOUL GOES TO THE BUYER: a spectral copy of the tile
+          // that was bought, crossing into the buyer's own name chip. The old
+          // coin flight - chip to tile - is gone; the announcement still says
+          // the square and the price, exactly as before.
           await Promise.all([
             say(event),
-            flyCoins(frame, {
-              from: chip(event.seat),
-              to: cellAt(event.id),
-              amount: event.price,
-            }),
+            soulTransfer(frame, { from: cellAt(event.id), to: chip(event.seat) }),
           ]);
           break;
         }
@@ -1258,7 +1371,10 @@ export function board({
 
         case "rentPaid": {
           paint({ animate: true });
-          await Promise.all([say(event), flyRent(root(), frame, event)]);
+          // GOLD OUT OF THE TILE: the rent comes up out of the square it was
+          // paid on, in a fountain of coins. The old chip-to-chip flight is
+          // gone - the exchange is the burst, the figures are the ledger's.
+          await Promise.all([say(event), coinFountain(frame, cellAt(event.id))]);
           break;
         }
 
@@ -1278,12 +1394,14 @@ export function board({
         }
 
         case "rentShort": {
-          // What the payer could actually hand over still flies; the shortfall
-          // is written into the rent sentence itself, so there is no second
-          // notice flashing under the board.
+          // What the payer could actually hand over still counts, and the
+          // fountain still rises from the square; the shortfall is written
+          // into the rent sentence itself, so there is no second notice
+          // flashing under the board. Nothing at all rises when nothing was
+          // paid.
           if (event.amount > 0) {
             paint({ animate: true });
-            await Promise.all([say(event), flyRent(root(), frame, event)]);
+            await Promise.all([say(event), coinFountain(frame, cellAt(event.id))]);
           } else {
             await say(event);
           }
@@ -1324,14 +1442,26 @@ export function board({
         }
 
         case "shieldBlocked": {
-          /* THE STRIKE IS SPENT AGAINST THE SHIELD, and there is no war to
-             play: fightWar is the blow LANDING, and this is the blow NOT
-             landing. What both screens show is drawn from the state they
-             both hold - the fight card's own line saying what stopped the
-             strike, and the shield's mark leaving the defender's chip in the
-             repaint. The closing is the same as a captured strike's: the
-             acting player's board ends the fight once it has been seen, and
-             the turn goes with it. */
+          /* THE BREACH IS PLAYED FROM THE EVENT, and it is its own piece:
+             NOT fightWar. The war's animation is the blow landing - blackout,
+             quake, the tile stained, the colony taken. This blow was caught:
+             the streak crosses, the shield's mark shatters on the tile, the
+             ring and shards go in the shield's own colour, and the colony
+             underneath does not move. Both screens hold the same event, so
+             both play the same breach at the same moment.
+
+             The repaint comes AFTER it: the shield has already left the
+             state, and it is that repaint which carries the shattered mark
+             away for good. The closing is the same as a captured strike's -
+             once seen, the acting player's board ends the fight and the
+             turn goes with it. */
+          const target = cellAt(event.id);
+          await shieldBreak(frame, {
+            fromNode: chip(event.seat),
+            toNode: target,
+            strike: weaponColor(event.weapon),
+            shieldTint: shieldColor(event.shield),
+          });
           paint({ animate: true });
           if (isMyTurn()) void finishFightWhenFree();
           break;
@@ -1383,13 +1513,32 @@ export function board({
         }
 
         case "spaceOpened":
-        case "suitAcquired":
         case "suitExpired": {
           /* The counter and its popups are drawn from the state in the
-             tail that follows these events - the arrival, the acquisition,
-             the retirement - so the event itself only keeps the paint in
-             step. The screen decides what it shows; nothing here does. */
+             tail that follows these events - the arrival, the retirement -
+             so the event itself only keeps the paint in step. The screen
+             decides what it shows; nothing here does. */
           paint({ animate: false });
+          break;
+        }
+
+        case "suitAcquired": {
+          /* A CELEBRATORY FOUNTAIN FROM THE COUNTER ITSELF.
+
+             Measured BEFORE the repaint, because the acquisition swaps the
+             counter's face for its popup: the suit card these coins burst
+             from is out of the document the moment `paint` runs. So the
+             origin is read from the live card first - that suit's own card,
+             else the row of three, else the counter panel - and handed over
+             as a point in the board's coordinates. Both devices measure the
+             same card, so both watch the same burst over the same spot. */
+          const area =
+            frame.querySelector(`.space-suit[data-suit="${event.suit}"]`) ||
+            frame.querySelector(".space-card__suits") ||
+            holder();
+          const origin = area ? localTo(frame, area) : null;
+          paint({ animate: false });
+          if (origin) await coinFountain(frame, origin, { celebrate: true });
           break;
         }
 
@@ -1521,6 +1670,9 @@ export function board({
    * Draw the chest, from the state, and play whatever its stage has to play.
    */
   function openChestStage() {
+    /* The pledge owns the middle until DONE: a stage redraw would replace the
+       confirmation, or the loan card the souls are flying to. */
+    if (loanPledge) return;
     const chest = game?.chest;
     if (!chest) return;
 
@@ -2262,6 +2414,9 @@ export function board({
 
   /** Open the card the decision belongs to. */
   async function openDecision() {
+    /* The pledge is a decision of its own, and it holds the middle until
+       DONE. A pending landing decision comes back after it, not over it. */
+    if (loanPledge) return;
     try {
       /* A TEST-ONLY FAULT INJECTION. It exists so the fallback below can be
          proved in a real browser: set `data-fail-draw="1"` on the board and
@@ -2409,6 +2564,9 @@ export function board({
 
   /** Slide the decision card away and take it out of the holder. */
   async function dismissCard() {
+    /* The pledge owns the middle until DONE; no stage redraw may take the
+       confirmation (or the card the souls are flying to) down underneath it. */
+    if (loanPledge) return;
     await cardAway(holder());
     hideCard(frame);
     cardKey = null;
@@ -2458,8 +2616,295 @@ export function board({
    * whose card is already open - and even that does not close and reopen it
    * under the player's finger.
    */
+  /* --------------------------------------------------------- Nexus collateral
+
+     A loan is chosen in two steps. The player picks an amount in the Nexus
+     card; `mortgageSelection` decides the WHOLE set of colonies whose purchase
+     value secures that amount, and every one of them is marked on the board.
+     The player then taps each marked colony to pledge it. The loan is asked
+     for only once every required colony has been pledged - a two-property
+     pledge takes two taps, not one.
+
+     The list of required ids is kept here (`loanRequired`) rather than being
+     recomputed on each tap, so a repaint, a socket snapshot or a change in the
+     card cannot silently move the goalposts between one tap and the next. */
+
+  function clearLoanTargets() {
+    loanPendingAmount = 0;
+    loanRequired = [];
+    loanSelection = [];
+    for (const cell of cells) {
+      cell.classList.remove("is-loan-target", "is-loan-picked");
+      if (cell.dataset.baseLabel !== undefined) {
+        cell.setAttribute("aria-label", cell.dataset.baseLabel);
+        delete cell.dataset.baseLabel;
+      }
+    }
+  }
+
+  function markLoanTargets(amount) {
+    clearLoanTargets();
+    if (!game || !amount) return [];
+    const owned = PRICED_IDS.filter((id) => ownerOf(game.ledger, id) === Number(mySeat));
+    const ids = mortgageSelection(owned, amount) || [];
+    if (!ids.length) return [];
+    loanPendingAmount = amount;
+    loanRequired = [...ids];
+    loanSelection = [];
+    for (const target of ids) {
+      const cell = cellAt(target);
+      if (!cell) continue;
+      cell.classList.add("is-loan-target");
+      cell.dataset.baseLabel = cell.getAttribute("aria-label") || "";
+      cell.setAttribute("aria-label", `${cell.dataset.baseLabel}, available as collateral`);
+    }
+    updateLoanProgress();
+    return ids;
+  }
+
+  /** Write how much of the pledge has been picked into the open loan card. */
+  function updateLoanProgress() {
+    const card = holder()?.querySelector(".nexus-card--loan");
+    if (!card) return;
+    const total = loanRequired.length;
+    const done = loanSelection.length;
+    card.dataset.loanPicked = String(done);
+    card.dataset.loanRequired = String(total);
+    const line = card.querySelector('[data-role="loan-progress"]');
+    if (line) {
+      line.textContent = total > 0 ? `${done} of ${total} pledged` : "";
+    }
+  }
+
+  /**
+   * Pledge one of the required colonies.
+   *
+   * A tap is always recorded. The loan is asked for on the tap that completes
+   * the set, and not before. Returns true when the colony was a required one.
+   */
+  function selectLoanProperty(id) {
+    if (!loanPendingAmount) return false;
+    if (!loanRequired.includes(id)) return false;
+    const cell = cellAt(id);
+    if (!cell) return false;
+    if (loanSelection.includes(id)) return true;
+    loanSelection.push(id);
+    cell.classList.add("is-loan-picked");
+    cell.setAttribute(
+      "aria-label",
+      `${cell.dataset.baseLabel || cell.getAttribute("aria-label") || ""}, pledged as collateral`,
+    );
+    updateLoanProgress();
+    /* EVERY required colony, not merely the first one. */
+    if (loanRequired.every((target) => loanSelection.includes(target))) {
+      void takeNexusLoan();
+    }
+    return true;
+  }
+
+  /** Draw the Nexus loan card. `amount` is the chosen figure, if any. */
+  function drawNexusLoan({ amount = 0, stage = "options" } = {}) {
+    const granted = stage === "granted";
+    const settled = stage === "settled";
+    const receipt = granted || settled;
+    const ids = receipt ? (loanPledge?.ids || []) : markLoanTargets(amount);
+    const loan = receipt ? (loanPledge?.loan || game.loans?.[Number(mySeat)] || null) : null;
+    const peekCtx = {
+      game,
+      mySeat: Number(mySeat),
+      stage,
+      loan,
+      /* THE GODS ANSWER ON THE PLAYER'S OWN TURN. The server refuses a loan
+         from anybody else, so the card does not offer one either: the amounts
+         are only live when the press would actually be accepted. */
+      canBorrow: isMyTurn(),
+      selectedAmount: receipt ? 0 : (ids.length ? amount : 0),
+      selectedIds: ids,
+      onRequestLoan: () => drawNexusLoan({ amount: 0, stage: "options" }),
+      onSelectAmount: (amt) => {
+        drawNexusLoan({ amount: loanPendingAmount === amt ? 0 : amt, stage: "options" });
+      },
+      onRepayLoan: () => void repayNexusLoan(),
+      onFinishLoan: () => void finishNexusLoan(),
+    };
+    drawChestPeek(frame, "nexus", { onClose: () => closeRead(), ctx: peekCtx });
+    paintPhase();
+  }
+
+  /**
+   * Take the loan the player's pledge secures.
+   *
+   * THE SEQUENCE IS THE POINT. The press on the collateral starts it: the
+   * server action is sent, the marked colonies' cards travel into the keeper,
+   * and only then does the card become the grant. The turn is held open for
+   * the whole of it - `loanPledge` owns the middle - so nothing closes the
+   * panel or ends the turn before DONE.
+   */
+  async function takeNexusLoan(amount = loanPendingAmount) {
+    if (!amount || busy || loanPledge) return false;
+    const owned = PRICED_IDS.filter((id) => ownerOf(game.ledger, id) === Number(mySeat));
+    const mortgaged = mortgageSelection(owned, amount);
+    if (!mortgaged || mortgaged.length === 0) return false;
+
+    /* THE WHOLE PLEDGE, NOT THE FIRST TAP. A loan that needs two colonies is
+       not taken until both of them have been picked; the server's selection is
+       the same function, so the two can never disagree about the set. */
+    if (!mortgaged.every((id) => loanSelection.includes(id))) {
+      updateLoanProgress();
+      return false;
+    }
+
+    const pledged = mortgaged.map((id) => cellAt(id)).filter(Boolean);
+    loanPledge = { stage: "pledging", amount, ids: [...mortgaged], loan: null };
+    clearLoanTargets();
+    /* The pledge has begun: there is no way back out of it but DONE. Every
+       control on the card goes quiet with it. */
+    holder()?.querySelector(".property-card__close")?.remove();
+    for (const button of holder()?.querySelectorAll("button") || []) {
+      button.disabled = true;
+      button.setAttribute("aria-disabled", "true");
+    }
+
+    /* `quiet` keeps the ordinary walk out of the middle: the board must not
+       open a decision card, or ask a stranded turn to move on, while the
+       pledge owns the screen. */
+    const result = await run({ type: "nexusLoan", amount }, { quiet: true });
+    const refused = result?.events?.some((event) => event.type === "refused");
+    const loan = game.loans?.[Number(mySeat)] || null;
+    /* A refusal, a dropped request, or a state that has not caught up all
+       leave the player where they were: the loan card, with the amount still
+       chosen and the collateral still marked. Nothing was pledged. */
+    if (!result || refused || loan?.status !== "active") {
+      loanPledge = null;
+      drawNexusLoan({ amount, stage: "options" });
+      return false;
+    }
+
+    loanPledge = { stage: "granted", amount, ids: [...mortgaged], loan };
+
+    /* The souls go to the keeper's picture in the card that is still up. */
+    await pledgeSouls(frame, pledged, holder()?.querySelector(".nexus-card__god--loan"));
+
+    /* A repaint may have taken the card down while the pledge flew. The
+       confirmation is drawn only if the sequence still owns the middle. */
+    if (loanPledge?.stage === "granted") {
+      drawNexusLoan({ stage: "granted" });
+    }
+    return true;
+  }
+
+  /**
+   * DONE. The confirmation has been read, and only now may the panel close.
+   *
+   * The same exit serves the grant and the settlement: the receipt has been
+   * read, and the panel may go. The turn is ended through the exits the game
+   * already has: `done` at a Nexus visit, and `continue` where the board was
+   * waiting for a decision. At an ordinary peek there is no turn to end - the
+   * die is still waiting for its throw - so the card simply closes. Where the
+   * decision still owes a choice (a purchase, say), `continue` is refused by
+   * the server and the decision is handed back rather than stranding the
+   * middle.
+   */
+  async function finishNexusLoan() {
+    if (!loanPledge || busy) return;
+    if (loanPledge.stage !== "granted" && loanPledge.stage !== "settled") return;
+    loanPledge = null;
+
+    const atNexusVisit = game?.chest?.kind === "nexus" && isMyTurn();
+    const waitingDecision = game?.phase === PHASE.DECISION && isMyTurn();
+    const landingKind = game?.landing?.kind;
+    const buying = landingKind === "buy" || landingKind === "own";
+    closeRead();
+
+    if (atNexusVisit) {
+      await run({ type: "done" });
+      return;
+    }
+    if (!waitingDecision) return;
+
+    /* A purchase or an upgrade is a choice the player still owes. Taking a
+       loan does not answer it, and the server will not let the turn end until
+       it is answered - so the card is simply handed back. */
+    if (buying) {
+      await openDecision();
+      return;
+    }
+
+    /* Every other visit is left by the exit it already has. The refusal is
+       silent: where there is still something to do, the card is put back
+       rather than the board saying "that cannot happen". */
+    const result = await run({ type: "continue" }, { silent: true });
+    const refused = result?.events?.some((event) => event.type === "refused");
+    if (refused) await openDecision();
+  }
+
+  /**
+   * Repay the live loan: the settlement sequence.
+   *
+   * THE REVERSE OF THE PLEDGE. The press on SEND is the start: the server
+   * action is sent, and only once it is accepted do the pledged colonies'
+   * cards travel back out of the keeper to the tiles they came from. Then the
+   * card becomes the receipt. The turn is held open for the whole of it -
+   * `loanPledge` owns the middle - so nothing closes the panel, and no stale
+   * notification slips back in, before DONE.
+   *
+   * The money has already moved by the time the souls fly: the state is the
+   * server's, and the board is only the saying of it. A refusal leaves the
+   * player where they were, on the active loan card.
+   */
+  async function repayNexusLoan() {
+    if (busy || loanPledge) return;
+    const seat = Number(mySeat);
+    const loan = game?.loans?.[seat] || null;
+    if (!loan || loan.status !== "active") return;
+    const ids = [...(loan.mortgaged || [])];
+
+    loanPledge = { stage: "settling", ids, loan, amount: loan.amount };
+    /* The settlement has begun: there is no way back out of it but DONE.
+       Every control on the card goes quiet with it. */
+    holder()?.querySelector(".property-card__close")?.remove();
+    for (const button of holder()?.querySelectorAll("button") || []) {
+      button.disabled = true;
+      button.setAttribute("aria-disabled", "true");
+    }
+
+    /* `quiet` keeps the ordinary walk out of the middle, exactly as the pledge
+       does: no decision card, no stranded-turn recovery, no repaint of the
+       peek while the release owns the screen. */
+    const result = await run({ type: "nexusRepay" }, { quiet: true });
+    const refused = result?.events?.some((event) => event.type === "refused");
+    const repaid = game?.loans?.[seat] || null;
+    if (!result || refused || repaid?.status !== "repaid") {
+      loanPledge = null;
+      drawNexusLoan({ amount: 0, stage: "options" });
+      return;
+    }
+
+    loanPledge = { stage: "settling", ids, loan: repaid, amount: repaid.amount };
+
+    /* The souls leave the keeper's hands and settle on their own tiles. The
+       card is still up, so the keeper's picture is still there to leave. */
+    const released = ids.map((id) => cellAt(id)).filter(Boolean);
+    await releaseSouls(frame, released, holder()?.querySelector(".nexus-card__god--loan"));
+
+    /* A repaint may have taken the card down while the souls flew. The receipt
+       is drawn only if the sequence still owns the middle. */
+    if (loanPledge?.stage === "settling") {
+      loanPledge = { stage: "settled", ids, loan: repaid, amount: repaid.amount };
+      drawNexusLoan({ stage: "settled" });
+    }
+  }
+
   function openRead(id) {
     if (busy || cinematic) return;
+    /* THE PLEDGE OWNS THE MIDDLE UNTIL DONE. A tile tapped underneath the
+       confirmation or the travelling souls does not take the screen away. */
+    if (loanPledge) return;
+    /* THE INTRODUCTION OWNS THE MIDDLE UNTIL IT HAS BEEN READ. A square
+       tapped underneath it does not take it away: the card this seat is owed
+       is still owed, and it comes back the moment the board looks at the
+       state again. */
+    if (introDue()) return;
 
     const cell = CELLS.find((entry) => entry.id === id);
     if (!cell) return;
@@ -2535,8 +2980,14 @@ export function board({
        it is the same screen, so there is nothing to open. */
     if (cell.id === NEXUS.id || cell.id === RAGNAROK.id || cell.id === KRONOS_CHEST.id) {
       if (game.chest) return;
-      drawChestPeek(frame,
-        cell.id === NEXUS.id ? "nexus" : cell.id === KRONOS_CHEST.id ? "kronos" : "ragnarok",
+      if (cell.id === NEXUS.id) {
+        /* The Nexus tile opens the loan experience, not the lore card. */
+        drawNexusLoan({ amount: 0, stage: "request" });
+        return;
+      }
+      drawChestPeek(
+        frame,
+        cell.id === KRONOS_CHEST.id ? "kronos" : "ragnarok",
         { onClose: () => closeRead() },
       );
       paintPhase();
@@ -2592,6 +3043,10 @@ export function board({
   }
 
   function closeRead() {
+    /* DONE is the only way out of the pledge. It clears `loanPledge` itself
+       before asking the card to close. */
+    if (loanPledge) return;
+    clearLoanTargets();
     reading = false;
     cardMode = "read";
     cardKey = null;
@@ -2602,7 +3057,7 @@ export function board({
   /* -------------------------------------------------------------- the die */
 
   const rollIt = () => {
-    if (busy || reading) return;
+    if (busy || reading || loanPledge) return;
     if (!isMyTurn()) return;
     if (game.phase !== PHASE.AWAITING_ROLL) return;
     run({ type: "roll" });
@@ -2623,7 +3078,23 @@ export function board({
     if (!cell.matches?.("button[data-id]")) continue;
     cell.addEventListener("click", () => {
       if (busy) return;
+      /* The pledge is not a board press: the squares are quiet from the tap
+         on the collateral until DONE. */
+      if (loanPledge) return;
       const id = cell.dataset.id;
+      /* A LOAN WAITING FOR ITS SECURITY. While an amount is selected, the
+         board is asking for colonies rather than for a card. Each marked
+         colony is pledged by a tap; the loan is taken when the last required
+         one has been pledged. Anything else answers with the same small
+         shake, so the choice is never lost by a stray tap. */
+      if (loanPendingAmount) {
+        if (cell.classList.contains("is-loan-target")) {
+          selectLoanProperty(id);
+        } else if (id !== NEXUS.id) {
+          void shake(cell);
+        }
+        return;
+      }
       /* THE ARMED STRIKE IS ASKED OF THE TILE ITSELF.
 
           While a weapon is armed, a tap on the board is not a request to
